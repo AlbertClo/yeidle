@@ -13,6 +13,7 @@ class Node extends Model
     use HasUuids, SoftDeletes;
 
     protected $fillable = [
+        'id',
         'parent_id',
         'position',
         'content',

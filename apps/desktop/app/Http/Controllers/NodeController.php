@@ -16,12 +16,15 @@ class NodeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'id' => ['nullable', 'string', 'uuid', 'unique:nodes,id'],
             'parent_id' => ['nullable', 'exists:nodes,id'],
             'position' => ['integer'],
-            'content' => ['string'],
+            'content' => ['nullable', 'string'],
             'url' => ['nullable', 'url', 'unique:nodes,url'],
             'is_checked' => ['nullable', 'boolean'],
         ]);
+
+        $validated['content'] = $validated['content'] ?? '';
 
         $node = Node::create($validated);
         $this->linkParser->syncLinks($node);
@@ -34,10 +37,12 @@ class NodeController extends Controller
         $validated = $request->validate([
             'parent_id' => ['nullable', 'exists:nodes,id'],
             'position' => ['integer'],
-            'content' => ['string'],
+            'content' => ['nullable', 'string'],
             'url' => ['nullable', 'url', 'unique:nodes,url,'.$node->id],
             'is_checked' => ['nullable', 'boolean'],
         ]);
+
+        $validated['content'] = $validated['content'] ?? '';
 
         $node->update($validated);
         $this->linkParser->syncLinks($node);
