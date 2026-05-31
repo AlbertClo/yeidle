@@ -16,7 +16,7 @@ class SearchController extends Controller
 
         $results = Node::where('content', 'like', '%'.$request->q.'%')
             ->orderBy('updated_at', 'desc')
-            ->limit(10)
+            ->limit(60)
             ->get();
 
         return response()->json($results);

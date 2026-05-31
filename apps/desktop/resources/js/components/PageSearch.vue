@@ -38,7 +38,7 @@ function doSearch(val: string) {
                     }
                 }
             }
-            results.value = [...pageMap.values()].slice(0, 10);
+            results.value = [...pageMap.values()].slice(0, 60);
         });
 }
 
