@@ -26,16 +26,16 @@ const forwarded = useForwardProps(delegatedProps)
 
 <style scoped>
 .command-list::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 .command-list::-webkit-scrollbar-track {
   background: transparent;
 }
 .command-list::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
 }
 .command-list::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground));
+  background: rgba(128, 128, 128, 0.5);
 }
 </style>
