@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Node;
+use App\Models\PageVisit;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,6 +32,11 @@ class PageWebController extends Controller
         $backlinks = $node->incomingLinks()
             ->with('sourceNode')
             ->get();
+
+        PageVisit::create([
+            'node_id' => $node->id,
+            'visited_at' => now(),
+        ]);
 
         return Inertia::render('Pages/Show', [
             'page' => $node,

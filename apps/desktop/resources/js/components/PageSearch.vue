@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { router } from '@inertiajs/vue3';
-import { FileText, Plus, Search } from 'lucide-vue-next';
+import { Clock, FileText, Plus, Search } from 'lucide-vue-next';
 import {
     CommandDialog,
     CommandEmpty,
@@ -14,6 +14,7 @@ import type { Node } from '@/types/node';
 
 const isOpen = ref(false);
 const results = ref<Node[]>([]);
+const recentPages = ref<Node[]>([]);
 const searchQuery = ref('');
 let lastSearch: string | null = null;
 
@@ -21,8 +22,17 @@ watch(isOpen, (open) => {
     if (open) {
         lastSearch = null;
         doSearch('');
+        fetchRecentPages();
     }
 });
+
+function fetchRecentPages() {
+    fetch('/api/recent-pages', { headers: { Accept: 'application/json' } })
+        .then((res) => res.json())
+        .then((data) => {
+            recentPages.value = data;
+        });
+}
 
 const exactPageMatch = computed(() =>
     results.value.some(r => !r.parent_id && r.content.toLowerCase() === searchQuery.value.toLowerCase()),
@@ -132,6 +142,17 @@ onBeforeUnmount(() => {
                 >
                     <Plus class="mr-2 h-4 w-4 shrink-0" />
                     <span>Create page: <strong>{{ searchQuery }}</strong></span>
+                </CommandItem>
+            </CommandGroup>
+            <CommandGroup v-if="searchQuery.length === 0 && recentPages.length > 0" heading="Recent">
+                <CommandItem
+                    v-for="page in recentPages"
+                    :key="`recent-${page.id}`"
+                    :value="`recent: ${page.content || '[untitled]'}`"
+                    @select="navigate(page)"
+                >
+                    <Clock class="mr-2 h-4 w-4 shrink-0" />
+                    <span class="truncate">{{ page.content || '[untitled]' }}</span>
                 </CommandItem>
             </CommandGroup>
             <CommandEmpty>No results found.</CommandEmpty>

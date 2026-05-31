@@ -17,3 +17,28 @@ Route::get('bookmarks', [BookmarkController::class, 'index']);
 Route::post('bookmarks', [BookmarkController::class, 'store']);
 
 Route::get('search', SearchController::class);
+
+Route::get('recent-pages', function () {
+    $recentIds = \App\Models\PageVisit::select('node_id')
+        ->selectRaw('MAX(visited_at) as last_visit')
+        ->groupBy('node_id')
+        ->orderByDesc('last_visit')
+        ->limit(10)
+        ->pluck('node_id');
+
+    return \App\Models\Node::whereIn('id', $recentIds)
+        ->get()
+        ->sortBy(fn ($node) => $recentIds->search($node->id))
+        ->values();
+});
+
+Route::post('page-visits', function (\Illuminate\Http\Request $request) {
+    $request->validate(['node_id' => ['required', 'exists:nodes,id']]);
+
+    \App\Models\PageVisit::create([
+        'node_id' => $request->node_id,
+        'visited_at' => now(),
+    ]);
+
+    return response()->json(null, 201);
+});
