@@ -11,12 +11,12 @@ class SearchController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         $request->validate([
-            'q' => ['required', 'string', 'min:2'],
+            'q' => ['required', 'string', 'min:1'],
         ]);
 
         $results = Node::where('content', 'like', '%'.$request->q.'%')
             ->orderBy('updated_at', 'desc')
-            ->limit(50)
+            ->limit(10)
             ->get();
 
         return response()->json($results);

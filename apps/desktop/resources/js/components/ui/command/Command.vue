@@ -34,40 +34,23 @@ const filterState = reactive({
 })
 
 function filterItems() {
-  if (!filterState.search) {
-    filterState.filtered.count = allItems.value.size
-    // Do nothing, each item will know to show itself because search is empty
-    return
+  // Always show all items — filtering is handled server-side
+  filterState.filtered.count = allItems.value.size
+  for (const [id] of allItems.value) {
+    filterState.filtered.items.set(id, 1)
   }
-
-  // Reset the groups
-  filterState.filtered.groups = new Set()
-  let itemCount = 0
-
-  // Check which items should be included
-  for (const [id, value] of allItems.value) {
-    const score = contains(value, filterState.search)
-    filterState.filtered.items.set(id, score ? 1 : 0)
-    if (score)
-      itemCount++
+  for (const [groupId] of allGroups.value) {
+    filterState.filtered.groups.add(groupId)
   }
-
-  // Check which groups have at least 1 item shown
-  for (const [groupId, group] of allGroups.value) {
-    for (const itemId of group) {
-      if (filterState.filtered.items.get(itemId)! > 0) {
-        filterState.filtered.groups.add(groupId)
-        break
-      }
-    }
-  }
-
-  filterState.filtered.count = itemCount
 }
 
 watch(() => filterState.search, () => {
   filterItems()
 })
+
+watch([allItems, allGroups], () => {
+  filterItems()
+}, { deep: true })
 
 provideCommandContext({
   allItems,

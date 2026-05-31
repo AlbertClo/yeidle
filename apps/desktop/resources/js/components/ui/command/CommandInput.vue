@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ListboxFilterProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
+import { watch } from "vue"
 import { Search } from "lucide-vue-next"
 import { reactiveOmit } from "@vueuse/core"
 import { ListboxFilter, useForwardProps } from "reka-ui"
@@ -15,11 +16,19 @@ const props = defineProps<ListboxFilterProps & {
   class?: HTMLAttributes["class"]
 }>()
 
+const emit = defineEmits<{
+  search: [value: string]
+}>()
+
 const delegatedProps = reactiveOmit(props, "class")
 
 const forwardedProps = useForwardProps(delegatedProps)
 
 const { filterState } = useCommand()
+
+watch(() => filterState.search, (val) => {
+  emit('search', val)
+})
 </script>
 
 <template>

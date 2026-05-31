@@ -13,11 +13,13 @@ import {
 import type { Node } from '@/types/node';
 
 const isOpen = ref(false);
-const query = ref('');
 const results = ref<Node[]>([]);
+let lastSearch = '';
 
-watch(query, (val) => {
-    if (val.length < 2) {
+function doSearch(val: string) {
+    if (val === lastSearch) return;
+    lastSearch = val;
+    if (val.length === 0) {
         results.value = [];
         return;
     }
@@ -38,12 +40,13 @@ watch(query, (val) => {
             }
             results.value = [...pageMap.values()].slice(0, 10);
         });
-});
+}
 
 function navigate(node: Node) {
     const pageId = node.parent_id ?? node.id;
     isOpen.value = false;
-    query.value = '';
+    lastSearch = '';
+    results.value = [];
     router.visit(`/pages/${pageId}`);
 }
 
@@ -78,10 +81,7 @@ onBeforeUnmount(() => {
         title="Search Pages"
         description="Search for pages and blocks"
     >
-        <CommandInput
-            v-model="query"
-            placeholder="Search pages..."
-        />
+        <CommandInput placeholder="Search pages..." @search="doSearch" />
         <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
             <CommandGroup v-if="results.length > 0" heading="Results">
