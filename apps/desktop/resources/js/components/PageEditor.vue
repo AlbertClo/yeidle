@@ -77,24 +77,28 @@ const CustomListItem = ListItem.extend({
     },
 });
 
+function isInCodeBlock(editor: { state: { selection: { $head: { parent: { type: { name: string } } } } } }) {
+    return editor.state.selection.$head.parent.type.name === 'codeBlock';
+}
+
 // Override Enter to always split list items (never lift/exit the list)
 const AlwaysSplitListItem = Extension.create({
     name: 'alwaysSplitListItem',
     addKeyboardShortcuts() {
         return {
             Tab: ({ editor }) => {
-                // Try to indent (sink), do nothing if it fails
+                if (isInCodeBlock(editor)) return false;
                 editor.commands.sinkListItem('listItem');
                 return true;
             },
             'Shift-Tab': ({ editor }) => {
-                // Try to outdent (lift), do nothing if it fails
+                if (isInCodeBlock(editor)) return false;
                 editor.commands.liftListItem('listItem');
                 return true;
             },
             Backspace: ({ editor }) => {
+                if (isInCodeBlock(editor)) return false;
                 const { $head } = editor.state.selection;
-                // At the start of a list item's text content
                 if ($head.parentOffset === 0) {
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
@@ -117,8 +121,8 @@ const AlwaysSplitListItem = Extension.create({
                 return false;
             },
             Delete: ({ editor }) => {
+                if (isInCodeBlock(editor)) return false;
                 const { $head } = editor.state.selection;
-                // At the end of a list item's text content
                 if ($head.parentOffset === $head.parent.content.size) {
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
@@ -142,6 +146,14 @@ const AlwaysSplitListItem = Extension.create({
                 return false;
             },
             Enter: ({ editor }) => {
+                if (isInCodeBlock(editor)) {
+                    return editor.commands.command(({ tr, dispatch }) => {
+                        if (dispatch) {
+                            tr.insertText('\n');
+                        }
+                        return true;
+                    });
+                }
                 if (editor.commands.splitListItem('listItem')) {
                     return true;
                 }
@@ -272,7 +284,10 @@ const editor = useEditor({
         Italic,
         Strike,
         Code,
-        CodeBlock,
+        CodeBlock.configure({
+            exitOnTripleEnter: false,
+            exitOnArrowDown: false,
+        }),
         Heading.configure({ levels: [1, 2, 3] }),
         HorizontalRule,
         Blockquote,
