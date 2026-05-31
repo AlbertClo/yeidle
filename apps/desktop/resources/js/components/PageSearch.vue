@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { router } from '@inertiajs/vue3';
-import { FileText, Search } from 'lucide-vue-next';
+import { FileText, Plus, Search } from 'lucide-vue-next';
 import {
     CommandDialog,
     CommandEmpty,
@@ -14,6 +14,7 @@ import type { Node } from '@/types/node';
 
 const isOpen = ref(false);
 const results = ref<Node[]>([]);
+const searchQuery = ref('');
 let lastSearch: string | null = null;
 
 watch(isOpen, (open) => {
@@ -23,7 +24,12 @@ watch(isOpen, (open) => {
     }
 });
 
+const exactPageMatch = computed(() =>
+    results.value.some(r => !r.parent_id && r.content.toLowerCase() === searchQuery.value.toLowerCase()),
+);
+
 function doSearch(val: string) {
+    searchQuery.value = val;
     if (val === lastSearch) return;
     lastSearch = val;
     const url = val.length > 0
@@ -44,7 +50,37 @@ function doSearch(val: string) {
                     }
                 }
             }
-            results.value = [...pageMap.values()].slice(0, 60);
+            const sorted = [...pageMap.values()].sort((a, b) => {
+                const q = lastSearch?.toLowerCase() ?? '';
+                const aExact = !a.parent_id && a.content.toLowerCase() === q ? -1 : 0;
+                const bExact = !b.parent_id && b.content.toLowerCase() === q ? -1 : 0;
+                return aExact - bExact;
+            });
+            results.value = sorted.slice(0, 60);
+            // Auto-highlight first item by simulating arrow down then up
+            nextTick(() => {
+                const input = document.querySelector('[data-slot="command-input"]') as HTMLElement;
+                if (input) {
+                    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+                    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+                }
+            });
+        });
+}
+
+function createPage() {
+    const title = searchQuery.value;
+    isOpen.value = false;
+    searchQuery.value = '';
+    results.value = [];
+    fetch('/api/nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ content: title }),
+    })
+        .then((res) => res.json())
+        .then((node) => {
+            router.visit(`/pages/${node.id}`);
         });
 }
 
@@ -89,6 +125,15 @@ onBeforeUnmount(() => {
     >
         <CommandInput placeholder="Search pages..." @search="doSearch" />
         <CommandList>
+            <CommandGroup v-if="searchQuery.length > 0 && !exactPageMatch">
+                <CommandItem
+                    :value="`create: ${searchQuery}`"
+                    @select="createPage"
+                >
+                    <Plus class="mr-2 h-4 w-4 shrink-0" />
+                    <span>Create page: <strong>{{ searchQuery }}</strong></span>
+                </CommandItem>
+            </CommandGroup>
             <CommandEmpty>No results found.</CommandEmpty>
             <CommandGroup v-if="results.length > 0" heading="Results">
                 <CommandItem
