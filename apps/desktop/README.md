@@ -1,25 +1,51 @@
-# Laravel + Vue Starter Kit
+# Yeidle Desktop
 
-## Introduction
+A local-first note-taking desktop app built with NativePHP (Electron) + Laravel 12 + Vue 3 + SQLite.
 
-Our Vue starter kit provides a robust, modern starting point for building Laravel applications with a Vue frontend using [Inertia](https://inertiajs.com).
+## Requirements
 
-Inertia allows you to build modern, single-page Vue applications using classic server-side routing and controllers. This lets you enjoy the frontend power of Vue combined with the incredible backend productivity of Laravel and lightning-fast Vite compilation.
+- PHP 8.2+
+- Composer
+- Node.js 22+
 
-This Vue starter kit utilizes Vue 3 and the Composition API, TypeScript, Tailwind, and the [shadcn-vue](https://www.shadcn-vue.com) component library.
+## Setup
 
-## Official Documentation
+```bash
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
+npm run build
+php artisan native:install
+php artisan native:migrate
+```
 
-Documentation for all Laravel starter kits can be found on the [Laravel website](https://laravel.com/docs/starter-kits).
+## Development
 
-## Contributing
+```bash
+php artisan native:run
+```
 
-Thank you for considering contributing to our starter kit! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+This launches the Electron app with hot reload. No need to run `npm run dev` or `php artisan serve` separately.
 
-## Code of Conduct
+## Architecture
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- **Data model**: Everything is a node in a tree. Pages are top-level nodes (`parent_id = null`). Blocks are child nodes. Bookmarks are pages with a `url`.
+- **Linking**: `[[wikilinks]]` in block content create bidirectional links between pages. Links are parsed on save and cached in the `node_links` table.
+- **Frontend**: Local-first — the page tree lives in reactive Vue state. Edits are instant. A background sync layer persists changes to SQLite via the API (content edits debounced, structural changes immediate).
+- **API**: JSON endpoints at `/api/` for nodes, pages, bookmarks, and search. Used by the frontend and the Chrome extension.
 
-## License
+## SQLite
 
-The Laravel + Vue starter kit is open-sourced software licensed under the MIT license.
+There are two SQLite databases:
+
+- **`database/database.sqlite`** — the default Laravel database, used when running artisan commands directly (e.g. `php artisan migrate`).
+- **`database/nativephp.sqlite`** — used by the app when running inside NativePHP (`php artisan native:run`). NativePHP manages its own database connection.
+
+When developing, run `php artisan native:migrate` to apply migrations to the NativePHP database. To reset it, delete `database/nativephp.sqlite` and re-run `php artisan native:migrate`.
+
+In production, NativePHP stores the database in the user's app data directory (e.g. `~/.config/nativephp/`).
+
+## NixOS
+
+Requires `nix-ld` with Electron libraries. See the project memory files for the full NixOS configuration.
