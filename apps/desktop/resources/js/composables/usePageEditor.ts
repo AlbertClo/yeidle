@@ -319,6 +319,65 @@ export function usePageEditor(initialPage: Node) {
         focusBlockId.value = id;
     }
 
+    function outdent(id: string) {
+        let newParentId = '';
+        let position = 0;
+
+        doc.transact(() => {
+            // Find current parent
+            const result = findYParentAndIndex(yPage, id);
+            if (!result) return;
+            const { parent: currentParent, index } = result;
+            const currentParentId = currentParent.get('id') as string;
+
+            // Can't outdent if already at root level
+            const grandparentResult = findYParentAndIndex(yPage, currentParentId);
+            if (!grandparentResult) return;
+            const { parent: grandparent, index: parentIndex } = grandparentResult;
+
+            const currentChildren = currentParent.get('children') as Y.Array<Y.Map<unknown>>;
+            const grandparentChildren = grandparent.get('children') as Y.Array<Y.Map<unknown>>;
+
+            // Collect node data before removing
+            const ynode = currentChildren.get(index);
+            const nodeData: Record<string, unknown> = {};
+            for (const [key, value] of ynode.entries()) {
+                if (key !== 'children') nodeData[key] = value;
+            }
+
+            // Remove from current parent
+            currentChildren.delete(index, 1);
+            for (let i = 0; i < currentChildren.length; i++) {
+                currentChildren.get(i).set('position', i);
+            }
+
+            // Insert into grandparent right after current parent
+            newParentId = grandparent.get('id') as string;
+            position = parentIndex + 1;
+
+            const newYNode = new Y.Map<unknown>();
+            for (const [key, value] of Object.entries(nodeData)) {
+                newYNode.set(key, value);
+            }
+            newYNode.set('parent_id', newParentId);
+            newYNode.set('position', position);
+            newYNode.set('children', new Y.Array<Y.Map<unknown>>());
+
+            grandparentChildren.insert(position, [newYNode]);
+
+            // Reindex grandparent's children
+            for (let i = 0; i < grandparentChildren.length; i++) {
+                grandparentChildren.get(i).set('position', i);
+            }
+        });
+
+        if (newParentId) {
+            syncUpdate(id, { parent_id: newParentId, position });
+        }
+
+        focusBlockId.value = id;
+    }
+
     function deleteBlock(id: string) {
         doc.transact(() => {
             const result = findYParentAndIndex(yPage, id);
@@ -455,6 +514,7 @@ export function usePageEditor(initialPage: Node) {
         addSibling,
         deleteBlock,
         indent,
+        outdent,
         mergeWithPrevious,
         mergeWithNext,
         toggleCheck,

@@ -24,6 +24,7 @@ const {
     addSibling,
     deleteBlock,
     indent,
+    outdent,
     mergeWithPrevious,
     mergeWithNext,
     toggleCheck,
@@ -150,6 +151,7 @@ function handleFocusBlock(id: string, direction: 'up' | 'down', cursorPos: numbe
                     @add-sibling="handleAddSibling"
                     @delete="deleteBlock"
                     @indent="indent"
+                    @outdent="outdent"
                     @merge-with-previous="mergeWithPrevious"
                     @merge-with-next="mergeWithNext"
                     @focus-block="handleFocusBlock"
