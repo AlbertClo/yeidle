@@ -130,6 +130,7 @@ class NodeController extends Controller
                     'parent_id' => $parent->id,
                     'position' => $i,
                     'content' => $childData['content'] ?? '',
+                    'tiptap_content' => $childData['tiptap_content'] ?? null,
                     'url' => $childData['url'] ?? null,
                     'is_checked' => $childData['is_checked'] ?? null,
                 ]);
@@ -139,6 +140,7 @@ class NodeController extends Controller
                     'parent_id' => $parent->id,
                     'position' => $i,
                     'content' => $childData['content'] ?? '',
+                    'tiptap_content' => $childData['tiptap_content'] ?? null,
                     'url' => $childData['url'] ?? null,
                     'is_checked' => $childData['is_checked'] ?? null,
                 ]);

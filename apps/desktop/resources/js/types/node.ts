@@ -3,6 +3,7 @@ export type Node = {
     parent_id: string | null;
     position: number;
     content: string;
+    tiptap_content: Record<string, unknown> | null;
     url: string | null;
     is_checked: boolean | null;
     created_at: string;

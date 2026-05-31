@@ -8,6 +8,14 @@ import Paragraph from '@tiptap/extension-paragraph';
 import BulletList from '@tiptap/extension-bullet-list';
 import ListItem from '@tiptap/extension-list-item';
 import History from '@tiptap/extension-history';
+import Bold from '@tiptap/extension-bold';
+import Italic from '@tiptap/extension-italic';
+import Strike from '@tiptap/extension-strike';
+import Code from '@tiptap/extension-code';
+import CodeBlock from '@tiptap/extension-code-block';
+import Heading from '@tiptap/extension-heading';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import Blockquote from '@tiptap/extension-blockquote';
 import { Plugin } from '@tiptap/pm/state';
 import type { Node } from '@/types/node';
 
@@ -27,6 +35,7 @@ const CustomDocument = Document.extend({
 
 // Extend ListItem to carry our block ID, with auto-assignment via appendTransaction
 const CustomListItem = ListItem.extend({
+    content: 'block+',
     addAttributes() {
         return {
             blockId: {
@@ -175,14 +184,15 @@ function nodesToTiptap(nodes: Node[]): Record<string, unknown> {
 }
 
 function nodeToListItem(node: Node): Record<string, unknown> {
-    const content: Record<string, unknown>[] = [
-        {
-            type: 'paragraph',
-            content: node.content
-                ? [{ type: 'text', text: node.content }]
-                : undefined,
-        },
-    ];
+    // Use stored TipTap JSON if available, otherwise fall back to plain text paragraph
+    const blockContent: Record<string, unknown> = node.tiptap_content ?? {
+        type: 'paragraph',
+        content: node.content
+            ? [{ type: 'text', text: node.content }]
+            : undefined,
+    };
+
+    const content: Record<string, unknown>[] = [blockContent];
 
     if (node.children && node.children.length > 0) {
         content.push({
@@ -214,10 +224,17 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
     const attrs = (item.attrs as Record<string, unknown>) ?? {};
     const content = (item.content as Record<string, unknown>[]) ?? [];
 
-    const paragraph = content.find((c) => c.type === 'paragraph');
-    const textContent = paragraph
-        ? ((paragraph.content as { text: string }[]) ?? []).map((t) => t.text).join('')
-        : '';
+    // Extract text from the first text-containing block (paragraph, heading, codeBlock, blockquote)
+    const textBlock = content.find((c) => c.type !== 'bulletList');
+    let textContent = '';
+    if (textBlock) {
+        const extractText = (node: Record<string, unknown>): string => {
+            if (node.text) return node.text as string;
+            const children = (node.content as Record<string, unknown>[]) ?? [];
+            return children.map(extractText).join('');
+        };
+        textContent = extractText(textBlock);
+    }
 
     const nestedList = content.find((c) => c.type === 'bulletList');
     const blockId = attrs.blockId as string;
@@ -228,6 +245,7 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
         parent_id: parentId,
         position,
         content: textContent,
+        tiptap_content: textBlock ?? null,
         url: null,
         is_checked: null,
         created_at: '',
@@ -250,6 +268,14 @@ const editor = useEditor({
         CustomListItem,
         AlwaysSplitListItem,
         History,
+        Bold,
+        Italic,
+        Strike,
+        Code,
+        CodeBlock,
+        Heading.configure({ levels: [1, 2, 3] }),
+        HorizontalRule,
+        Blockquote,
     ],
     editorProps: {
         attributes: {
@@ -315,5 +341,58 @@ onBeforeUnmount(() => {
 
 .ProseMirror:focus {
     outline: none;
+}
+
+.ProseMirror h1 {
+    font-size: 1.5em;
+    font-weight: 700;
+    margin: 0.5em 0 0.25em;
+}
+
+.ProseMirror h2 {
+    font-size: 1.25em;
+    font-weight: 600;
+    margin: 0.5em 0 0.25em;
+}
+
+.ProseMirror h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 0.5em 0 0.25em;
+}
+
+.ProseMirror hr {
+    border: none;
+    border-top: 1px solid rgba(128, 128, 128, 0.3);
+    margin: 0.75em 0;
+}
+
+.ProseMirror blockquote {
+    border-left: 3px solid rgba(128, 128, 128, 0.3);
+    padding-left: 0.75em;
+    color: rgba(128, 128, 128, 0.8);
+}
+
+.ProseMirror code {
+    background: rgba(128, 128, 128, 0.15);
+    border-radius: 3px;
+    padding: 0.15em 0.3em;
+    font-size: 0.9em;
+    font-family: monospace;
+}
+
+.ProseMirror pre {
+    background: rgba(128, 128, 128, 0.1);
+    border-radius: 6px;
+    padding: 0.75em 1em;
+    margin: 0.5em 0;
+    overflow-x: auto;
+}
+
+.ProseMirror pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.85em;
 }
 </style>

@@ -17,6 +17,7 @@ class Node extends Model
         'parent_id',
         'position',
         'content',
+        'tiptap_content',
         'url',
         'is_checked',
     ];
@@ -26,6 +27,7 @@ class Node extends Model
         return [
             'is_checked' => 'boolean',
             'position' => 'integer',
+            'tiptap_content' => 'array',
         ];
     }
 
