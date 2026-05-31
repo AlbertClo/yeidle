@@ -66,6 +66,7 @@ function syncUpdate(id: string, data: Record<string, unknown>) {
 }
 
 let titleSyncTimer: ReturnType<typeof setTimeout> | null = null;
+const titleError = ref(false);
 
 function syncTitleDebounced() {
     if (titleSyncTimer) clearTimeout(titleSyncTimer);
@@ -76,9 +77,12 @@ function syncTitleDebounced() {
             body: JSON.stringify({ content: titleContent.value }),
         }).then((res) => {
             if (res.status === 409) {
+                titleError.value = true;
                 res.json().then((data) => {
                     toast.error(data.message);
                 });
+            } else {
+                titleError.value = false;
             }
         });
         titleSyncTimer = null;
@@ -169,6 +173,7 @@ onBeforeUnmount(() => {
                     ref="titleRef"
                     v-model="titleContent"
                     class="bg-transparent w-full border-none text-3xl font-bold outline-none"
+                    :class="{ 'text-red-500': titleError }"
                     @blur="finishEditingTitle"
                     @input="syncTitleDebounced"
                     @keydown="handleTitleKeydown"
@@ -176,6 +181,7 @@ onBeforeUnmount(() => {
                 <h1
                     v-else
                     class="cursor-text text-3xl font-bold"
+                    :class="{ 'text-red-500': titleError }"
                     @click="startEditingTitle"
                 >
                     {{ titleContent || '[untitled]' }}

@@ -23,5 +23,5 @@ const isOpen = usePage().props.sidebarOpen;
     <SidebarProvider v-else :default-open="isOpen">
         <slot />
     </SidebarProvider>
-    <Toaster position="top-center" />
+    <Toaster position="top-center" :rich-colors="true" />
 </template>
