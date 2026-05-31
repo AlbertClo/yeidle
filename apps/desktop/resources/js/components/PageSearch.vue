@@ -153,7 +153,7 @@ onBeforeUnmount(() => {
         @click="isOpen = true"
     >
         <Search class="h-4 w-4" />
-        <span>Search pages...</span>
+        <span>Find or Create Page</span>
         <kbd class="bg-muted text-muted-foreground ml-auto rounded px-1.5 py-0.5 text-xs">Alt+E</kbd>
     </button>
 
@@ -162,7 +162,7 @@ onBeforeUnmount(() => {
         title="Search Pages"
         description="Search for pages and blocks"
     >
-        <CommandInput placeholder="Search pages..." @search="doSearch" />
+        <CommandInput placeholder="Find or Create Page" @search="doSearch" />
         <CommandList>
             <CommandGroup v-if="searchQuery.length > 0 && !exactPageMatch">
                 <CommandItem
