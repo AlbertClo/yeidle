@@ -125,6 +125,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
     document.addEventListener('keydown', handleGlobalKeydown);
+    startEditingTitle();
 });
 
 onBeforeUnmount(() => {
