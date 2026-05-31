@@ -55,6 +55,20 @@ class NodeController extends Controller
 
         $validated['content'] = $validated['content'] ?? '';
 
+        // Check for duplicate page title when renaming a top-level page
+        if ($node->isPage() && isset($validated['content']) && $validated['content'] !== '') {
+            $existing = Node::pages()
+                ->where('id', '!=', $node->id)
+                ->whereRaw('LOWER(content) = ?', [strtolower($validated['content'])])
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'message' => 'A page with this name already exists.',
+                ], 409);
+            }
+        }
+
         $node->update($validated);
         $this->linkParser->syncLinks($node);
 

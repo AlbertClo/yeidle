@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { toast } from 'vue-sonner';
 import PageEditor from '@/components/PageEditor.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
@@ -69,7 +70,17 @@ let titleSyncTimer: ReturnType<typeof setTimeout> | null = null;
 function syncTitleDebounced() {
     if (titleSyncTimer) clearTimeout(titleSyncTimer);
     titleSyncTimer = setTimeout(() => {
-        syncUpdate(props.page.id, { content: titleContent.value });
+        fetch(`/api/nodes/${props.page.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ content: titleContent.value }),
+        }).then((res) => {
+            if (res.status === 409) {
+                res.json().then((data) => {
+                    toast.error(data.message);
+                });
+            }
+        });
         titleSyncTimer = null;
     }, 300);
 }
@@ -133,7 +144,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('keydown', handleGlobalKeydown);
-    startEditingTitle();
+    // Focus the editor's first node
+    nextTick(() => {
+        const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
+        editorEl?.focus();
+    });
 });
 
 onBeforeUnmount(() => {
