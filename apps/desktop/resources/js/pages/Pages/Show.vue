@@ -27,7 +27,6 @@ let hasPendingSync = false;
 
 function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
-    titleContent.value = props.page.content;
     setTimeout(() => {
         if (titleRef.value) {
             titleRef.value.focus();
@@ -65,13 +64,23 @@ function syncUpdate(id: string, data: Record<string, unknown>) {
     });
 }
 
+let titleSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+function syncTitleDebounced() {
+    if (titleSyncTimer) clearTimeout(titleSyncTimer);
+    titleSyncTimer = setTimeout(() => {
+        syncUpdate(props.page.id, { content: titleContent.value });
+        titleSyncTimer = null;
+    }, 300);
+}
+
 function doSync(nodes: Node[]) {
     hasPendingSync = false;
     fetch(`/api/nodes/${props.page.id}/sync`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
-            content: titleContent.value || props.page.content,
+            content: titleContent.value,
             children: nodes,
         }),
     });
@@ -87,6 +96,11 @@ function syncFullTree(nodes: Node[]) {
 }
 
 function flushSync() {
+    if (titleSyncTimer) {
+        clearTimeout(titleSyncTimer);
+        titleSyncTimer = null;
+        syncUpdate(props.page.id, { content: titleContent.value });
+    }
     if (syncTimer) {
         clearTimeout(syncTimer);
         syncTimer = null;
@@ -127,6 +141,7 @@ onBeforeUnmount(() => {
                     v-model="titleContent"
                     class="bg-transparent w-full border-none text-3xl font-bold outline-none"
                     @blur="finishEditingTitle"
+                    @input="syncTitleDebounced"
                     @keydown="handleTitleKeydown"
                 />
                 <h1
@@ -134,7 +149,7 @@ onBeforeUnmount(() => {
                     class="cursor-text text-3xl font-bold"
                     @click="startEditingTitle"
                 >
-                    {{ page.content || '[untitled]' }}
+                    {{ titleContent || '[untitled]' }}
                 </h1>
 
                 <p
