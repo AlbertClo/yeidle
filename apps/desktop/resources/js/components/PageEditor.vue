@@ -99,6 +99,7 @@ const AlwaysSplitListItem = Extension.create({
             },
             Backspace: ({ editor }) => {
                 if (isInCodeBlock(editor)) return false;
+                if (!editor.state.selection.empty) return false;
                 const { $head } = editor.state.selection;
                 if ($head.parentOffset === 0) {
                     for (let d = $head.depth; d >= 0; d--) {
@@ -123,6 +124,7 @@ const AlwaysSplitListItem = Extension.create({
             },
             Delete: ({ editor }) => {
                 if (isInCodeBlock(editor)) return false;
+                if (!editor.state.selection.empty) return false;
                 const { $head } = editor.state.selection;
                 if ($head.parentOffset === $head.parent.content.size) {
                     for (let d = $head.depth; d >= 0; d--) {
