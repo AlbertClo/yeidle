@@ -168,6 +168,7 @@ onBeforeUnmount(() => {
                 <PageEditor
                     :nodes="page.children ?? []"
                     @update="handleNodesUpdate"
+                    @focus-title="startEditingTitle()"
                 />
             </div>
 

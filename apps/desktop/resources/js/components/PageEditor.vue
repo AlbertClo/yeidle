@@ -16,6 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     update: [nodes: Node[]];
+    focusTitle: [];
 }>();
 
 // Custom document schema: doc must contain a bulletList
@@ -160,6 +161,29 @@ const editor = useEditor({
     editorProps: {
         attributes: {
             class: 'outline-none',
+        },
+        handleKeyDown: (view, event) => {
+            if (event.key === 'ArrowUp') {
+                const { $head } = view.state.selection;
+                // Check if cursor is in the first list item at the start of text
+                if ($head.parentOffset === 0) {
+                    // Walk up to find the listItem and check if it's the first one
+                    for (let d = $head.depth; d >= 0; d--) {
+                        if ($head.node(d).type.name === 'listItem') {
+                            // Is this the first child of its parent?
+                            if ($head.index(d - 1) === 0) {
+                                // Is the parent the top-level bulletList (not nested)?
+                                if (d === 2) {
+                                    emit('focusTitle');
+                                    return true;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            return false;
         },
     },
     onUpdate: ({ editor }) => {
