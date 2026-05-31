@@ -82,6 +82,23 @@ function flattenYBlocks(yroot: Y.Map<unknown>): Y.Map<unknown>[] {
     return result;
 }
 
+function cloneYMap(source: Y.Map<unknown>): Y.Map<unknown> {
+    const clone = new Y.Map<unknown>();
+    for (const [key, value] of source.entries()) {
+        if (key === 'children') {
+            const sourceChildren = value as Y.Array<Y.Map<unknown>>;
+            const clonedChildren = new Y.Array<Y.Map<unknown>>();
+            for (let i = 0; i < sourceChildren.length; i++) {
+                clonedChildren.push([cloneYMap(sourceChildren.get(i))]);
+            }
+            clone.set('children', clonedChildren);
+        } else {
+            clone.set(key, value);
+        }
+    }
+    return clone;
+}
+
 // --- Sync layer ---
 
 function syncCreate(id: string, parentId: string, content: string, position: number) {
@@ -107,6 +124,16 @@ function syncDelete(id: string) {
     });
 }
 
+// Sync entire page tree to backend (used after undo/redo)
+function syncFullPage(yPage: Y.Map<unknown>) {
+    const node = yMapToNode(yPage);
+    fetch(`/api/nodes/${node.id}/sync`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(node),
+    });
+}
+
 // --- Composable ---
 
 export function usePageEditor(initialPage: Node) {
@@ -125,6 +152,42 @@ export function usePageEditor(initialPage: Node) {
     const page = ref<Node>(yMapToNode(yPage));
     const focusBlockId = ref<string | null>(null);
     const focusCursorPos = ref<number | null>(null);
+
+    // Track cursor *before* each change for undo restoration
+    let cursorBeforeChange: { blockId: string | null; pos: number | null } = { blockId: null, pos: null };
+    let cursorAtChange: { blockId: string | null; pos: number | null } = { blockId: null, pos: null };
+
+    function trackCursor(blockId: string | null, pos: number | null) {
+        cursorBeforeChange = { ...cursorAtChange };
+        cursorAtChange = { blockId, pos };
+    }
+
+    // Save cursor state when an undo stack item is created
+    // The "before" cursor goes on the undo item, the "at" cursor goes for redo
+    undoManager.on('stack-item-added', (event: { stackItem: { meta: Map<string, unknown> }; type: string }) => {
+        if (event.type === 'undo') {
+            event.stackItem.meta.set('cursorBefore', { ...cursorBeforeChange });
+            event.stackItem.meta.set('cursorAfter', { ...cursorAtChange });
+        } else {
+            event.stackItem.meta.set('cursorBefore', { ...cursorAtChange });
+            event.stackItem.meta.set('cursorAfter', { ...cursorBeforeChange });
+        }
+    });
+
+    // Restore cursor when undo/redo is performed
+    undoManager.on('stack-item-popped', (event: { stackItem: { meta: Map<string, unknown> }; type: string }) => {
+        const cursor = event.stackItem.meta.get('cursorBefore') as { blockId: string | null; pos: number | null } | undefined;
+        if (cursor?.blockId) {
+            // Verify the block still exists after undo/redo
+            const exists = findYNode(yPage, cursor.blockId);
+            if (exists) {
+                focusBlockId.value = cursor.blockId;
+                focusCursorPos.value = cursor.pos;
+            }
+        }
+        // Re-sync to backend after undo/redo
+        syncFullPage(yPage);
+    });
 
     // Content sync debounce timers
     const contentTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -190,7 +253,8 @@ export function usePageEditor(initialPage: Node) {
 
     // --- Operations (all mutate Y.Doc, sync is separate) ---
 
-    function updateContent(id: string, content: string) {
+    function updateContent(id: string, content: string, cursorPos?: number) {
+        trackCursor(id, cursorPos ?? content.length);
         doc.transact(() => {
             const ynode = findYNode(yPage, id);
             if (ynode) ynode.set('content', content);
@@ -226,6 +290,7 @@ export function usePageEditor(initialPage: Node) {
 
             ychildren.push([ynode]);
         });
+        trackCursor(id, 0);
         syncCreate(id, parentId, '', position);
         return id;
     }
@@ -261,12 +326,14 @@ export function usePageEditor(initialPage: Node) {
             }
         });
 
+        trackCursor(id, 0);
         if (parentId) syncCreate(id, parentId, '', position);
         return id;
     }
 
     function indent(id: string) {
         undoManager.stopCapturing();
+        trackCursor(id, null);
         let newParentId = '';
         let position = 0;
 
@@ -274,74 +341,51 @@ export function usePageEditor(initialPage: Node) {
             const result = findYParentAndIndex(yPage, id);
             if (!result) return;
             const { parent, index } = result;
-            // Can't indent if it's the first child — no sibling above to become parent
             if (index === 0) return;
 
             const ychildren = parent.get('children') as Y.Array<Y.Map<unknown>>;
             const newParent = ychildren.get(index - 1);
             const newParentChildren = newParent.get('children') as Y.Array<Y.Map<unknown>>;
 
-            // Remove from current parent
+            // Clone the node (preserving children)
             const ynode = ychildren.get(index);
-            // Clone the data since we need to delete then re-insert
-            const nodeData: Record<string, unknown> = {};
-            for (const [key, value] of ynode.entries()) {
-                if (key !== 'children') nodeData[key] = value;
-            }
+            const cloned = cloneYMap(ynode);
 
-            // Collect existing children from the node being moved
-            const existingChildren = ynode.get('children') as Y.Array<Y.Map<unknown>>;
-            const childMaps: Y.Map<unknown>[] = [];
-            for (let i = 0; i < existingChildren.length; i++) {
-                childMaps.push(existingChildren.get(i));
-            }
-
+            // Remove from current parent
             ychildren.delete(index, 1);
-
-            // Reindex old parent's children
             for (let i = 0; i < ychildren.length; i++) {
                 ychildren.get(i).set('position', i);
             }
 
-            // Create new Y.Map for the moved node
-            const newYNode = new Y.Map<unknown>();
-            for (const [key, value] of Object.entries(nodeData)) {
-                newYNode.set(key, value);
-            }
+            // Update parent reference and position
             newParentId = newParent.get('id') as string;
             position = newParentChildren.length;
-            newYNode.set('parent_id', newParentId);
-            newYNode.set('position', position);
-
-            // Re-create children array
-            const newChildrenArr = new Y.Array<Y.Map<unknown>>();
-            newYNode.set('children', newChildrenArr);
+            cloned.set('parent_id', newParentId);
+            cloned.set('position', position);
 
             // Add to new parent
-            newParentChildren.push([newYNode]);
+            newParentChildren.push([cloned]);
         });
 
         if (newParentId) {
             syncUpdate(id, { parent_id: newParentId, position });
         }
 
-        // Keep focus on the same block
         focusBlockId.value = id;
     }
 
     function outdent(id: string) {
         undoManager.stopCapturing();
+        trackCursor(id, null);
         let newParentId = '';
         let position = 0;
 
         doc.transact(() => {
-            // Find current parent
             const result = findYParentAndIndex(yPage, id);
             if (!result) return;
             const { parent: currentParent, index } = result;
             const currentParentId = currentParent.get('id') as string;
 
-            // Can't outdent if already at root level
             const grandparentResult = findYParentAndIndex(yPage, currentParentId);
             if (!grandparentResult) return;
             const { parent: grandparent, index: parentIndex } = grandparentResult;
@@ -349,12 +393,9 @@ export function usePageEditor(initialPage: Node) {
             const currentChildren = currentParent.get('children') as Y.Array<Y.Map<unknown>>;
             const grandparentChildren = grandparent.get('children') as Y.Array<Y.Map<unknown>>;
 
-            // Collect node data before removing
+            // Clone the node (preserving children)
             const ynode = currentChildren.get(index);
-            const nodeData: Record<string, unknown> = {};
-            for (const [key, value] of ynode.entries()) {
-                if (key !== 'children') nodeData[key] = value;
-            }
+            const cloned = cloneYMap(ynode);
 
             // Remove from current parent
             currentChildren.delete(index, 1);
@@ -365,18 +406,10 @@ export function usePageEditor(initialPage: Node) {
             // Insert into grandparent right after current parent
             newParentId = grandparent.get('id') as string;
             position = parentIndex + 1;
+            cloned.set('parent_id', newParentId);
+            cloned.set('position', position);
 
-            const newYNode = new Y.Map<unknown>();
-            for (const [key, value] of Object.entries(nodeData)) {
-                newYNode.set(key, value);
-            }
-            newYNode.set('parent_id', newParentId);
-            newYNode.set('position', position);
-            newYNode.set('children', new Y.Array<Y.Map<unknown>>());
-
-            grandparentChildren.insert(position, [newYNode]);
-
-            // Reindex grandparent's children
+            grandparentChildren.insert(position, [cloned]);
             for (let i = 0; i < grandparentChildren.length; i++) {
                 grandparentChildren.get(i).set('position', i);
             }
@@ -391,13 +424,13 @@ export function usePageEditor(initialPage: Node) {
 
     function deleteBlock(id: string) {
         undoManager.stopCapturing();
+        trackCursor(id, 0);
         doc.transact(() => {
             const result = findYParentAndIndex(yPage, id);
             if (!result) return;
             const { parent, index } = result;
             const ychildren = parent.get('children') as Y.Array<Y.Map<unknown>>;
             ychildren.delete(index, 1);
-            // Reindex
             for (let i = 0; i < ychildren.length; i++) {
                 ychildren.get(i).set('position', i);
             }
@@ -417,7 +450,8 @@ export function usePageEditor(initialPage: Node) {
         const cursorPos = prevContent.length;
         const mergedContent = prevContent + currentContent;
 
-        // Flush pending content save for previous block
+        trackCursor(prevId, cursorPos);
+
         const timer = contentTimers.get(prevId);
         if (timer) {
             clearTimeout(timer);
@@ -456,7 +490,8 @@ export function usePageEditor(initialPage: Node) {
         const nextContent = nextYBlock.get('content') as string;
         const mergedContent = currentContent + nextContent;
 
-        // Flush pending content save
+        trackCursor(id, cursorPos);
+
         const timer = contentTimers.get(id);
         if (timer) {
             clearTimeout(timer);

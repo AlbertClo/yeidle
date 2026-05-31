@@ -11,7 +11,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    update: [id: string, content: string];
+    update: [id: string, content: string, cursorPos?: number];
     addChild: [parentId: string];
     addSibling: [afterId: string];
     delete: [id: string];
@@ -208,7 +208,7 @@ watch(() => props.node.content, (newVal) => {
                     rows="1"
                     style="height: 1.625em; overflow: hidden"
                     @blur="handleBlur"
-                    @input="emit('update', props.node.id, editContent)"
+                    @input="emit('update', props.node.id, editContent, inputRef?.selectionStart ?? undefined)"
                     @keydown="handleKeydown"
                 />
                 <div
@@ -229,7 +229,7 @@ watch(() => props.node.content, (newVal) => {
                 :depth="depth + 1"
                 :focus-block-id="focusBlockId"
                 :focus-cursor-pos="focusCursorPos"
-                @update="(id, content) => $emit('update', id, content)"
+                @update="(id, content, pos) => $emit('update', id, content, pos)"
                 @add-child="(parentId) => $emit('addChild', parentId)"
                 @add-sibling="(afterId) => $emit('addSibling', afterId)"
                 @delete="(id) => $emit('delete', id)"
