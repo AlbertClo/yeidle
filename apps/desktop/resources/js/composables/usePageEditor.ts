@@ -118,6 +118,9 @@ export function usePageEditor(initialPage: Node) {
         populateYMap(yPage, initialPage);
     });
 
+    // Undo manager — tracks all changes after initialization
+    const undoManager = new Y.UndoManager(yPage, { captureTimeout: 200 });
+
     // Reactive Vue state derived from Y.Doc
     const page = ref<Node>(yMapToNode(yPage));
     const focusBlockId = ref<string | null>(null);
@@ -502,6 +505,14 @@ export function usePageEditor(initialPage: Node) {
         focusCursorPos.value = Math.min(cursorPos, target.content.length);
     }
 
+    function undo() {
+        undoManager.undo();
+    }
+
+    function redo() {
+        undoManager.redo();
+    }
+
     function clearFocus() {
         focusBlockId.value = null;
         focusCursorPos.value = null;
@@ -524,5 +535,7 @@ export function usePageEditor(initialPage: Node) {
         toggleCheck,
         focusBlock,
         clearFocus,
+        undo,
+        redo,
     };
 }

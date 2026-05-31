@@ -29,6 +29,8 @@ const {
     toggleCheck,
     focusBlock,
     clearFocus,
+    undo,
+    redo,
 } = usePageEditor(props.page);
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -107,15 +109,19 @@ function handleFocusBlock(id: string, direction: 'up' | 'down', cursorPos: numbe
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !isEditingTitle.value && !focusBlockId.value) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+    }
+    if (((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) || ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
+        e.preventDefault();
+        redo();
+    }
+    if (e.key === 'Enter' && !isEditingTitle.value) {
         const target = e.target as HTMLElement;
         if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') return;
         e.preventDefault();
-        const blocks = flattenBlocks(page.value);
-        if (blocks.length > 0) {
-            focusBlockId.value = blocks[0].id;
-            focusCursorPos.value = 0;
-        }
+        focusOrCreateFirstBlock();
     }
 }
 
