@@ -22,9 +22,11 @@ class PageWebController extends Controller
     public function show(Node $node): Response
     {
         $node->load(['children' => function ($query) {
-            $query->orderBy('position')
-                ->with('children');
+            $query->orderBy('position');
         }]);
+
+        // Recursively load all nested children
+        $this->loadChildrenRecursive($node);
 
         $backlinks = $node->incomingLinks()
             ->with('sourceNode')
@@ -34,5 +36,15 @@ class PageWebController extends Controller
             'page' => $node,
             'backlinks' => $backlinks,
         ]);
+    }
+
+    private function loadChildrenRecursive(Node $node): void
+    {
+        foreach ($node->children as $child) {
+            $child->load(['children' => function ($query) {
+                $query->orderBy('position');
+            }]);
+            $this->loadChildrenRecursive($child);
+        }
     }
 }

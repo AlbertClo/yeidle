@@ -19,11 +19,21 @@ class PageController extends Controller
     public function show(Node $node): JsonResponse
     {
         $node->load(['children' => function ($query) {
-            $query->orderBy('position')
-                ->with('children');
+            $query->orderBy('position');
         }]);
+        $this->loadChildrenRecursive($node);
 
         return response()->json($node);
+    }
+
+    private function loadChildrenRecursive(Node $node): void
+    {
+        foreach ($node->children as $child) {
+            $child->load(['children' => function ($query) {
+                $query->orderBy('position');
+            }]);
+            $this->loadChildrenRecursive($child);
+        }
     }
 
     public function backlinks(Node $node): JsonResponse

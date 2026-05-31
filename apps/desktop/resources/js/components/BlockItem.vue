@@ -208,6 +208,7 @@ watch(() => props.node.content, (newVal) => {
                     rows="1"
                     style="height: 1.625em; overflow: hidden"
                     @blur="handleBlur"
+                    @input="emit('update', props.node.id, editContent)"
                     @keydown="handleKeydown"
                 />
                 <div

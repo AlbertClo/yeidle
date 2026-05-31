@@ -4,10 +4,7 @@ import { router } from '@inertiajs/vue3';
 import type { Node } from '@/types/node';
 
 function generateId(): string {
-    const now = Date.now();
-    const hex = now.toString(16).padStart(12, '0');
-    const rand = () => Math.random().toString(16).slice(2, 6);
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7${rand().slice(0, 3)}-${rand()}-${rand()}${rand()}${rand()}`.slice(0, 36);
+    return crypto.randomUUID();
 }
 
 // --- Y.Doc <-> Node conversion ---
@@ -146,7 +143,7 @@ export function usePageEditor(initialPage: Node) {
             setTimeout(() => {
                 syncUpdate(id, { content });
                 contentTimers.delete(id);
-            }, 500),
+            }, 100),
         );
     }
 
@@ -165,8 +162,15 @@ export function usePageEditor(initialPage: Node) {
         flushPendingSyncs();
     });
 
+    function handleBeforeUnload() {
+        flushPendingSyncs();
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     onBeforeUnmount(() => {
         flushPendingSyncs();
+        window.removeEventListener('beforeunload', handleBeforeUnload);
         doc.destroy();
     });
 
