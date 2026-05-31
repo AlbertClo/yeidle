@@ -118,13 +118,27 @@ function handleBeforeUnload() {
     flushSync();
 }
 
+function handleGlobalKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !isEditingTitle.value) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') return;
+        // Don't intercept if the editor already has focus
+        if (target.closest('.ProseMirror')) return;
+        e.preventDefault();
+        const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
+        editorEl?.focus();
+    }
+}
+
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('keydown', handleGlobalKeydown);
     startEditingTitle();
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleBeforeUnload);
+    document.removeEventListener('keydown', handleGlobalKeydown);
     flushSync();
 });
 </script>
