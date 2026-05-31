@@ -1,98 +1,142 @@
+import * as Y from 'yjs';
 import { ref, onBeforeUnmount } from 'vue';
 import { router } from '@inertiajs/vue3';
 import type { Node } from '@/types/node';
 
 function generateId(): string {
-    // UUIDv7-like: timestamp-based for ordering, random suffix
     const now = Date.now();
     const hex = now.toString(16).padStart(12, '0');
     const rand = () => Math.random().toString(16).slice(2, 6);
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7${rand().slice(0, 3)}-${rand()}-${rand()}${rand()}${rand()}`.slice(0, 36);
 }
 
-function deepClone<T>(obj: T): T {
-    return JSON.parse(JSON.stringify(obj));
+// --- Y.Doc <-> Node conversion ---
+
+function populateYMap(ymap: Y.Map<unknown>, node: Node) {
+    ymap.set('id', node.id);
+    ymap.set('content', node.content);
+    ymap.set('url', node.url);
+    ymap.set('is_checked', node.is_checked);
+    ymap.set('parent_id', node.parent_id);
+    ymap.set('position', node.position);
+
+    const ychildren = new Y.Array<Y.Map<unknown>>();
+    for (const child of node.children ?? []) {
+        const ychild = new Y.Map<unknown>();
+        populateYMap(ychild, child);
+        ychildren.push([ychild]);
+    }
+    ymap.set('children', ychildren);
 }
 
+function yMapToNode(ymap: Y.Map<unknown>): Node {
+    const ychildren = ymap.get('children') as Y.Array<Y.Map<unknown>> | undefined;
+    return {
+        id: ymap.get('id') as string,
+        content: ymap.get('content') as string,
+        url: ymap.get('url') as string | null,
+        is_checked: ymap.get('is_checked') as boolean | null,
+        parent_id: ymap.get('parent_id') as string | null,
+        position: ymap.get('position') as number,
+        created_at: '',
+        updated_at: '',
+        children: ychildren ? ychildren.toArray().map(yMapToNode) : [],
+    };
+}
+
+// --- Y.Doc tree traversal ---
+
+function findYNode(yroot: Y.Map<unknown>, id: string): Y.Map<unknown> | null {
+    if (yroot.get('id') === id) return yroot;
+    const ychildren = yroot.get('children') as Y.Array<Y.Map<unknown>> | undefined;
+    if (!ychildren) return null;
+    for (let i = 0; i < ychildren.length; i++) {
+        const found = findYNode(ychildren.get(i), id);
+        if (found) return found;
+    }
+    return null;
+}
+
+function findYParentAndIndex(
+    yroot: Y.Map<unknown>,
+    id: string,
+): { parent: Y.Map<unknown>; index: number } | null {
+    const ychildren = yroot.get('children') as Y.Array<Y.Map<unknown>> | undefined;
+    if (!ychildren) return null;
+    for (let i = 0; i < ychildren.length; i++) {
+        if (ychildren.get(i).get('id') === id) {
+            return { parent: yroot, index: i };
+        }
+        const found = findYParentAndIndex(ychildren.get(i), id);
+        if (found) return found;
+    }
+    return null;
+}
+
+function flattenYBlocks(yroot: Y.Map<unknown>): Y.Map<unknown>[] {
+    const result: Y.Map<unknown>[] = [];
+    const ychildren = yroot.get('children') as Y.Array<Y.Map<unknown>> | undefined;
+    if (!ychildren) return result;
+    for (let i = 0; i < ychildren.length; i++) {
+        const child = ychildren.get(i);
+        result.push(child);
+        result.push(...flattenYBlocks(child));
+    }
+    return result;
+}
+
+// --- Sync layer ---
+
+function syncCreate(id: string, parentId: string, content: string, position: number) {
+    fetch('/api/nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ id, parent_id: parentId, content, position }),
+    });
+}
+
+function syncUpdate(id: string, data: Record<string, unknown>) {
+    fetch(`/api/nodes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(data),
+    });
+}
+
+function syncDelete(id: string) {
+    fetch(`/api/nodes/${id}`, {
+        method: 'DELETE',
+        headers: { Accept: 'application/json' },
+    });
+}
+
+// --- Composable ---
+
 export function usePageEditor(initialPage: Node) {
-    const page = ref<Node>(deepClone(initialPage));
+    const doc = new Y.Doc();
+    const yPage = doc.getMap('page');
+
+    // Initialize Y.Doc from server data
+    doc.transact(() => {
+        populateYMap(yPage, initialPage);
+    });
+
+    // Reactive Vue state derived from Y.Doc
+    const page = ref<Node>(yMapToNode(yPage));
     const focusBlockId = ref<string | null>(null);
     const focusCursorPos = ref<number | null>(null);
 
-    // Debounce timers per block for content saves
+    // Content sync debounce timers
     const contentTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-    // --- Tree helpers ---
-
-    function flattenBlocks(node: Node): Node[] {
-        const result: Node[] = [];
-        for (const child of node.children ?? []) {
-            result.push(child);
-            result.push(...flattenBlocks(child));
-        }
-        return result;
+    function refreshPage() {
+        page.value = yMapToNode(yPage);
     }
 
-    function findNode(root: Node, id: string): Node | null {
-        if (root.id === id) return root;
-        for (const child of root.children ?? []) {
-            const found = findNode(child, id);
-            if (found) return found;
-        }
-        return null;
-    }
-
-    function findParent(root: Node, id: string): Node | null {
-        for (const child of root.children ?? []) {
-            if (child.id === id) return root;
-            const found = findParent(child, id);
-            if (found) return found;
-        }
-        return null;
-    }
-
-    function removeNode(root: Node, id: string): Node | null {
-        const parent = findParent(root, id);
-        if (!parent?.children) return null;
-        const idx = parent.children.findIndex((c) => c.id === id);
-        if (idx === -1) return null;
-        const [removed] = parent.children.splice(idx, 1);
-        // Reindex positions
-        parent.children.forEach((c, i) => (c.position = i));
-        return removed;
-    }
-
-    // --- Sync layer ---
-
-    function syncCreate(node: Node, parentId: string) {
-        fetch('/api/nodes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({
-                id: node.id,
-                parent_id: parentId,
-                content: node.content,
-                position: node.position,
-                url: node.url,
-                is_checked: node.is_checked,
-            }),
-        });
-    }
-
-    function syncUpdate(id: string, data: Partial<Node>) {
-        fetch(`/api/nodes/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify(data),
-        });
-    }
-
-    function syncDelete(id: string) {
-        fetch(`/api/nodes/${id}`, {
-            method: 'DELETE',
-            headers: { Accept: 'application/json' },
-        });
-    }
+    // Observe all Y.Doc changes and update Vue state
+    yPage.observeDeep(() => {
+        refreshPage();
+    });
 
     function syncContentDebounced(id: string, content: string) {
         const existing = contentTimers.get(id);
@@ -109,147 +153,268 @@ export function usePageEditor(initialPage: Node) {
     function flushPendingSyncs() {
         for (const [id, timer] of contentTimers) {
             clearTimeout(timer);
-            const node = findNode(page.value, id);
-            if (node) {
-                syncUpdate(id, { content: node.content });
+            const ynode = findYNode(yPage, id);
+            if (ynode) {
+                syncUpdate(id, { content: ynode.get('content') as string });
             }
         }
         contentTimers.clear();
     }
 
-    // Flush on navigation
     router.on('before', () => {
         flushPendingSyncs();
     });
 
     onBeforeUnmount(() => {
         flushPendingSyncs();
+        doc.destroy();
     });
 
-    // --- Operations ---
+    // --- Tree helpers for Vue layer ---
+
+    function flattenBlocks(node: Node): Node[] {
+        const result: Node[] = [];
+        for (const child of node.children ?? []) {
+            result.push(child);
+            result.push(...flattenBlocks(child));
+        }
+        return result;
+    }
+
+    // --- Operations (all mutate Y.Doc, sync is separate) ---
 
     function updateContent(id: string, content: string) {
-        const node = findNode(page.value, id);
-        if (!node) return;
-        node.content = content;
+        doc.transact(() => {
+            const ynode = findYNode(yPage, id);
+            if (ynode) ynode.set('content', content);
+        });
         syncContentDebounced(id, content);
     }
 
     function updateTitle(content: string) {
-        page.value.content = content;
-        syncContentDebounced(page.value.id, content);
+        doc.transact(() => {
+            yPage.set('content', content);
+        });
+        syncContentDebounced(yPage.get('id') as string, content);
     }
 
     function addChild(parentId: string): string {
-        const parent = findNode(page.value, parentId);
-        if (!parent) return '';
-        if (!parent.children) parent.children = [];
+        const id = generateId();
+        let position = 0;
+        doc.transact(() => {
+            const yparent = findYNode(yPage, parentId);
+            if (!yparent) return;
+            const ychildren = yparent.get('children') as Y.Array<Y.Map<unknown>>;
+            position = ychildren.length;
 
-        const newNode: Node = {
-            id: generateId(),
-            parent_id: parentId,
-            position: parent.children.length,
-            content: '',
-            url: null,
-            is_checked: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            children: [],
-        };
+            const ynode = new Y.Map<unknown>();
+            ynode.set('id', id);
+            ynode.set('content', '');
+            ynode.set('url', null);
+            ynode.set('is_checked', null);
+            ynode.set('parent_id', parentId);
+            ynode.set('position', position);
+            ynode.set('children', new Y.Array<Y.Map<unknown>>());
 
-        parent.children.push(newNode);
-        syncCreate(newNode, parentId);
-        return newNode.id;
+            ychildren.push([ynode]);
+        });
+        syncCreate(id, parentId, '', position);
+        return id;
     }
 
     function addSibling(afterId: string): string {
-        const parent = findParent(page.value, afterId);
-        if (!parent?.children) return '';
+        const id = generateId();
+        let parentId = '';
+        let position = 0;
 
-        const idx = parent.children.findIndex((c) => c.id === afterId);
-        if (idx === -1) return '';
+        doc.transact(() => {
+            const result = findYParentAndIndex(yPage, afterId);
+            if (!result) return;
+            const { parent, index } = result;
+            const ychildren = parent.get('children') as Y.Array<Y.Map<unknown>>;
+            parentId = parent.get('id') as string;
+            position = index + 1;
 
-        const parentId = parent.id;
-        const newNode: Node = {
-            id: generateId(),
-            parent_id: parentId,
-            position: idx + 1,
-            content: '',
-            url: null,
-            is_checked: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            children: [],
-        };
+            const ynode = new Y.Map<unknown>();
+            ynode.set('id', id);
+            ynode.set('content', '');
+            ynode.set('url', null);
+            ynode.set('is_checked', null);
+            ynode.set('parent_id', parentId);
+            ynode.set('position', position);
+            ynode.set('children', new Y.Array<Y.Map<unknown>>());
 
-        parent.children.splice(idx + 1, 0, newNode);
-        // Reindex
-        parent.children.forEach((c, i) => (c.position = i));
-        syncCreate(newNode, parentId);
-        return newNode.id;
+            ychildren.insert(position, [ynode]);
+
+            // Reindex positions
+            for (let i = 0; i < ychildren.length; i++) {
+                ychildren.get(i).set('position', i);
+            }
+        });
+
+        if (parentId) syncCreate(id, parentId, '', position);
+        return id;
+    }
+
+    function indent(id: string) {
+        let newParentId = '';
+        let position = 0;
+
+        doc.transact(() => {
+            const result = findYParentAndIndex(yPage, id);
+            if (!result) return;
+            const { parent, index } = result;
+            // Can't indent if it's the first child — no sibling above to become parent
+            if (index === 0) return;
+
+            const ychildren = parent.get('children') as Y.Array<Y.Map<unknown>>;
+            const newParent = ychildren.get(index - 1);
+            const newParentChildren = newParent.get('children') as Y.Array<Y.Map<unknown>>;
+
+            // Remove from current parent
+            const ynode = ychildren.get(index);
+            // Clone the data since we need to delete then re-insert
+            const nodeData: Record<string, unknown> = {};
+            for (const [key, value] of ynode.entries()) {
+                if (key !== 'children') nodeData[key] = value;
+            }
+
+            // Collect existing children from the node being moved
+            const existingChildren = ynode.get('children') as Y.Array<Y.Map<unknown>>;
+            const childMaps: Y.Map<unknown>[] = [];
+            for (let i = 0; i < existingChildren.length; i++) {
+                childMaps.push(existingChildren.get(i));
+            }
+
+            ychildren.delete(index, 1);
+
+            // Reindex old parent's children
+            for (let i = 0; i < ychildren.length; i++) {
+                ychildren.get(i).set('position', i);
+            }
+
+            // Create new Y.Map for the moved node
+            const newYNode = new Y.Map<unknown>();
+            for (const [key, value] of Object.entries(nodeData)) {
+                newYNode.set(key, value);
+            }
+            newParentId = newParent.get('id') as string;
+            position = newParentChildren.length;
+            newYNode.set('parent_id', newParentId);
+            newYNode.set('position', position);
+
+            // Re-create children array
+            const newChildrenArr = new Y.Array<Y.Map<unknown>>();
+            newYNode.set('children', newChildrenArr);
+
+            // Add to new parent
+            newParentChildren.push([newYNode]);
+        });
+
+        if (newParentId) {
+            syncUpdate(id, { parent_id: newParentId, position });
+        }
+
+        // Keep focus on the same block
+        focusBlockId.value = id;
     }
 
     function deleteBlock(id: string) {
-        removeNode(page.value, id);
+        doc.transact(() => {
+            const result = findYParentAndIndex(yPage, id);
+            if (!result) return;
+            const { parent, index } = result;
+            const ychildren = parent.get('children') as Y.Array<Y.Map<unknown>>;
+            ychildren.delete(index, 1);
+            // Reindex
+            for (let i = 0; i < ychildren.length; i++) {
+                ychildren.get(i).set('position', i);
+            }
+        });
         syncDelete(id);
     }
 
     function mergeWithPrevious(id: string, currentContent: string) {
-        const blocks = flattenBlocks(page.value);
-        const idx = blocks.findIndex((n) => n.id === id);
-        if (idx === 0) return;
-        if (idx < 0) return;
+        const yblocks = flattenYBlocks(yPage);
+        const idx = yblocks.findIndex((b) => b.get('id') === id);
+        if (idx <= 0) return;
 
-        const prevBlock = blocks[idx - 1];
-        const cursorPos = prevBlock.content.length;
-        prevBlock.content += currentContent;
+        const prevYBlock = yblocks[idx - 1];
+        const prevId = prevYBlock.get('id') as string;
+        const prevContent = prevYBlock.get('content') as string;
+        const cursorPos = prevContent.length;
+        const mergedContent = prevContent + currentContent;
 
-        // Flush any pending content save for the previous block
-        const timer = contentTimers.get(prevBlock.id);
+        // Flush pending content save for previous block
+        const timer = contentTimers.get(prevId);
         if (timer) {
             clearTimeout(timer);
-            contentTimers.delete(prevBlock.id);
+            contentTimers.delete(prevId);
         }
 
-        removeNode(page.value, id);
+        doc.transact(() => {
+            prevYBlock.set('content', mergedContent);
 
-        syncUpdate(prevBlock.id, { content: prevBlock.content });
+            const result = findYParentAndIndex(yPage, id);
+            if (result) {
+                const ychildren = result.parent.get('children') as Y.Array<Y.Map<unknown>>;
+                ychildren.delete(result.index, 1);
+                for (let i = 0; i < ychildren.length; i++) {
+                    ychildren.get(i).set('position', i);
+                }
+            }
+        });
+
+        syncUpdate(prevId, { content: mergedContent });
         syncDelete(id);
 
-        focusBlockId.value = prevBlock.id;
+        focusBlockId.value = prevId;
         focusCursorPos.value = cursorPos;
     }
 
     function mergeWithNext(id: string, currentContent: string, cursorPos: number) {
-        const blocks = flattenBlocks(page.value);
-        const idx = blocks.findIndex((n) => n.id === id);
-        if (idx === -1 || idx >= blocks.length - 1) return;
+        const yblocks = flattenYBlocks(yPage);
+        const idx = yblocks.findIndex((b) => b.get('id') === id);
+        if (idx === -1 || idx >= yblocks.length - 1) return;
 
-        const currentBlock = blocks[idx];
-        const nextBlock = blocks[idx + 1];
+        const currentYBlock = yblocks[idx];
+        const nextYBlock = yblocks[idx + 1];
+        const nextId = nextYBlock.get('id') as string;
+        const nextContent = nextYBlock.get('content') as string;
+        const mergedContent = currentContent + nextContent;
 
-        currentBlock.content = currentContent + nextBlock.content;
-
-        // Flush any pending content save
+        // Flush pending content save
         const timer = contentTimers.get(id);
         if (timer) {
             clearTimeout(timer);
             contentTimers.delete(id);
         }
 
-        removeNode(page.value, nextBlock.id);
+        doc.transact(() => {
+            currentYBlock.set('content', mergedContent);
 
-        syncUpdate(id, { content: currentBlock.content });
-        syncDelete(nextBlock.id);
+            const result = findYParentAndIndex(yPage, nextId);
+            if (result) {
+                const ychildren = result.parent.get('children') as Y.Array<Y.Map<unknown>>;
+                ychildren.delete(result.index, 1);
+                for (let i = 0; i < ychildren.length; i++) {
+                    ychildren.get(i).set('position', i);
+                }
+            }
+        });
+
+        syncUpdate(id, { content: mergedContent });
+        syncDelete(nextId);
 
         focusBlockId.value = id;
         focusCursorPos.value = cursorPos;
     }
 
     function toggleCheck(id: string, checked: boolean | null) {
-        const node = findNode(page.value, id);
-        if (!node) return;
-        node.is_checked = checked;
+        doc.transact(() => {
+            const ynode = findYNode(yPage, id);
+            if (ynode) ynode.set('is_checked', checked);
+        });
         syncUpdate(id, { is_checked: checked });
     }
 
@@ -289,6 +454,7 @@ export function usePageEditor(initialPage: Node) {
         addChild,
         addSibling,
         deleteBlock,
+        indent,
         mergeWithPrevious,
         mergeWithNext,
         toggleCheck,

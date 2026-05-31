@@ -23,6 +23,7 @@ const {
     addChild,
     addSibling,
     deleteBlock,
+    indent,
     mergeWithPrevious,
     mergeWithNext,
     toggleCheck,
@@ -148,6 +149,7 @@ function handleFocusBlock(id: string, direction: 'up' | 'down', cursorPos: numbe
                     @add-child="handleAddChild"
                     @add-sibling="handleAddSibling"
                     @delete="deleteBlock"
+                    @indent="indent"
                     @merge-with-previous="mergeWithPrevious"
                     @merge-with-next="mergeWithNext"
                     @focus-block="handleFocusBlock"
@@ -160,7 +162,7 @@ function handleFocusBlock(id: string, direction: 'up' | 'down', cursorPos: numbe
                     @click="handleAddBlock"
                 >
                     <Plus class="h-3.5 w-3.5" />
-                    Add block
+                    Add blocks
                 </button>
             </div>
 

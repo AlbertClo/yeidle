@@ -15,6 +15,7 @@ const emit = defineEmits<{
     addChild: [parentId: string];
     addSibling: [afterId: string];
     delete: [id: string];
+    indent: [id: string];
     mergeWithPrevious: [id: string, remainingContent: string];
     mergeWithNext: [id: string, currentContent: string, cursorPos: number];
     toggleCheck: [id: string, checked: boolean | null];
@@ -64,8 +65,12 @@ function handleKeydown(e: KeyboardEvent) {
         isEditing.value = false;
         emit('addSibling', props.node.id);
     }
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
+        if (editContent.value !== props.node.content) {
+            emit('update', props.node.id, editContent.value);
+        }
+        emit('indent', props.node.id);
     }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         const textarea = inputRef.value;
@@ -233,6 +238,7 @@ watch(() => props.node.content, (newVal) => {
                 @add-child="(parentId) => $emit('addChild', parentId)"
                 @add-sibling="(afterId) => $emit('addSibling', afterId)"
                 @delete="(id) => $emit('delete', id)"
+                @indent="(id) => $emit('indent', id)"
                 @merge-with-previous="(id, content) => $emit('mergeWithPrevious', id, content)"
                 @merge-with-next="(id, content, pos) => $emit('mergeWithNext', id, content, pos)"
                 @focus-block="(id, dir, pos) => $emit('focusBlock', id, dir, pos)"
