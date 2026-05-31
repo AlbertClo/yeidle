@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, watch } from 'vue';
-import { ChevronRight, Plus, Square, SquareCheck } from 'lucide-vue-next';
+import { ChevronRight, Square, SquareCheck } from 'lucide-vue-next';
 import type { Node } from '@/types/node';
 
 const props = defineProps<{
@@ -201,8 +201,9 @@ watch(() => props.node.content, (newVal) => {
                     v-if="isEditing"
                     ref="inputRef"
                     v-model="editContent"
-                    class="bg-transparent w-full resize-none border-none p-0 text-sm leading-relaxed outline-none"
+                    class="bg-transparent m-0 block w-full resize-none border-none p-0 text-sm leading-relaxed outline-none"
                     rows="1"
+                    style="height: 1.625em; overflow: hidden"
                     @blur="finishEditing"
                     @keydown="handleKeydown"
                 />
@@ -214,13 +215,6 @@ watch(() => props.node.content, (newVal) => {
                     v-html="renderContent(node.content) || '&nbsp;'"
                 />
             </div>
-
-            <button
-                class="text-muted-foreground hover:text-foreground mt-0.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                @click="$emit('addChild', node.id)"
-            >
-                <Plus class="h-3.5 w-3.5" />
-            </button>
         </div>
 
         <div v-if="isExpanded && node.children && node.children.length > 0">
