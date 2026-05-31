@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { Plus } from 'lucide-vue-next';
 import BlockItem from '@/components/BlockItem.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -109,6 +109,27 @@ function handleFocusBlock(id: string, direction: 'up' | 'down', cursorPos: numbe
         startEditingTitle();
     }
 }
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !isEditingTitle.value && !focusBlockId.value) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') return;
+        e.preventDefault();
+        const blocks = flattenBlocks(page.value);
+        if (blocks.length > 0) {
+            focusBlockId.value = blocks[0].id;
+            focusCursorPos.value = 0;
+        }
+    }
+}
+
+onMounted(() => {
+    document.addEventListener('keydown', handleGlobalKeydown);
+});
+
+onBeforeUnmount(() => {
+    document.removeEventListener('keydown', handleGlobalKeydown);
+});
 </script>
 
 <template>
