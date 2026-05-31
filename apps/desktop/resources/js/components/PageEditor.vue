@@ -73,8 +73,53 @@ const AlwaysSplitListItem = Extension.create({
     name: 'alwaysSplitListItem',
     addKeyboardShortcuts() {
         return {
+            Delete: ({ editor }) => {
+                const { $head } = editor.state.selection;
+                // At the end of a list item's text content
+                if ($head.parentOffset === $head.parent.content.size) {
+                    for (let d = $head.depth; d >= 0; d--) {
+                        if ($head.node(d).type.name === 'listItem') {
+                            const parent = $head.node(d - 1);
+                            const indexInParent = $head.index(d - 1);
+                            if (indexInParent < parent.childCount - 1) {
+                                const endOfItem = $head.end(d) + 1;
+                                let tr = editor.state.tr.join(endOfItem);
+                                // After joining list items, join the paragraphs inside
+                                const $joinPos = tr.doc.resolve(endOfItem - 1);
+                                if ($joinPos.nodeBefore?.type.name === 'paragraph' && $joinPos.nodeAfter?.type.name === 'paragraph') {
+                                    tr = tr.join(endOfItem - 1);
+                                }
+                                editor.view.dispatch(tr);
+                                return true;
+                            }
+                            break;
+                        }
+                    }
+                }
+                return false;
+            },
             Enter: ({ editor }) => {
-                return editor.commands.splitListItem('listItem');
+                if (editor.commands.splitListItem('listItem')) {
+                    return true;
+                }
+                // splitListItem fails on empty nodes — manually insert a new list item after current
+                const { $head } = editor.state.selection;
+                const listItemType = editor.schema.nodes.listItem;
+                const paragraphType = editor.schema.nodes.paragraph;
+                // Find the end of the current list item
+                for (let d = $head.depth; d >= 0; d--) {
+                    if ($head.node(d).type === listItemType) {
+                        const endPos = $head.end(d) + 1;
+                        const newItem = listItemType.create(null, [paragraphType.create()]);
+                        const tr = editor.state.tr.insert(endPos, newItem);
+                        tr.setSelection(
+                            editor.state.selection.constructor.near(tr.doc.resolve(endPos + 1)),
+                        );
+                        editor.view.dispatch(tr);
+                        return true;
+                    }
+                }
+                return false;
             },
         };
     },
