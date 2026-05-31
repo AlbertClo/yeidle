@@ -126,9 +126,11 @@ function handleKeydown(e: KeyboardEvent) {
         if (!textarea) return;
         if (textarea.selectionStart === editContent.value.length && textarea.selectionEnd === editContent.value.length) {
             e.preventDefault();
-            skipBlur.value = true;
-            isEditing.value = false;
             emit('mergeWithNext', props.node.id, editContent.value, textarea.selectionStart);
+            // If no merge happened (last block), re-focus at end
+            if (!props.focusBlockId || props.focusBlockId === props.node.id) {
+                startEditing(editContent.value.length);
+            }
         }
     }
 }
