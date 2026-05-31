@@ -21,17 +21,49 @@ let lastSearch: string | null = null;
 watch(isOpen, (open) => {
     if (open) {
         lastSearch = null;
-        doSearch('');
-        fetchRecentPages();
+        Promise.all([
+            fetchRecentPages(),
+            fetchInitialResults(),
+        ]).then(() => {
+            autoHighlightFirst();
+        });
     }
 });
 
 function fetchRecentPages() {
-    fetch('/api/recent-pages', { headers: { Accept: 'application/json' } })
+    return fetch('/api/recent-pages', { headers: { Accept: 'application/json' } })
         .then((res) => res.json())
         .then((data) => {
             recentPages.value = data;
         });
+}
+
+function fetchInitialResults() {
+    lastSearch = '';
+    searchQuery.value = '';
+    return fetch('/api/pages', { headers: { Accept: 'application/json' } })
+        .then((res) => res.json())
+        .then((data) => {
+            const pageMap = new Map<string, Node>();
+            for (const node of data) {
+                if (!node.parent_id) {
+                    pageMap.set(node.id, node);
+                } else if (!pageMap.has(node.id)) {
+                    pageMap.set(node.id, node);
+                }
+            }
+            results.value = [...pageMap.values()].slice(0, 60);
+        });
+}
+
+function autoHighlightFirst() {
+    nextTick(() => {
+        const input = document.querySelector('[data-slot="command-input"]') as HTMLElement;
+        if (input) {
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+        }
+    });
 }
 
 const exactPageMatch = computed(() =>
@@ -67,14 +99,7 @@ function doSearch(val: string) {
                 return aExact - bExact;
             });
             results.value = sorted.slice(0, 60);
-            // Auto-highlight first item by simulating arrow down then up
-            nextTick(() => {
-                const input = document.querySelector('[data-slot="command-input"]') as HTMLElement;
-                if (input) {
-                    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-                    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
-                }
-            });
+            autoHighlightFirst();
         });
 }
 
