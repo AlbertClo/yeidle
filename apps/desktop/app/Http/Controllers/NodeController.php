@@ -77,9 +77,17 @@ class NodeController extends Controller
 
     public function destroy(Node $node): JsonResponse
     {
-        $node->delete();
+        $this->deleteRecursive($node);
 
         return response()->json(null, 204);
+    }
+
+    private function deleteRecursive(Node $node): void
+    {
+        foreach ($node->children as $child) {
+            $this->deleteRecursive($child);
+        }
+        $node->delete();
     }
 
     public function sync(Request $request, Node $node): JsonResponse
