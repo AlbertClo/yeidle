@@ -7,6 +7,7 @@ import type { BreadcrumbItem } from '@/types';
 withDefaults(
     defineProps<{
         breadcrumbs?: BreadcrumbItem[];
+        currentPageId?: string;
     }>(),
     {
         breadcrumbs: () => [],
@@ -24,6 +25,6 @@ withDefaults(
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
         </div>
-        <PageSearch />
+        <PageSearch :current-page-id="currentPageId" />
     </header>
 </template>

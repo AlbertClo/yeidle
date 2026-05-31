@@ -12,6 +12,10 @@ import {
 } from '@/components/ui/command';
 import type { Node } from '@/types/node';
 
+const props = defineProps<{
+    currentPageId?: string;
+}>();
+
 const isOpen = ref(false);
 const results = ref<Node[]>([]);
 const recentPages = ref<Node[]>([]);
@@ -34,7 +38,7 @@ function fetchRecentPages() {
     return fetch('/api/recent-pages', { headers: { Accept: 'application/json' } })
         .then((res) => res.json())
         .then((data) => {
-            recentPages.value = data;
+            recentPages.value = data.filter((p: Node) => p.id !== props.currentPageId);
         });
 }
 

@@ -146,7 +146,7 @@ onBeforeUnmount(() => {
 <template>
     <Head :title="page.content || '[untitled]'" />
 
-    <AppLayout :breadcrumbs="breadcrumbs">
+    <AppLayout :breadcrumbs="breadcrumbs" :current-page-id="page.id">
         <div class="mx-auto w-full max-w-2xl p-6">
             <div class="mb-6">
                 <input
