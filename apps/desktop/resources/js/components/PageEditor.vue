@@ -73,6 +73,40 @@ const AlwaysSplitListItem = Extension.create({
     name: 'alwaysSplitListItem',
     addKeyboardShortcuts() {
         return {
+            Tab: ({ editor }) => {
+                // Try to indent (sink), do nothing if it fails
+                editor.commands.sinkListItem('listItem');
+                return true;
+            },
+            'Shift-Tab': ({ editor }) => {
+                // Try to outdent (lift), do nothing if it fails
+                editor.commands.liftListItem('listItem');
+                return true;
+            },
+            Backspace: ({ editor }) => {
+                const { $head } = editor.state.selection;
+                // At the start of a list item's text content
+                if ($head.parentOffset === 0) {
+                    for (let d = $head.depth; d >= 0; d--) {
+                        if ($head.node(d).type.name === 'listItem') {
+                            const indexInParent = $head.index(d - 1);
+                            if (indexInParent > 0) {
+                                const startOfItem = $head.start(d) - 1;
+                                let tr = editor.state.tr.join(startOfItem);
+                                // After joining list items, join the paragraphs inside
+                                const $joinPos = tr.doc.resolve(startOfItem - 1);
+                                if ($joinPos.nodeBefore?.type.name === 'paragraph' && $joinPos.nodeAfter?.type.name === 'paragraph') {
+                                    tr = tr.join(startOfItem - 1);
+                                }
+                                editor.view.dispatch(tr);
+                                return true;
+                            }
+                            break;
+                        }
+                    }
+                }
+                return false;
+            },
             Delete: ({ editor }) => {
                 const { $head } = editor.state.selection;
                 // At the end of a list item's text content
