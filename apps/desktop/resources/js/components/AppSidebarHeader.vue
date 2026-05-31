@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
+import PageSearch from '@/components/PageSearch.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { BreadcrumbItem } from '@/types';
 
@@ -23,5 +24,6 @@ withDefaults(
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
         </div>
+        <PageSearch />
     </header>
 </template>
