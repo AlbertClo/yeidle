@@ -44,7 +44,10 @@ function startEditing(cursorPos?: number) {
     });
 }
 
-function finishEditing() {
+function handleBlur() {
+    // Don't exit edit mode if the window itself lost focus
+    if (!document.hasFocus()) return;
+
     if (skipBlur.value) {
         skipBlur.value = false;
         return;
@@ -204,7 +207,7 @@ watch(() => props.node.content, (newVal) => {
                     class="bg-transparent m-0 block w-full resize-none border-none p-0 text-sm leading-relaxed outline-none"
                     rows="1"
                     style="height: 1.625em; overflow: hidden"
-                    @blur="finishEditing"
+                    @blur="handleBlur"
                     @keydown="handleKeydown"
                 />
                 <div
