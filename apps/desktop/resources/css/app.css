@@ -169,5 +169,13 @@
     body {
         @apply bg-background text-foreground;
     }
+    html {
+        scrollbar-gutter: stable;
+    }
+}
+
+body {
+    padding-right: 0 !important;
+    margin-right: 0 !important;
 }
 
