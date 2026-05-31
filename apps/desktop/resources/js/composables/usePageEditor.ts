@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { ref, onBeforeUnmount } from 'vue';
+import { ref, nextTick, onBeforeUnmount } from 'vue';
 import { router } from '@inertiajs/vue3';
 import type { Node } from '@/types/node';
 
@@ -153,40 +153,32 @@ export function usePageEditor(initialPage: Node) {
     const focusBlockId = ref<string | null>(null);
     const focusCursorPos = ref<number | null>(null);
 
-    // Track cursor *before* each change for undo restoration
-    let cursorBeforeChange: { blockId: string | null; pos: number | null } = { blockId: null, pos: null };
-    let cursorAtChange: { blockId: string | null; pos: number | null } = { blockId: null, pos: null };
+    // Cursor tracking for undo/redo
+    // `lastCursor` is always the current cursor, updated on every interaction.
+    // `snapshotCursor` is saved before structural ops so undo goes back to it.
+    let lastCursor: { blockId: string; pos: number } | null = null;
+    let snapshotCursor: { blockId: string; pos: number } | null = null;
 
     function trackCursor(blockId: string | null, pos: number | null) {
-        cursorBeforeChange = { ...cursorAtChange };
-        cursorAtChange = { blockId, pos };
+        if (blockId) {
+            lastCursor = { blockId, pos: pos ?? 0 };
+        }
     }
 
-    // Save cursor state when an undo stack item is created
-    // The "before" cursor goes on the undo item, the "at" cursor goes for redo
-    undoManager.on('stack-item-added', (event: { stackItem: { meta: Map<string, unknown> }; type: string }) => {
-        if (event.type === 'undo') {
-            event.stackItem.meta.set('cursorBefore', { ...cursorBeforeChange });
-            event.stackItem.meta.set('cursorAfter', { ...cursorAtChange });
-        } else {
-            event.stackItem.meta.set('cursorBefore', { ...cursorAtChange });
-            event.stackItem.meta.set('cursorAfter', { ...cursorBeforeChange });
-        }
-    });
+    // Before structural ops, snapshot where the cursor is now
+    function snapshotBeforeOp() {
+        snapshotCursor = lastCursor ? { ...lastCursor } : null;
+    }
 
-    // Restore cursor when undo/redo is performed
-    undoManager.on('stack-item-popped', (event: { stackItem: { meta: Map<string, unknown> }; type: string }) => {
-        const cursor = event.stackItem.meta.get('cursorBefore') as { blockId: string | null; pos: number | null } | undefined;
-        if (cursor?.blockId) {
-            // Verify the block still exists after undo/redo
-            const exists = findYNode(yPage, cursor.blockId);
-            if (exists) {
-                focusBlockId.value = cursor.blockId;
-                focusCursorPos.value = cursor.pos;
-            }
+    // Save cursor on undo stack items
+    undoManager.on('stack-item-added', (event: { stackItem: { meta: Map<string, unknown> }; type: string }) => {
+        // For structural ops, save the snapshot (before the op).
+        // For typing, save lastCursor (where we are now).
+        const cursor = snapshotCursor ?? lastCursor;
+        if (cursor) {
+            event.stackItem.meta.set('cursor', { ...cursor });
         }
-        // Re-sync to backend after undo/redo
-        syncFullPage(yPage);
+        snapshotCursor = null;
     });
 
     // Content sync debounce timers
@@ -270,6 +262,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function addChild(parentId: string): string {
+        snapshotBeforeOp();
         undoManager.stopCapturing();
         const id = generateId();
         let position = 0;
@@ -296,6 +289,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function addSibling(afterId: string): string {
+        snapshotBeforeOp();
         undoManager.stopCapturing();
         const id = generateId();
         let parentId = '';
@@ -332,8 +326,8 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function indent(id: string) {
+        snapshotBeforeOp();
         undoManager.stopCapturing();
-        trackCursor(id, null);
         let newParentId = '';
         let position = 0;
 
@@ -375,8 +369,8 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function outdent(id: string) {
+        snapshotBeforeOp();
         undoManager.stopCapturing();
-        trackCursor(id, null);
         let newParentId = '';
         let position = 0;
 
@@ -423,8 +417,8 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function deleteBlock(id: string) {
+        snapshotBeforeOp();
         undoManager.stopCapturing();
-        trackCursor(id, 0);
         doc.transact(() => {
             const result = findYParentAndIndex(yPage, id);
             if (!result) return;
@@ -439,6 +433,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function mergeWithPrevious(id: string, currentContent: string) {
+        snapshotBeforeOp();
         undoManager.stopCapturing();
         const yblocks = flattenYBlocks(yPage);
         const idx = yblocks.findIndex((b) => b.get('id') === id);
@@ -449,8 +444,6 @@ export function usePageEditor(initialPage: Node) {
         const prevContent = prevYBlock.get('content') as string;
         const cursorPos = prevContent.length;
         const mergedContent = prevContent + currentContent;
-
-        trackCursor(prevId, cursorPos);
 
         const timer = contentTimers.get(prevId);
         if (timer) {
@@ -479,6 +472,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function mergeWithNext(id: string, currentContent: string, cursorPos: number) {
+        snapshotBeforeOp();
         undoManager.stopCapturing();
         const yblocks = flattenYBlocks(yPage);
         const idx = yblocks.findIndex((b) => b.get('id') === id);
@@ -489,8 +483,6 @@ export function usePageEditor(initialPage: Node) {
         const nextId = nextYBlock.get('id') as string;
         const nextContent = nextYBlock.get('content') as string;
         const mergedContent = currentContent + nextContent;
-
-        trackCursor(id, cursorPos);
 
         const timer = contentTimers.get(id);
         if (timer) {
@@ -527,6 +519,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function focusBlock(id: string, direction: 'up' | 'down', cursorPos: number) {
+        trackCursor(id, cursorPos);
         const blocks = flattenBlocks(page.value);
         const idx = blocks.findIndex((n) => n.id === id);
         if (idx === -1) return;
@@ -538,21 +531,57 @@ export function usePageEditor(initialPage: Node) {
         if (direction === 'down' && idx === blocks.length - 1) {
             focusBlockId.value = blocks[idx].id;
             focusCursorPos.value = blocks[idx].content.length;
+            trackCursor(blocks[idx].id, blocks[idx].content.length);
             return;
         }
 
         const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
         const target = blocks[targetIdx];
+        const pos = Math.min(cursorPos, target.content.length);
         focusBlockId.value = target.id;
-        focusCursorPos.value = Math.min(cursorPos, target.content.length);
+        focusCursorPos.value = pos;
+        trackCursor(target.id, pos);
+    }
+
+    function restoreCursor(cursor: { blockId: string; pos: number } | undefined) {
+        if (!cursor) return;
+        const exists = findYNode(yPage, cursor.blockId);
+        if (!exists) return;
+        const content = exists.get('content') as string;
+        const pos = Math.min(cursor.pos, content.length);
+
+        // Force-clear then set in nextTick to guarantee the watch triggers
+        focusBlockId.value = null;
+        focusCursorPos.value = null;
+        nextTick(() => {
+            focusBlockId.value = cursor.blockId;
+            focusCursorPos.value = pos;
+            lastCursor = { blockId: cursor.blockId, pos };
+        });
     }
 
     function undo() {
+        if (undoManager.undoStack.length === 0) return;
+        const item = undoManager.undoStack[undoManager.undoStack.length - 1];
+        const cursor = item.meta.get('cursor') as { blockId: string; pos: number } | undefined;
+
         undoManager.undo();
+        restoreCursor(cursor);
+        syncFullPage(yPage);
     }
 
     function redo() {
+        if (undoManager.redoStack.length === 0) return;
         undoManager.redo();
+
+        // After redo, read cursor from the item just moved back to undo stack
+        const undoStack = undoManager.undoStack;
+        if (undoStack.length > 0) {
+            const item = undoStack[undoStack.length - 1];
+            const cursor = item.meta.get('cursor') as { blockId: string; pos: number } | undefined;
+            restoreCursor(cursor);
+        }
+        syncFullPage(yPage);
     }
 
     function clearFocus() {
