@@ -34,7 +34,7 @@ const {
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pages', href: '/pages' },
-    { title: props.page.content || 'Untitled', href: `/pages/${props.page.id}` },
+    { title: props.page.content || '[untitled]', href: `/pages/${props.page.id}` },
 ];
 
 const isEditingTitle = ref(false);
@@ -135,7 +135,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head :title="page.content || 'Untitled'" />
+    <Head :title="page.content || '[untitled]'" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="mx-auto w-full max-w-2xl p-6">
@@ -153,7 +153,7 @@ onBeforeUnmount(() => {
                     class="cursor-text text-3xl font-bold"
                     @click="startEditingTitle"
                 >
-                    {{ page.content || 'Untitled' }}
+                    {{ page.content || '[untitled]' }}
                 </h1>
 
                 <p

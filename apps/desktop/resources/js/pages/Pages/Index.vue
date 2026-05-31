@@ -21,7 +21,7 @@ function createPage() {
             'Content-Type': 'application/json',
             Accept: 'application/json',
         },
-        body: JSON.stringify({ content: 'Untitled' }),
+        body: JSON.stringify({ content: '' }),
     })
         .then((res) => res.json())
         .then((node) => {
@@ -60,7 +60,7 @@ function createPage() {
                 >
                     <FileText class="text-muted-foreground h-4 w-4 shrink-0" />
                     <span class="flex-1 truncate">
-                        {{ page.content || 'Untitled' }}
+                        {{ page.content || '[untitled]' }}
                     </span>
                     <span class="text-muted-foreground text-xs">
                         {{
