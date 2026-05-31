@@ -206,6 +206,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function addChild(parentId: string): string {
+        undoManager.stopCapturing();
         const id = generateId();
         let position = 0;
         doc.transact(() => {
@@ -230,6 +231,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function addSibling(afterId: string): string {
+        undoManager.stopCapturing();
         const id = generateId();
         let parentId = '';
         let position = 0;
@@ -264,6 +266,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function indent(id: string) {
+        undoManager.stopCapturing();
         let newParentId = '';
         let position = 0;
 
@@ -327,6 +330,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function outdent(id: string) {
+        undoManager.stopCapturing();
         let newParentId = '';
         let position = 0;
 
@@ -386,6 +390,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function deleteBlock(id: string) {
+        undoManager.stopCapturing();
         doc.transact(() => {
             const result = findYParentAndIndex(yPage, id);
             if (!result) return;
@@ -401,6 +406,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function mergeWithPrevious(id: string, currentContent: string) {
+        undoManager.stopCapturing();
         const yblocks = flattenYBlocks(yPage);
         const idx = yblocks.findIndex((b) => b.get('id') === id);
         if (idx <= 0) return;
@@ -439,6 +445,7 @@ export function usePageEditor(initialPage: Node) {
     }
 
     function mergeWithNext(id: string, currentContent: string, cursorPos: number) {
+        undoManager.stopCapturing();
         const yblocks = flattenYBlocks(yPage);
         const idx = yblocks.findIndex((b) => b.get('id') === id);
         if (idx === -1 || idx >= yblocks.length - 1) return;
