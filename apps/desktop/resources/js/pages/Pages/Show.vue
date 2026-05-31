@@ -39,10 +39,17 @@ const isEditingTitle = ref(false);
 const titleContent = ref(page.value.content);
 const titleRef = ref<HTMLInputElement>();
 
-function startEditingTitle() {
+function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
     titleContent.value = page.value.content;
-    setTimeout(() => titleRef.value?.focus(), 0);
+    setTimeout(() => {
+        if (titleRef.value) {
+            titleRef.value.focus();
+            if (cursorPos !== undefined) {
+                titleRef.value.setSelectionRange(cursorPos, cursorPos);
+            }
+        }
+    }, 0);
 }
 
 function finishEditingTitle() {

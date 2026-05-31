@@ -197,7 +197,8 @@ export function usePageEditor(initialPage: Node) {
     function mergeWithPrevious(id: string, currentContent: string) {
         const blocks = flattenBlocks(page.value);
         const idx = blocks.findIndex((n) => n.id === id);
-        if (idx <= 0) return;
+        if (idx === 0) return;
+        if (idx < 0) return;
 
         const prevBlock = blocks[idx - 1];
         const cursorPos = prevBlock.content.length;

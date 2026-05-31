@@ -96,9 +96,19 @@ function handleKeydown(e: KeyboardEvent) {
         if (!textarea) return;
         if (textarea.selectionStart === 0 && textarea.selectionEnd === 0) {
             e.preventDefault();
+            // Save content, exit edit mode, then emit merge request
+            // The composable will set focusBlockId to the previous block
+            // If this is the first block, composable does nothing — we re-focus ourselves
+            if (editContent.value !== props.node.content) {
+                emit('update', props.node.id, editContent.value);
+            }
             skipBlur.value = true;
             isEditing.value = false;
             emit('mergeWithPrevious', props.node.id, editContent.value);
+            // If we're still here (first block, no merge happened), re-enter edit mode
+            if (!props.focusBlockId || props.focusBlockId === props.node.id) {
+                startEditing(0);
+            }
         }
     }
     if (e.key === 'Delete') {
