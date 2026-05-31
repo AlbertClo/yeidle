@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue';
+import { uuidv7 } from 'uuidv7';
 import { Extension } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import Document from '@tiptap/extension-document';
@@ -62,7 +63,7 @@ const CustomListItem = ListItem.extend({
                             if (!id || seen.has(id)) {
                                 tr.setNodeMarkup(pos, undefined, {
                                     ...node.attrs,
-                                    blockId: crypto.randomUUID(),
+                                    blockId: uuidv7(),
                                 });
                                 modified = true;
                             } else {
@@ -189,7 +190,7 @@ function nodesToTiptap(nodes: Node[]): Record<string, unknown> {
                 type: 'bulletList',
                 content: nodes.length > 0
                     ? nodes.map(nodeToListItem)
-                    : [{ type: 'listItem', attrs: { blockId: crypto.randomUUID() }, content: [{ type: 'paragraph' }] }],
+                    : [{ type: 'listItem', attrs: { blockId: uuidv7() }, content: [{ type: 'paragraph' }] }],
             },
         ],
     };

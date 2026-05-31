@@ -1,10 +1,11 @@
 import * as Y from 'yjs';
+import { uuidv7 } from 'uuidv7';
 import { ref, nextTick, onBeforeUnmount } from 'vue';
 import { router } from '@inertiajs/vue3';
 import type { Node } from '@/types/node';
 
 function generateId(): string {
-    return crypto.randomUUID();
+    return uuidv7();
 }
 
 // --- Y.Doc <-> Node conversion ---
