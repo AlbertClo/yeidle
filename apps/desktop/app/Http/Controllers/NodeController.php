@@ -26,6 +26,17 @@ class NodeController extends Controller
 
         $validated['content'] = $validated['content'] ?? '';
 
+        // For top-level pages (no parent), find existing page with same title
+        if (empty($validated['parent_id']) && $validated['content'] !== '') {
+            $existing = Node::pages()
+                ->whereRaw('LOWER(content) = ?', [strtolower($validated['content'])])
+                ->first();
+
+            if ($existing) {
+                return response()->json($existing->load('children'), 200);
+            }
+        }
+
         $node = Node::create($validated);
         $this->linkParser->syncLinks($node);
 

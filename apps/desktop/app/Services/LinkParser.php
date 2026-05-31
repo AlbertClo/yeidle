@@ -18,7 +18,7 @@ class LinkParser
         $linkData = [];
 
         foreach ($parsed as $link) {
-            $targetPage = Node::pages()->where('content', $link['target'])->first();
+            $targetPage = Node::pages()->whereRaw('LOWER(content) = ?', [strtolower($link['target'])])->first();
 
             if (! $targetPage) {
                 $targetPage = Node::create([
