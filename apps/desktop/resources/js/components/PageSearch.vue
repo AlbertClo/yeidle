@@ -97,12 +97,11 @@ onBeforeUnmount(() => {
                     :value="result.content || '[untitled]'"
                     @select="navigate(result)"
                 >
-                    <FileText class="mr-2 h-4 w-4" />
-                    <span>{{ result.content || '[untitled]' }}</span>
-                    <span
-                        v-if="result.parent_id"
-                        class="text-muted-foreground ml-1 text-xs"
-                    >(block)</span>
+                    <FileText v-if="!result.parent_id" class="mr-2 h-4 w-4 shrink-0" />
+                    <div v-else class="mr-2 flex h-4 w-4 shrink-0 items-center justify-center">
+                        <div class="bg-foreground/50 h-1.5 w-1.5 rounded-full" />
+                    </div>
+                    <span class="truncate">{{ result.content || '[untitled]' }}</span>
                 </CommandItem>
             </CommandGroup>
         </CommandList>
