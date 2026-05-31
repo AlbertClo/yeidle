@@ -67,7 +67,6 @@ function syncUpdate(id: string, data: Record<string, unknown>) {
 
 function doSync(nodes: Node[]) {
     hasPendingSync = false;
-    console.log('syncing nodes:', JSON.stringify(nodes, null, 2));
     fetch(`/api/nodes/${props.page.id}/sync`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

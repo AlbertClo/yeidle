@@ -164,9 +164,7 @@ const editor = useEditor({
     },
     onUpdate: ({ editor }) => {
         const json = editor.getJSON();
-        console.log('tiptap json:', JSON.stringify(json, null, 2));
         const nodes = tiptapToNodes(json, null);
-        console.log('converted nodes:', nodes.length, nodes.map(n => ({ id: n.id, content: n.content })));
         emit('update', nodes);
     },
 });
