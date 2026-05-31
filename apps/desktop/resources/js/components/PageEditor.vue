@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue';
+import { Extension } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import Document from '@tiptap/extension-document';
 import Text from '@tiptap/extension-text';
@@ -64,6 +65,18 @@ const CustomListItem = ListItem.extend({
                 },
             }),
         ];
+    },
+});
+
+// Override Enter to always split list items (never lift/exit the list)
+const AlwaysSplitListItem = Extension.create({
+    name: 'alwaysSplitListItem',
+    addKeyboardShortcuts() {
+        return {
+            Enter: ({ editor }) => {
+                return editor.commands.splitListItem('listItem');
+            },
+        };
     },
 });
 
@@ -156,6 +169,7 @@ const editor = useEditor({
             },
         }),
         CustomListItem,
+        AlwaysSplitListItem,
         History,
     ],
     editorProps: {
@@ -165,18 +179,13 @@ const editor = useEditor({
         handleKeyDown: (view, event) => {
             if (event.key === 'ArrowUp') {
                 const { $head } = view.state.selection;
-                // Check if cursor is in the first list item at the start of text
+                // Only jump to title from char 0 of the first top-level list item
                 if ($head.parentOffset === 0) {
-                    // Walk up to find the listItem and check if it's the first one
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
-                            // Is this the first child of its parent?
-                            if ($head.index(d - 1) === 0) {
-                                // Is the parent the top-level bulletList (not nested)?
-                                if (d === 2) {
-                                    emit('focusTitle');
-                                    return true;
-                                }
+                            if ($head.index(d - 1) === 0 && d === 2) {
+                                emit('focusTitle');
+                                return true;
                             }
                             break;
                         }
