@@ -63,7 +63,13 @@ function finishEditingTitle() {
 
 function handleTitleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
+        e.preventDefault();
         finishEditingTitle();
+        const blocks = flattenBlocks(page.value);
+        if (blocks.length > 0) {
+            focusBlockId.value = blocks[0].id;
+            focusCursorPos.value = 0;
+        }
         return;
     }
     if (e.key === 'ArrowDown') {
