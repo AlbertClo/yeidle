@@ -109,27 +109,43 @@ const AlwaysSplitListItem = Extension.create({
                         editor.view.dispatch(tr);
                         return true;
                     }
+                    // Find the current list item
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
-                            const parentList = $head.node(d - 1);
                             const indexInParent = $head.index(d - 1);
-                            const currentItem = $head.node(d);
+                            if (indexInParent === 0) break;
 
-                            // Only do custom merge for simple cases:
-                            // both items at top level, previous has no children, current has no children
-                            if (indexInParent > 0 && d === 2
-                                && parentList.child(indexInParent - 1).childCount === 1
-                                && currentItem.childCount === 1) {
-                                const startOfItem = $head.start(d) - 1;
-                                let tr = editor.state.tr.join(startOfItem);
-                                const $joinPos = tr.doc.resolve(startOfItem - 1);
-                                if ($joinPos.nodeBefore?.isTextblock && $joinPos.nodeAfter?.isTextblock) {
-                                    tr = tr.join(startOfItem - 1);
+                            const currentItemStart = $head.start(d) - 1;
+                            const currentItemEnd = $head.end(d) + 1;
+                            const currentContent = $head.parent.content;
+
+                            // Find the end of the previous visible text block
+                            // by resolving the position just before our list item
+                            const $before = editor.state.doc.resolve(currentItemStart);
+                            // Search backwards for the nearest text block end
+                            let targetEnd = currentItemStart;
+                            editor.state.doc.nodesBetween(0, currentItemStart, (node, pos) => {
+                                if (node.isTextblock) {
+                                    targetEnd = pos + node.nodeSize - 1; // end of text inside the block
                                 }
-                                editor.view.dispatch(tr);
-                                return true;
+                            });
+
+                            if (targetEnd === currentItemStart) break;
+
+                            let tr = editor.state.tr;
+                            // Insert current block's content at end of target text block
+                            if (currentContent.size > 0) {
+                                tr = tr.insert(targetEnd, currentContent);
                             }
-                            break;
+                            // Delete the current list item (positions shifted by inserted content)
+                            const offset = currentContent.size;
+                            tr = tr.delete(currentItemStart + offset, currentItemEnd + offset);
+                            // Place cursor at join point
+                            tr = tr.setSelection(
+                                editor.state.selection.constructor.near(tr.doc.resolve(targetEnd)),
+                            );
+                            editor.view.dispatch(tr);
+                            return true;
                         }
                     }
                 }
