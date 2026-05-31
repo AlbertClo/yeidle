@@ -14,16 +14,22 @@ import type { Node } from '@/types/node';
 
 const isOpen = ref(false);
 const results = ref<Node[]>([]);
-let lastSearch = '';
+let lastSearch: string | null = null;
+
+watch(isOpen, (open) => {
+    if (open) {
+        lastSearch = null;
+        doSearch('');
+    }
+});
 
 function doSearch(val: string) {
     if (val === lastSearch) return;
     lastSearch = val;
-    if (val.length === 0) {
-        results.value = [];
-        return;
-    }
-    fetch(`/api/search?q=${encodeURIComponent(val)}`, {
+    const url = val.length > 0
+        ? `/api/search?q=${encodeURIComponent(val)}`
+        : '/api/pages';
+    fetch(url, {
         headers: { Accept: 'application/json' },
     })
         .then((res) => res.json())
