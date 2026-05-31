@@ -111,11 +111,17 @@ const AlwaysSplitListItem = Extension.create({
                     }
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
+                            const parentList = $head.node(d - 1);
                             const indexInParent = $head.index(d - 1);
-                            if (indexInParent > 0) {
+                            const currentItem = $head.node(d);
+
+                            // Only do custom merge for simple cases:
+                            // both items at top level, previous has no children, current has no children
+                            if (indexInParent > 0 && d === 2
+                                && parentList.child(indexInParent - 1).childCount === 1
+                                && currentItem.childCount === 1) {
                                 const startOfItem = $head.start(d) - 1;
                                 let tr = editor.state.tr.join(startOfItem);
-                                // After joining list items, join the text blocks inside
                                 const $joinPos = tr.doc.resolve(startOfItem - 1);
                                 if ($joinPos.nodeBefore?.isTextblock && $joinPos.nodeAfter?.isTextblock) {
                                     tr = tr.join(startOfItem - 1);
@@ -164,10 +170,14 @@ const AlwaysSplitListItem = Extension.create({
                         return true;
                     });
                 }
-                if (editor.commands.splitListItem('listItem')) {
+                // Check if current block is empty — splitListItem would lift/outdent it
+                const { $head: $enterHead } = editor.state.selection;
+                const isEmptyBlock = $enterHead.parent.content.size === 0;
+
+                if (!isEmptyBlock && editor.commands.splitListItem('listItem')) {
                     return true;
                 }
-                // splitListItem fails on empty nodes — manually insert a new list item after current
+                // Empty node or splitListItem failed — manually insert a new list item after current
                 const { $head } = editor.state.selection;
                 const listItemType = editor.schema.nodes.listItem;
                 const paragraphType = editor.schema.nodes.paragraph;
