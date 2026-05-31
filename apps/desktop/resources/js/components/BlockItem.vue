@@ -78,27 +78,17 @@ function handleKeydown(e: KeyboardEvent) {
         }
     }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
         const textarea = inputRef.value;
         if (!textarea) return;
         const cursorPos = textarea.selectionStart;
 
-        if (e.key === 'ArrowUp' && cursorPos === 0) {
-            e.preventDefault();
-            if (editContent.value !== props.node.content) {
-                emit('update', props.node.id, editContent.value);
-            }
-            skipBlur.value = true;
-            isEditing.value = false;
-            emit('focusBlock', props.node.id, 'up', cursorPos);
-        } else if (e.key === 'ArrowDown' && cursorPos === editContent.value.length) {
-            e.preventDefault();
-            if (editContent.value !== props.node.content) {
-                emit('update', props.node.id, editContent.value);
-            }
-            skipBlur.value = true;
-            isEditing.value = false;
-            emit('focusBlock', props.node.id, 'down', cursorPos);
+        if (editContent.value !== props.node.content) {
+            emit('update', props.node.id, editContent.value);
         }
+        skipBlur.value = true;
+        isEditing.value = false;
+        emit('focusBlock', props.node.id, e.key === 'ArrowUp' ? 'up' : 'down', cursorPos);
         return;
     }
     if (e.key === 'Backspace') {

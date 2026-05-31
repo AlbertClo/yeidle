@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import { ref, onMounted, onBeforeUnmount } from 'vue';
-import { Plus } from 'lucide-vue-next';
 import BlockItem from '@/components/BlockItem.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { usePageEditor } from '@/composables/usePageEditor';
@@ -100,10 +99,6 @@ function handleAddChild(parentId: string) {
     }
 }
 
-function handleAddBlock() {
-    handleAddChild(page.value.id);
-}
-
 function handleFocusBlock(id: string, direction: 'up' | 'down', cursorPos: number) {
     const result = focusBlock(id, direction, cursorPos);
     if (result === 'title') {
@@ -187,14 +182,6 @@ onBeforeUnmount(() => {
                     @toggle-check="toggleCheck"
                     @focused="clearFocus"
                 />
-
-                <button
-                    class="text-muted-foreground hover:text-foreground mt-2 flex items-center gap-1 px-5 text-sm transition-colors"
-                    @click="handleAddBlock"
-                >
-                    <Plus class="h-3.5 w-3.5" />
-                    Add blocks
-                </button>
             </div>
 
             <div
