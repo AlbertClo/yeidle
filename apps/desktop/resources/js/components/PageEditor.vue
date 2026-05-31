@@ -297,6 +297,36 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
+            if (event.key === 'ArrowDown') {
+                const { $head } = view.state.selection;
+                // If in a code block at the end of the last list item, create a new item below
+                if ($head.parent.type.name === 'codeBlock') {
+                    // Check if cursor is at the end of the code block
+                    if ($head.parentOffset === $head.parent.content.size) {
+                        // Find the list item containing this code block
+                        for (let d = $head.depth; d >= 0; d--) {
+                            if ($head.node(d).type.name === 'listItem') {
+                                const parent = $head.node(d - 1);
+                                const indexInParent = $head.index(d - 1);
+                                // If this is the last list item, create a new one
+                                if (indexInParent === parent.childCount - 1) {
+                                    const listItemType = view.state.schema.nodes.listItem;
+                                    const paragraphType = view.state.schema.nodes.paragraph;
+                                    const endPos = $head.end(d) + 1;
+                                    const newItem = listItemType.create(null, [paragraphType.create()]);
+                                    const tr = view.state.tr.insert(endPos, newItem);
+                                    tr.setSelection(
+                                        view.state.selection.constructor.near(tr.doc.resolve(endPos + 1)),
+                                    );
+                                    view.dispatch(tr);
+                                    return true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             if (event.key === 'ArrowUp') {
                 const { $head } = view.state.selection;
                 // Only jump to title from char 0 of the first top-level list item
