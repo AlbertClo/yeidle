@@ -102,15 +102,22 @@ const AlwaysSplitListItem = Extension.create({
                 if (!editor.state.selection.empty) return false;
                 const { $head } = editor.state.selection;
                 if ($head.parentOffset === 0) {
+                    // If in a non-paragraph textblock (heading, etc.), convert to paragraph first
+                    if ($head.parent.type.name !== 'paragraph') {
+                        const pos = $head.before($head.depth);
+                        const tr = editor.state.tr.setNodeMarkup(pos, editor.schema.nodes.paragraph);
+                        editor.view.dispatch(tr);
+                        return true;
+                    }
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
                             const indexInParent = $head.index(d - 1);
                             if (indexInParent > 0) {
                                 const startOfItem = $head.start(d) - 1;
                                 let tr = editor.state.tr.join(startOfItem);
-                                // After joining list items, join the paragraphs inside
+                                // After joining list items, join the text blocks inside
                                 const $joinPos = tr.doc.resolve(startOfItem - 1);
-                                if ($joinPos.nodeBefore?.type.name === 'paragraph' && $joinPos.nodeAfter?.type.name === 'paragraph') {
+                                if ($joinPos.nodeBefore?.isTextblock && $joinPos.nodeAfter?.isTextblock) {
                                     tr = tr.join(startOfItem - 1);
                                 }
                                 editor.view.dispatch(tr);
@@ -134,9 +141,9 @@ const AlwaysSplitListItem = Extension.create({
                             if (indexInParent < parent.childCount - 1) {
                                 const endOfItem = $head.end(d) + 1;
                                 let tr = editor.state.tr.join(endOfItem);
-                                // After joining list items, join the paragraphs inside
+                                // After joining list items, join the text blocks inside
                                 const $joinPos = tr.doc.resolve(endOfItem - 1);
-                                if ($joinPos.nodeBefore?.type.name === 'paragraph' && $joinPos.nodeAfter?.type.name === 'paragraph') {
+                                if ($joinPos.nodeBefore?.isTextblock && $joinPos.nodeAfter?.isTextblock) {
                                     tr = tr.join(endOfItem - 1);
                                 }
                                 editor.view.dispatch(tr);
