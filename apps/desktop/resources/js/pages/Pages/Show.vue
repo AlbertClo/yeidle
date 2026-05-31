@@ -22,6 +22,8 @@ const titleRef = ref<HTMLInputElement>();
 
 // Debounce timer for syncing
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let lastNodes: Node[] = props.page.children ?? [];
+let hasPendingSync = false;
 
 function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
@@ -63,17 +65,25 @@ function syncUpdate(id: string, data: Record<string, unknown>) {
     });
 }
 
+function doSync(nodes: Node[]) {
+    hasPendingSync = false;
+    console.log('syncing nodes:', JSON.stringify(nodes, null, 2));
+    fetch(`/api/nodes/${props.page.id}/sync`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+            content: titleContent.value || props.page.content,
+            children: nodes,
+        }),
+    });
+}
+
 function syncFullTree(nodes: Node[]) {
+    lastNodes = nodes;
+    hasPendingSync = true;
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
-        fetch(`/api/nodes/${props.page.id}/sync`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({
-                content: titleContent.value || props.page.content,
-                children: nodes,
-            }),
-        });
+        doSync(nodes);
     }, 300);
 }
 
@@ -81,9 +91,9 @@ function flushSync() {
     if (syncTimer) {
         clearTimeout(syncTimer);
         syncTimer = null;
-        // Fire sync immediately with last known state
-        // The PageEditor's last emitted nodes would be needed here
-        // For now just flush the timer
+    }
+    if (hasPendingSync) {
+        doSync(lastNodes);
     }
 }
 

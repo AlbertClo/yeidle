@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue';
+import { onBeforeUnmount } from 'vue';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import Document from '@tiptap/extension-document';
 import Text from '@tiptap/extension-text';
@@ -7,6 +7,7 @@ import Paragraph from '@tiptap/extension-paragraph';
 import BulletList from '@tiptap/extension-bullet-list';
 import ListItem from '@tiptap/extension-list-item';
 import History from '@tiptap/extension-history';
+import { Plugin } from '@tiptap/pm/state';
 import type { Node } from '@/types/node';
 
 const props = defineProps<{
@@ -22,6 +23,49 @@ const CustomDocument = Document.extend({
     content: 'bulletList',
 });
 
+// Extend ListItem to carry our block ID, with auto-assignment via appendTransaction
+const CustomListItem = ListItem.extend({
+    addAttributes() {
+        return {
+            blockId: {
+                default: null,
+                rendered: false,
+                parseHTML: (element: HTMLElement) => element.getAttribute('data-block-id'),
+                renderHTML: (attributes: Record<string, unknown>) => {
+                    if (!attributes.blockId) return {};
+                    return { 'data-block-id': attributes.blockId };
+                },
+            },
+        };
+    },
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                appendTransaction: (_transactions, _oldState, newState) => {
+                    const seen = new Set<string>();
+                    let tr = newState.tr;
+                    let modified = false;
+                    newState.doc.descendants((node, pos) => {
+                        if (node.type.name === 'listItem') {
+                            const id = node.attrs.blockId;
+                            if (!id || seen.has(id)) {
+                                tr.setNodeMarkup(pos, undefined, {
+                                    ...node.attrs,
+                                    blockId: crypto.randomUUID(),
+                                });
+                                modified = true;
+                            } else {
+                                seen.add(id);
+                            }
+                        }
+                    });
+                    return modified ? tr : null;
+                },
+            }),
+        ];
+    },
+});
+
 // Convert our Node tree to TipTap JSON
 function nodesToTiptap(nodes: Node[]): Record<string, unknown> {
     return {
@@ -31,7 +75,7 @@ function nodesToTiptap(nodes: Node[]): Record<string, unknown> {
                 type: 'bulletList',
                 content: nodes.length > 0
                     ? nodes.map(nodeToListItem)
-                    : [{ type: 'listItem', content: [{ type: 'paragraph' }] }],
+                    : [{ type: 'listItem', attrs: { blockId: crypto.randomUUID() }, content: [{ type: 'paragraph' }] }],
             },
         ],
     };
@@ -77,18 +121,17 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
     const attrs = (item.attrs as Record<string, unknown>) ?? {};
     const content = (item.content as Record<string, unknown>[]) ?? [];
 
-    // First child is the paragraph with text
     const paragraph = content.find((c) => c.type === 'paragraph');
     const textContent = paragraph
         ? ((paragraph.content as { text: string }[]) ?? []).map((t) => t.text).join('')
         : '';
 
-    // Second child (if any) is a nested bulletList
     const nestedList = content.find((c) => c.type === 'bulletList');
-    const children = nestedList ? listToNodes(nestedList, (attrs.blockId as string) ?? '') : [];
+    const blockId = attrs.blockId as string;
+    const children = nestedList ? listToNodes(nestedList, blockId) : [];
 
     return {
-        id: (attrs.blockId as string) || crypto.randomUUID(),
+        id: blockId,
         parent_id: parentId,
         position,
         content: textContent,
@@ -99,23 +142,6 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
         children,
     };
 }
-
-// Extend ListItem to carry our block ID
-const CustomListItem = ListItem.extend({
-    addAttributes() {
-        return {
-            blockId: {
-                default: null,
-                rendered: false,
-                parseHTML: (element: HTMLElement) => element.getAttribute('data-block-id'),
-                renderHTML: (attributes: Record<string, unknown>) => {
-                    if (!attributes.blockId) return {};
-                    return { 'data-block-id': attributes.blockId };
-                },
-            },
-        };
-    },
-});
 
 const editor = useEditor({
     content: nodesToTiptap(props.nodes),
@@ -138,31 +164,12 @@ const editor = useEditor({
     },
     onUpdate: ({ editor }) => {
         const json = editor.getJSON();
+        console.log('tiptap json:', JSON.stringify(json, null, 2));
         const nodes = tiptapToNodes(json, null);
+        console.log('converted nodes:', nodes.length, nodes.map(n => ({ id: n.id, content: n.content })));
         emit('update', nodes);
     },
 });
-
-// Assign IDs to new list items that don't have one
-if (editor.value) {
-    editor.value.on('transaction', ({ transaction }) => {
-        if (!transaction.docChanged) return;
-        const tr = editor.value!.state.tr;
-        let needsUpdate = false;
-        editor.value!.state.doc.descendants((node, pos) => {
-            if (node.type.name === 'listItem' && !node.attrs.blockId) {
-                tr.setNodeMarkup(pos, undefined, {
-                    ...node.attrs,
-                    blockId: crypto.randomUUID(),
-                });
-                needsUpdate = true;
-            }
-        });
-        if (needsUpdate) {
-            editor.value!.view.dispatch(tr);
-        }
-    });
-}
 
 onBeforeUnmount(() => {
     editor.value?.destroy();
