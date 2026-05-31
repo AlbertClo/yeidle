@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { toast } from 'vue-sonner';
+import { EllipsisVertical, Trash2 } from 'lucide-vue-next';
 import PageEditor from '@/components/PageEditor.vue';
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import type { Node, NodeLink } from '@/types/node';
@@ -12,13 +21,13 @@ const props = defineProps<{
     backlinks: NodeLink[];
 }>();
 
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Pages', href: '/pages' },
-    { title: props.page.content || '[untitled]', href: `/pages/${props.page.id}` },
-];
-
 const isEditingTitle = ref(false);
 const titleContent = ref(props.page.content);
+
+const breadcrumbs = computed<BreadcrumbItem[]>(() => [
+    { title: 'Pages', href: '/pages' },
+    { title: titleContent.value || '[untitled]', href: `/pages/${props.page.id}` },
+]);
 const titleRef = ref<HTMLInputElement>();
 
 // Debounce timer for syncing
@@ -133,6 +142,19 @@ function handleBeforeUnload() {
     flushSync();
 }
 
+const showDeleteConfirm = ref(false);
+
+function deletePage() {
+    fetch(`/api/nodes/${props.page.id}`, {
+        method: 'DELETE',
+        headers: { Accept: 'application/json' },
+    }).then(() => {
+        showDeleteConfirm.value = false;
+        toast.success(`Deleted "${titleContent.value || '[untitled]'}"`);
+        router.visit('/pages');
+    });
+}
+
 function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !isEditingTitle.value) {
         const target = e.target as HTMLElement;
@@ -166,6 +188,22 @@ onBeforeUnmount(() => {
     <Head :title="page.content || '[untitled]'" />
 
     <AppLayout :breadcrumbs="breadcrumbs" :current-page-id="page.id">
+        <div class="relative">
+            <div class="absolute top-4 right-4">
+                <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                        <Button variant="outline" size="icon" class="shrink-0">
+                            <EllipsisVertical class="h-4 w-4" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem class="text-destructive" @click="showDeleteConfirm = true">
+                            <Trash2 class="mr-2 h-4 w-4" />
+                            Delete page
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
         <div class="mx-auto w-full max-w-2xl p-6">
             <div class="mb-6">
                 <input
@@ -228,5 +266,21 @@ onBeforeUnmount(() => {
                 </div>
             </div>
         </div>
+        </div>
     </AppLayout>
+
+    <Dialog v-model:open="showDeleteConfirm">
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Delete page</DialogTitle>
+                <DialogDescription>
+                    Are you sure you want to delete "{{ titleContent || '[untitled]' }}"? This cannot be undone.
+                </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+                <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
+                <Button variant="destructive" @click="deletePage">Delete</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
 </template>
