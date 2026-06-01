@@ -73,7 +73,11 @@ const CustomListItem = ListItem.extend({
                             }
                         }
                     });
-                    return modified ? tr : null;
+                    if (modified) {
+                        tr.setMeta('blockIdAssignment', true);
+                        return tr;
+                    }
+                    return null;
                 },
             }),
         ];
@@ -233,14 +237,27 @@ function nodesToTiptap(nodes: Node[]): Record<string, unknown> {
     };
 }
 
+function sanitizeTiptapContent(node: Record<string, unknown>): Record<string, unknown> {
+    if (node.content && Array.isArray(node.content)) {
+        node.content = (node.content as Record<string, unknown>[]).filter((child) => {
+            // Remove text nodes with null/undefined text
+            if (child.type === 'text' && !child.text) return false;
+            return true;
+        }).map(sanitizeTiptapContent);
+    }
+    return node;
+}
+
 function nodeToListItem(node: Node): Record<string, unknown> {
     // Use stored TipTap JSON if available, otherwise fall back to plain text paragraph
-    const blockContent: Record<string, unknown> = node.tiptap_content ?? {
-        type: 'paragraph',
-        content: node.content
-            ? [{ type: 'text', text: node.content }]
-            : undefined,
-    };
+    const blockContent: Record<string, unknown> = node.tiptap_content
+        ? sanitizeTiptapContent({ ...node.tiptap_content })
+        : {
+            type: 'paragraph',
+            content: node.content
+                ? [{ type: 'text', text: node.content }]
+                : undefined,
+        };
 
     const content: Record<string, unknown>[] = [blockContent];
 
@@ -303,6 +320,8 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
         children,
     };
 }
+
+let userHasInteracted = false;
 
 const editor = useEditor({
     content: nodesToTiptap(props.nodes),
@@ -405,7 +424,13 @@ const editor = useEditor({
             return false;
         },
     },
-    onUpdate: ({ editor }) => {
+    onFocus: () => {
+        userHasInteracted = true;
+    },
+    onTransaction: ({ transaction, editor }) => {
+        if (!transaction.docChanged) return;
+        if (!userHasInteracted) return;
+        if (transaction.getMeta('blockIdAssignment')) return;
         const json = editor.getJSON();
         const nodes = tiptapToNodes(json, null);
         emit('update', nodes);
