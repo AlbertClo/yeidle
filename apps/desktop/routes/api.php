@@ -43,7 +43,7 @@ Route::get('recent-pages', function () {
 
 Route::post('open-external', function (\Illuminate\Http\Request $request) {
     $request->validate(['url' => ['required', 'url']]);
-    exec('xdg-open '.escapeshellarg($request->url).' > /dev/null 2>&1 &');
+    \App\Http\Controllers\MediaController::openInBackground($request->url);
     return response()->json(null, 200);
 });
 
