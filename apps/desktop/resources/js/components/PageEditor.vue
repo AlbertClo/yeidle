@@ -256,20 +256,18 @@ const AlwaysSplitListItem = Extension.create({
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
                             const indexInParent = $head.index(d - 1);
-                            if (indexInParent === 0) break;
+                            // First item in the top-level list — nothing to merge with
+                            if (indexInParent === 0 && $head.node(d - 1) === editor.state.doc.firstChild) break;
 
                             const currentItemStart = $head.start(d) - 1;
                             const currentItemEnd = $head.end(d) + 1;
                             const currentContent = $head.parent.content;
 
                             // Find the end of the previous visible text block
-                            // by resolving the position just before our list item
-                            const $before = editor.state.doc.resolve(currentItemStart);
-                            // Search backwards for the nearest text block end
                             let targetEnd = currentItemStart;
                             editor.state.doc.nodesBetween(0, currentItemStart, (node, pos) => {
                                 if (node.isTextblock) {
-                                    targetEnd = pos + node.nodeSize - 1; // end of text inside the block
+                                    targetEnd = pos + node.nodeSize - 1;
                                 }
                             });
 
@@ -280,9 +278,18 @@ const AlwaysSplitListItem = Extension.create({
                             if (currentContent.size > 0) {
                                 tr = tr.insert(targetEnd, currentContent);
                             }
-                            // Delete the current list item (positions shifted by inserted content)
+                            // Determine delete range — if this is the only item in its
+                            // parent bulletList, delete the entire bulletList wrapper
                             const offset = currentContent.size;
-                            tr = tr.delete(currentItemStart + offset, currentItemEnd + offset);
+                            let delFrom = currentItemStart + offset;
+                            let delTo = currentItemEnd + offset;
+                            const parentList = $head.node(d - 1);
+                            if (parentList.type.name === 'bulletList' && parentList.childCount === 1) {
+                                // Delete the entire bulletList wrapper
+                                delFrom = $head.start(d - 1) - 1 + offset;
+                                delTo = $head.end(d - 1) + 1 + offset;
+                            }
+                            tr = tr.delete(delFrom, delTo);
                             // Place cursor at join point
                             tr = tr.setSelection(
                                 editor.state.selection.constructor.near(tr.doc.resolve(targetEnd)),
