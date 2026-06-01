@@ -172,14 +172,32 @@ const AlwaysSplitListItem = Extension.create({
         return {
             'Mod-Enter': ({ editor }) => {
                 const { from, to } = editor.state.selection;
-
-                // Find all listItems in the selection range
                 const listItems: { node: any; pos: number }[] = [];
-                editor.state.doc.nodesBetween(from, to, (node, pos) => {
-                    if (node.type.name === 'listItem') {
-                        listItems.push({ node, pos });
+
+                if (from === to) {
+                    // Single cursor — find deepest listItem only
+                    const $pos = editor.state.doc.resolve(from);
+                    for (let d = $pos.depth; d >= 0; d--) {
+                        if ($pos.node(d).type.name === 'listItem') {
+                            listItems.push({ node: $pos.node(d), pos: $pos.before(d) });
+                            break;
+                        }
                     }
-                });
+                } else {
+                    // Selection — only items whose direct text content overlaps
+                    editor.state.doc.descendants((node, pos) => {
+                        if (node.type.name === 'listItem') {
+                            const firstChild = node.firstChild;
+                            if (firstChild) {
+                                const textStart = pos + 1;
+                                const textEnd = textStart + firstChild.nodeSize;
+                                if (from < textEnd && to > textStart) {
+                                    listItems.push({ node, pos });
+                                }
+                            }
+                        }
+                    });
+                }
 
                 if (listItems.length === 0) return false;
 
