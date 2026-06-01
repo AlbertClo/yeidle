@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::apiResource('nodes', NodeController::class)->only(['store', 'update', 'destroy']);
 Route::put('nodes/{node}/sync', [NodeController::class, 'sync']);
+Route::put('nodes/{node}/sync-content', [NodeController::class, 'syncContent']);
 
 Route::get('pages', [PageController::class, 'index']);
 Route::get('pages/{node}', [PageController::class, 'show']);
@@ -19,7 +20,9 @@ Route::post('bookmarks', [BookmarkController::class, 'store']);
 
 Route::get('search', SearchController::class);
 
-Route::post('media', [MediaController::class, 'store']);
+Route::post('media/init', [MediaController::class, 'initUpload']);
+Route::post('media/chunk', [MediaController::class, 'uploadChunk']);
+Route::post('media/complete', [MediaController::class, 'completeUpload']);
 Route::get('media/{media}', [MediaController::class, 'show']);
 Route::post('media/{media}/open', [MediaController::class, 'open']);
 Route::post('media/{media}/open-folder', [MediaController::class, 'openFolder']);

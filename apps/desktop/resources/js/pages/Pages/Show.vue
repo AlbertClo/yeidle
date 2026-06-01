@@ -105,16 +105,58 @@ function syncTitleDebounced() {
     }, 300);
 }
 
+function stripTiptapContent(nodes: Node[]): Record<string, unknown>[] {
+    return nodes.map((n) => ({
+        id: n.id,
+        content: n.content,
+        position: n.position,
+        is_checked: n.is_checked,
+        url: n.url,
+        children: stripTiptapContent(n.children ?? []),
+    }));
+}
+
+const lastTiptapContentMap = new Map<string, string>();
+
+function collectChangedTiptapContent(nodes: Node[]): { id: string; tiptap_content: unknown }[] {
+    const result: { id: string; tiptap_content: unknown }[] = [];
+    for (const n of nodes) {
+        if (n.tiptap_content) {
+            const serialized = JSON.stringify(n.tiptap_content);
+            if (lastTiptapContentMap.get(n.id) !== serialized) {
+                lastTiptapContentMap.set(n.id, serialized);
+                result.push({ id: n.id, tiptap_content: n.tiptap_content });
+            }
+        }
+        if (n.children) {
+            result.push(...collectChangedTiptapContent(n.children));
+        }
+    }
+    return result;
+}
+
 function doSync(nodes: Node[]) {
     hasPendingSync = false;
+
+    // Send lightweight tree sync (no tiptap_content)
     fetch(`/api/nodes/${props.page.id}/sync`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
             content: titleContent.value,
-            children: nodes,
+            children: stripTiptapContent(nodes),
         }),
     }).then(() => refreshBacklinks());
+
+    // Send only changed tiptap_content per-node in a separate call
+    const tiptapUpdates = collectChangedTiptapContent(nodes);
+    if (tiptapUpdates.length > 0) {
+        fetch(`/api/nodes/${props.page.id}/sync-content`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ nodes: tiptapUpdates }),
+        });
+    }
 }
 
 function refreshBacklinks() {

@@ -65,6 +65,17 @@ class LinkParser
      */
     private function extractMentions(array $content): array
     {
+        // tiptap_content can be a sequential array (multiple blocks) or a single object
+        if (array_is_list($content)) {
+            $mentions = [];
+            foreach ($content as $item) {
+                if (is_array($item)) {
+                    $mentions = array_merge($mentions, $this->extractMentions($item));
+                }
+            }
+            return $mentions;
+        }
+
         $mentions = [];
 
         if (($content['type'] ?? '') === 'mention' && isset($content['attrs']['id'])) {
@@ -75,7 +86,9 @@ class LinkParser
         }
 
         foreach ($content['content'] ?? [] as $child) {
-            $mentions = array_merge($mentions, $this->extractMentions($child));
+            if (is_array($child)) {
+                $mentions = array_merge($mentions, $this->extractMentions($child));
+            }
         }
 
         return $mentions;

@@ -139,23 +139,56 @@ export const FileNode = Node.create({
     },
 });
 
-async function uploadFile(file: File): Promise<{
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
+
+export async function uploadFile(file: File): Promise<{
     id: string;
     original_name: string;
     mime_type: string;
     size: number;
 } | null> {
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-        const res = await fetch('/api/media', {
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+        // 1. Init upload
+        const initRes = await fetch('/api/media/init', {
             method: 'POST',
-            headers: { Accept: 'application/json' },
-            body: formData,
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+                filename: file.name,
+                size: file.size,
+                mime_type: file.type || 'application/octet-stream',
+                total_chunks: totalChunks,
+            }),
         });
-        if (!res.ok) return null;
-        return await res.json();
+        if (!initRes.ok) return null;
+        const { upload_id } = await initRes.json();
+
+        // 2. Send chunks
+        for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const chunk = file.slice(start, start + CHUNK_SIZE);
+            const formData = new FormData();
+            formData.append('upload_id', upload_id);
+            formData.append('chunk_index', String(i));
+            formData.append('chunk', chunk, `chunk_${i}`);
+
+            const chunkRes = await fetch('/api/media/chunk', {
+                method: 'POST',
+                headers: { Accept: 'application/json' },
+                body: formData,
+            });
+            if (!chunkRes.ok) return null;
+        }
+
+        // 3. Complete
+        const completeRes = await fetch('/api/media/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ upload_id }),
+        });
+        if (!completeRes.ok) return null;
+        return await completeRes.json();
     } catch {
         return null;
     }

@@ -6,6 +6,7 @@ import tippy, { type Instance } from 'tippy.js';
 import { Upload } from 'lucide-vue-next';
 import SlashCommandSuggestion from '@/components/SlashCommandSuggestion.vue';
 import type { SlashCommandItem } from '@/components/SlashCommandSuggestion.vue';
+import { uploadFile } from '@/extensions/filenode';
 
 const COMMANDS: SlashCommandItem[] = [
     { id: 'upload', label: 'Upload file', icon: Upload, action: 'upload' },
@@ -73,23 +74,14 @@ export const SlashCommand = Extension.create({
                     editor.chain().focus().deleteRange(range).run();
 
                     if (item.action === 'upload') {
-                        // Trigger file picker
                         const input = document.createElement('input');
                         input.type = 'file';
                         input.multiple = true;
                         input.onchange = () => {
                             if (!input.files) return;
                             Array.from(input.files).forEach(async (file) => {
-                                const formData = new FormData();
-                                formData.append('file', file);
-                                try {
-                                    const res = await fetch('/api/media', {
-                                        method: 'POST',
-                                        headers: { Accept: 'application/json' },
-                                        body: formData,
-                                    });
-                                    if (!res.ok) return;
-                                    const media = await res.json();
+                                const media = await uploadFile(file);
+                                if (media) {
                                     editor
                                         .chain()
                                         .focus()
@@ -104,8 +96,6 @@ export const SlashCommand = Extension.create({
                                             },
                                         })
                                         .run();
-                                } catch {
-                                    // ignore
                                 }
                             });
                         };

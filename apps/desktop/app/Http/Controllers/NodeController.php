@@ -115,6 +115,25 @@ class NodeController extends Controller
         return response()->json($node->load('children'));
     }
 
+    public function syncContent(Request $request, Node $node): JsonResponse
+    {
+        $data = $request->validate([
+            'nodes' => ['required', 'array'],
+            'nodes.*.id' => ['required', 'string'],
+            'nodes.*.tiptap_content' => ['nullable'],
+        ]);
+
+        foreach ($data['nodes'] as $item) {
+            $child = Node::find($item['id']);
+            if ($child) {
+                $child->update(['tiptap_content' => $item['tiptap_content']]);
+                $this->linkParser->syncLinks($child);
+            }
+        }
+
+        return response()->json(null, 200);
+    }
+
     private function syncChildren(Node $parent, array $children): array
     {
         $ids = [];
@@ -126,14 +145,18 @@ class NodeController extends Controller
                 if ($child->trashed()) {
                     $child->restore();
                 }
-                $child->update([
+                $updateData = [
                     'parent_id' => $parent->id,
                     'position' => $i,
                     'content' => $childData['content'] ?? '',
-                    'tiptap_content' => $childData['tiptap_content'] ?? null,
                     'url' => $childData['url'] ?? null,
                     'is_checked' => $childData['is_checked'] ?? null,
-                ]);
+                ];
+                // Only update tiptap_content when explicitly provided
+                if (array_key_exists('tiptap_content', $childData)) {
+                    $updateData['tiptap_content'] = $childData['tiptap_content'];
+                }
+                $child->update($updateData);
             } else {
                 $child = Node::create([
                     'id' => $childData['id'],
