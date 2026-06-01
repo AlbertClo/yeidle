@@ -31,9 +31,12 @@ export const FileNode = Node.create({
                 mergeAttributes(HTMLAttributes, {
                     'data-file-node': '',
                     'data-media-id': mediaId,
+                    'data-src': src,
+                    'data-original-name': originalName,
                     class: 'file-node file-node-image',
                 }),
                 ['img', { src, alt: originalName, loading: 'lazy' }],
+                ['button', { class: 'file-node-menu-btn', contenteditable: 'false', 'data-media-menu': mediaId }, '⋮'],
             ];
         }
 
@@ -43,9 +46,12 @@ export const FileNode = Node.create({
                 mergeAttributes(HTMLAttributes, {
                     'data-file-node': '',
                     'data-media-id': mediaId,
+                    'data-src': src,
+                    'data-original-name': originalName,
                     class: 'file-node file-node-video',
                 }),
                 ['video', { src, controls: 'true', preload: 'metadata' }],
+                ['button', { class: 'file-node-menu-btn', contenteditable: 'false', 'data-media-menu': mediaId }, '⋮'],
             ];
         }
 

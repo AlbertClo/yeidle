@@ -23,7 +23,7 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { ref, computed, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
-import { ExternalLink, Pencil, RotateCcw } from 'lucide-vue-next';
+import { Download, ExternalLink, FolderOpen, Pencil, RotateCcw } from 'lucide-vue-next';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -479,6 +479,83 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
 }
 
 let userHasInteracted = false;
+
+// Media menu popover
+const mediaMenu = ref<{
+    visible: boolean;
+    top: number;
+    left: number;
+    mediaId: string;
+    src: string;
+    originalName: string;
+    selectedIndex: number;
+}>({ visible: false, top: 0, left: 0, mediaId: '', src: '', originalName: '', selectedIndex: 0 });
+const mediaMenuRef = ref<HTMLElement>();
+
+function showMediaMenu(btn: HTMLElement, mediaId: string) {
+    const rect = btn.getBoundingClientRect();
+    const editorEl = document.querySelector('.ProseMirror')?.closest('.relative')?.getBoundingClientRect();
+    if (!editorEl) return;
+    const fileNode = btn.closest('.file-node') as HTMLElement;
+    const src = fileNode?.querySelector('img')?.src || fileNode?.querySelector('video')?.src || '';
+    const originalName = fileNode?.getAttribute('data-original-name') || 'file';
+    mediaMenu.value = {
+        visible: true,
+        top: rect.bottom - editorEl.top + 4,
+        left: rect.left - editorEl.left,
+        mediaId,
+        src,
+        originalName,
+        selectedIndex: 0,
+    };
+    nextTick(() => mediaMenuRef.value?.focus());
+}
+
+function hideMediaMenu() {
+    mediaMenu.value.visible = false;
+}
+
+function mediaDownload() {
+    const { src, originalName } = mediaMenu.value;
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = originalName;
+    a.click();
+    hideMediaMenu();
+}
+
+function mediaOpen() {
+    fetch(`/api/media/${mediaMenu.value.mediaId}/open`, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+    });
+    hideMediaMenu();
+}
+
+function mediaOpenFolder() {
+    fetch(`/api/media/${mediaMenu.value.mediaId}/open-folder`, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+    });
+    hideMediaMenu();
+}
+
+const mediaMenuActions = [mediaDownload, mediaOpen, mediaOpenFolder];
+
+function handleMediaMenuKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        mediaMenu.value.selectedIndex = Math.min(mediaMenu.value.selectedIndex + 1, mediaMenuActions.length - 1);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        mediaMenu.value.selectedIndex = Math.max(mediaMenu.value.selectedIndex - 1, 0);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        mediaMenuActions[mediaMenu.value.selectedIndex]();
+    } else if (e.key === 'Escape') {
+        hideMediaMenu();
+    }
+}
 
 // Link popover state (shared for wikilinks and web links)
 const linkPopover = ref<{
@@ -938,6 +1015,16 @@ const editor = useEditor({
 function handleEditorClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
 
+    // Click on media menu button
+    const menuBtn = target.closest('[data-media-menu]') as HTMLElement;
+    if (menuBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const mediaId = menuBtn.getAttribute('data-media-menu')!;
+        showMediaMenu(menuBtn, mediaId);
+        return;
+    }
+
     // Click on file node (non-image, non-video) opens in OS
     const fileNode = target.closest('.file-node-file') as HTMLElement;
     if (fileNode) {
@@ -1007,6 +1094,44 @@ onBeforeUnmount(() => {
             >
                 <Pencil class="h-4 w-4" />
                 Update link
+            </button>
+        </div>
+
+        <div
+            v-if="mediaMenu.visible"
+            ref="mediaMenuRef"
+            tabindex="-1"
+            class="bg-popover border-border absolute z-50 overflow-hidden rounded-md border shadow-md outline-none whitespace-nowrap"
+            :style="{ top: `${mediaMenu.top}px`, left: `${mediaMenu.left}px` }"
+            @keydown="handleMediaMenuKeydown"
+            @blur="hideMediaMenu"
+        >
+            <button
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                :class="mediaMenu.selectedIndex === 0 ? 'bg-accent' : 'hover:bg-accent'"
+                @mousedown.prevent="mediaDownload"
+                @mouseenter="mediaMenu.selectedIndex = 0"
+            >
+                <Download class="h-4 w-4" />
+                Download
+            </button>
+            <button
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                :class="mediaMenu.selectedIndex === 1 ? 'bg-accent' : 'hover:bg-accent'"
+                @mousedown.prevent="mediaOpen"
+                @mouseenter="mediaMenu.selectedIndex = 1"
+            >
+                <ExternalLink class="h-4 w-4" />
+                Open
+            </button>
+            <button
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                :class="mediaMenu.selectedIndex === 2 ? 'bg-accent' : 'hover:bg-accent'"
+                @mousedown.prevent="mediaOpenFolder"
+                @mouseenter="mediaMenu.selectedIndex = 2"
+            >
+                <FolderOpen class="h-4 w-4" />
+                Open folder
             </button>
         </div>
     </div>
@@ -1223,6 +1348,35 @@ onBeforeUnmount(() => {
     margin: 0.5em 0;
     border-radius: 6px;
     overflow: hidden;
+    position: relative;
+}
+
+.file-node-menu-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    letter-spacing: 1px;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 1;
+}
+
+.file-node:hover .file-node-menu-btn {
+    opacity: 1;
+}
+
+.file-node-menu-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
 }
 
 .file-node-image img {

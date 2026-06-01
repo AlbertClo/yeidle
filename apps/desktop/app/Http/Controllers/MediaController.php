@@ -49,4 +49,12 @@ class MediaController extends Controller
 
         return response()->json(null, 200);
     }
+
+    public function openFolder(Media $media): JsonResponse
+    {
+        $dir = Storage::disk('local')->path('media');
+        \Native\Desktop\Facades\Shell::openExternal("file://{$dir}");
+
+        return response()->json(null, 200);
+    }
 }

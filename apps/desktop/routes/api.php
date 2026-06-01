@@ -22,6 +22,7 @@ Route::get('search', SearchController::class);
 Route::post('media', [MediaController::class, 'store']);
 Route::get('media/{media}', [MediaController::class, 'show']);
 Route::post('media/{media}/open', [MediaController::class, 'open']);
+Route::post('media/{media}/open-folder', [MediaController::class, 'openFolder']);
 
 Route::get('recent-pages', function () {
     $recentIds = \App\Models\PageVisit::select('node_id')
