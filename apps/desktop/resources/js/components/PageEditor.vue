@@ -1046,23 +1046,14 @@ onBeforeUnmount(() => {
 /* Checkbox styles for list items */
 .page-editor-list li[data-checked]::before {
     content: '';
-    display: inline-block;
+    float: left;
     width: 14px;
     height: 14px;
     margin-right: 6px;
+    margin-top: 3px;
     border: 1.5px solid rgba(128, 128, 128, 0.5);
     border-radius: 3px;
     cursor: pointer;
-    vertical-align: middle;
-    position: relative;
-    top: -1px;
-}
-
-.page-editor-list li[data-checked] > p,
-.page-editor-list li[data-checked] > h1,
-.page-editor-list li[data-checked] > h2,
-.page-editor-list li[data-checked] > h3 {
-    display: inline;
 }
 
 .page-editor-list li[data-checked="true"]::before {
