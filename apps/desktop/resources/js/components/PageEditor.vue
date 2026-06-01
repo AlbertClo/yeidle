@@ -755,8 +755,8 @@ const editor = useEditor({
                     }
                 }
             }
-            // ArrowDown from end of last block focuses backlinks (skip if suggestion popup is open)
-            if (event.key === 'ArrowDown' && !document.querySelector('.tippy-box')) {
+            // ArrowDown from end of last block focuses backlinks (skip if shift held or suggestion popup open)
+            if (event.key === 'ArrowDown' && !event.shiftKey && !document.querySelector('.tippy-box')) {
                 const { $head } = view.state.selection;
                 // Check if at the end of the last textblock in the doc
                 if ($head.parentOffset === $head.parent.content.size) {
@@ -773,7 +773,7 @@ const editor = useEditor({
                     }
                 }
             }
-            if (event.key === 'ArrowUp') {
+            if (event.key === 'ArrowUp' && !event.shiftKey) {
                 const { $head } = view.state.selection;
                 // Only jump to title from char 0 of the first top-level list item
                 if ($head.parentOffset === 0) {
