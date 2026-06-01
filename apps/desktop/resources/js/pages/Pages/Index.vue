@@ -36,7 +36,7 @@ const breadcrumbs: BreadcrumbItem[] = [
                     v-for="page in pages"
                     :key="page.id"
                     :href="`/pages/${page.id}`"
-                    class="hover:bg-accent flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
+                    class="hover:bg-accent flex items-center gap-3 rounded-lg px-3 py-2"
                 >
                     <FileText class="text-muted-foreground h-4 w-4 shrink-0" />
                     <span class="flex-1 truncate">
