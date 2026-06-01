@@ -31,6 +31,7 @@ import { Label } from '@/components/ui/label';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import { WebLink } from '@/extensions/weblink';
 import { FileNode } from '@/extensions/filenode';
+import { SlashCommand } from '@/extensions/slashcommand';
 
 function openExternal(url: string) {
     fetch('/api/open-external', {
@@ -832,6 +833,7 @@ const editor = useEditor({
         }),
         WebLink,
         FileNode,
+        SlashCommand,
     ],
     editorProps: {
         attributes: {
