@@ -119,27 +119,35 @@ const AlwaysSplitListItem = Extension.create({
     addKeyboardShortcuts() {
         return {
             'Mod-Enter': ({ editor }) => {
-                const { $head } = editor.state.selection;
-                for (let d = $head.depth; d >= 0; d--) {
-                    if ($head.node(d).type.name === 'listItem') {
-                        const node = $head.node(d);
-                        const pos = $head.before(d);
-                        const currentChecked = node.attrs.checked;
-                        // Cycle: null → false → true → null
-                        let nextChecked: boolean | null;
-                        if (currentChecked === null) nextChecked = false;
-                        else if (currentChecked === false) nextChecked = true;
-                        else nextChecked = null;
-                        editor.view.dispatch(
-                            editor.state.tr.setNodeMarkup(pos, undefined, {
-                                ...node.attrs,
-                                checked: nextChecked,
-                            }),
-                        );
-                        return true;
+                const { from, to } = editor.state.selection;
+
+                // Find all listItems in the selection range
+                const listItems: { node: any; pos: number }[] = [];
+                editor.state.doc.nodesBetween(from, to, (node, pos) => {
+                    if (node.type.name === 'listItem') {
+                        listItems.push({ node, pos });
                     }
-                }
-                return false;
+                });
+
+                if (listItems.length === 0) return false;
+
+                // Determine next state based on the first item
+                const currentChecked = listItems[0].node.attrs.checked;
+                let nextChecked: boolean | null;
+                if (currentChecked === null) nextChecked = false;
+                else if (currentChecked === false) nextChecked = true;
+                else nextChecked = null;
+
+                // Apply to all items in selection
+                const tr = editor.state.tr;
+                listItems.forEach(({ node, pos }) => {
+                    tr.setNodeMarkup(pos, undefined, {
+                        ...node.attrs,
+                        checked: nextChecked,
+                    });
+                });
+                editor.view.dispatch(tr);
+                return true;
             },
             Tab: ({ editor }) => {
                 if (isInCodeBlock(editor)) return false;
