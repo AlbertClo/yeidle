@@ -18,12 +18,13 @@ import type { Node, NodeLink } from '@/types/node';
 
 const props = defineProps<{
     page: Node;
-    backlinks: NodeLink[];
+    backlinks: { id: string; page_id: string; page_title: string }[];
 }>();
 
 const isEditingTitle = ref(false);
-const titleContent = ref(props.page.content);
-const editorKey = ref(0);
+const titleContent = ref('');
+const pageNodes = ref<Node[]>([]);
+const isLoaded = ref(false);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'Pages', href: '/pages' },
@@ -33,8 +34,23 @@ const titleRef = ref<HTMLInputElement>();
 
 // Debounce timer for syncing
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
-let lastNodes: Node[] = props.page.children ?? [];
+let lastNodes: Node[] = [];
 let hasPendingSync = false;
+
+function loadPageData() {
+    fetch(`/api/pages/${props.page.id}`, { headers: { Accept: 'application/json' } })
+        .then((res) => res.json())
+        .then((data) => {
+            titleContent.value = data.content;
+            pageNodes.value = data.children ?? [];
+            lastNodes = pageNodes.value;
+            isLoaded.value = true;
+            nextTick(() => {
+                const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
+                editorEl?.focus();
+            });
+        });
+}
 
 function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
@@ -198,20 +214,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('keydown', handleGlobalKeydown);
-
-    // Reload fresh data to avoid stale Inertia cache on back/forward navigation
-    router.reload({
-        preserveScroll: true,
-        preserveState: false,
-        onSuccess: () => {
-            titleContent.value = props.page.content;
-            editorKey.value++;
-            nextTick(() => {
-                const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
-                editorEl?.focus();
-            });
-        },
-    });
+    loadPageData();
 });
 
 onBeforeUnmount(() => {
@@ -276,8 +279,8 @@ onBeforeUnmount(() => {
 
             <div class="mb-4">
                 <PageEditor
-                    :key="editorKey"
-                    :nodes="page.children ?? []"
+                    v-if="isLoaded"
+                    :nodes="pageNodes"
                     @update="handleNodesUpdate"
                     @focus-title="startEditingTitle()"
                     @focus-backlinks="focusFirstBacklink"
