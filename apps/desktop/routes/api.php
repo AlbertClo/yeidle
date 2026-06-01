@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BookmarkController;
+use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\SearchController;
@@ -17,6 +18,10 @@ Route::get('bookmarks', [BookmarkController::class, 'index']);
 Route::post('bookmarks', [BookmarkController::class, 'store']);
 
 Route::get('search', SearchController::class);
+
+Route::post('media', [MediaController::class, 'store']);
+Route::get('media/{media}', [MediaController::class, 'show']);
+Route::post('media/{media}/open', [MediaController::class, 'open']);
 
 Route::get('recent-pages', function () {
     $recentIds = \App\Models\PageVisit::select('node_id')

@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import { WebLink } from '@/extensions/weblink';
+import { FileNode } from '@/extensions/filenode';
 
 function openExternal(url: string) {
     fetch('/api/open-external', {
@@ -385,16 +386,23 @@ function sanitizeTiptapContent(node: Record<string, unknown>): Record<string, un
 
 function nodeToListItem(node: Node): Record<string, unknown> {
     // Use stored TipTap JSON if available, otherwise fall back to plain text paragraph
-    const blockContent: Record<string, unknown> = node.tiptap_content
-        ? sanitizeTiptapContent({ ...node.tiptap_content })
-        : {
+    let contentBlocks: Record<string, unknown>[];
+    if (node.tiptap_content) {
+        if (Array.isArray(node.tiptap_content)) {
+            contentBlocks = node.tiptap_content.map((b: Record<string, unknown>) => sanitizeTiptapContent(JSON.parse(JSON.stringify(b))));
+        } else {
+            contentBlocks = [sanitizeTiptapContent(JSON.parse(JSON.stringify(node.tiptap_content)))];
+        }
+    } else {
+        contentBlocks = [{
             type: 'paragraph',
             content: node.content
                 ? [{ type: 'text', text: node.content }]
                 : undefined,
-        };
+        }];
+    }
 
-    const content: Record<string, unknown>[] = [blockContent];
+    const content: Record<string, unknown>[] = [...contentBlocks];
 
     if (node.children && node.children.length > 0) {
         content.push({
@@ -426,33 +434,42 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
     const attrs = (item.attrs as Record<string, unknown>) ?? {};
     const content = (item.content as Record<string, unknown>[]) ?? [];
 
-    // Extract text from the first text-containing block (paragraph, heading, codeBlock, blockquote)
-    const textBlock = content.find((c) => c.type !== 'bulletList');
+    // Extract all content blocks (everything except nested bulletList)
+    const contentBlocks = content.filter((c) => c.type !== 'bulletList');
     let textContent = '';
-    if (textBlock) {
-        const extractText = (node: Record<string, unknown>): string => {
-            if (node.text) return node.text as string;
-            // Include mention labels in searchable text
-            if (node.type === 'mention') {
-                const attrs = node.attrs as Record<string, unknown>;
-                return `[[${attrs?.label ?? attrs?.id ?? ''}]]`;
-            }
-            const children = (node.content as Record<string, unknown>[]) ?? [];
-            return children.map(extractText).join('');
-        };
-        textContent = extractText(textBlock);
-    }
+    const extractText = (node: Record<string, unknown>): string => {
+        if (node.text) return node.text as string;
+        if (node.type === 'mention') {
+            const a = node.attrs as Record<string, unknown>;
+            return `[[${a?.label ?? a?.id ?? ''}]]`;
+        }
+        if (node.type === 'fileNode') {
+            const a = node.attrs as Record<string, unknown>;
+            return `[${a?.originalName ?? 'File'}]`;
+        }
+        const children = (node.content as Record<string, unknown>[]) ?? [];
+        return children.map(extractText).join('');
+    };
+    textContent = contentBlocks.map(extractText).join(' ');
 
     const nestedList = content.find((c) => c.type === 'bulletList');
     const blockId = attrs.blockId as string;
     const children = nestedList ? listToNodes(nestedList, blockId) : [];
+
+    // Store tiptap_content: single block as object, multiple as array
+    let tiptapContent: Record<string, unknown> | Record<string, unknown>[] | null = null;
+    if (contentBlocks.length === 1) {
+        tiptapContent = sanitizeTiptapContent(JSON.parse(JSON.stringify(contentBlocks[0])));
+    } else if (contentBlocks.length > 1) {
+        tiptapContent = contentBlocks.map((b) => sanitizeTiptapContent(JSON.parse(JSON.stringify(b))));
+    }
 
     return {
         id: blockId,
         parent_id: parentId,
         position,
         content: textContent,
-        tiptap_content: textBlock ? sanitizeTiptapContent(JSON.parse(JSON.stringify(textBlock))) : null,
+        tiptap_content: tiptapContent,
         url: null,
         is_checked: attrs.checked ?? null,
         created_at: '',
@@ -736,6 +753,7 @@ const editor = useEditor({
             ],
         }),
         WebLink,
+        FileNode,
     ],
     editorProps: {
         attributes: {
@@ -884,6 +902,21 @@ const editor = useEditor({
 
 function handleEditorClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
+
+    // Click on file node (non-image, non-video) opens in OS
+    const fileNode = target.closest('.file-node-file') as HTMLElement;
+    if (fileNode) {
+        const mediaId = fileNode.getAttribute('data-media-id');
+        if (mediaId) {
+            e.preventDefault();
+            fetch(`/api/media/${mediaId}/open`, {
+                method: 'POST',
+                headers: { Accept: 'application/json' },
+            });
+        }
+        return;
+    }
+
     const pageLink = target.closest('[data-page-id]') as HTMLElement;
     if (pageLink) {
         const pageId = pageLink.getAttribute('data-page-id');
@@ -1148,6 +1181,57 @@ onBeforeUnmount(() => {
     outline: 2px solid var(--link);
     outline-offset: 1px;
     background: rgba(96, 165, 250, 0.1);
+}
+
+/* File node styles */
+.file-node {
+    margin: 0.5em 0;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.file-node-image img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+}
+
+.file-node-video video {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+}
+
+.file-node-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(128, 128, 128, 0.1);
+    cursor: pointer;
+}
+
+.file-node-file:hover {
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.file-node-icon {
+    font-size: 1.2em;
+}
+
+.file-node-name {
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+.file-node-size {
+    color: rgba(128, 128, 128, 0.7);
+    font-size: 0.75rem;
+}
+
+.file-node.ProseMirror-selectednode {
+    outline: 2px solid var(--link);
+    outline-offset: 1px;
 }
 
 .web-link {
