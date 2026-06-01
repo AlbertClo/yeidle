@@ -17,6 +17,7 @@ import CodeBlock from '@tiptap/extension-code-block';
 import Heading from '@tiptap/extension-heading';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import Blockquote from '@tiptap/extension-blockquote';
+import Highlight from '@tiptap/extension-highlight';
 import Mention from '@tiptap/extension-mention';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
@@ -887,6 +888,7 @@ const editor = useEditor({
         Heading.configure({ levels: [1, 2, 3] }),
         HorizontalRule,
         Blockquote,
+        Highlight,
         Mention.configure({
             HTMLAttributes: { class: 'wiki-link' },
             suggestion: wikiLinkSuggestion(),
