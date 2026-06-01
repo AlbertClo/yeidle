@@ -318,7 +318,7 @@ function nodeToListItem(node: Node): Record<string, unknown> {
 
     return {
         type: 'listItem',
-        attrs: { blockId: node.id },
+        attrs: { blockId: node.id, checked: node.is_checked ?? null },
         content,
     };
 }
@@ -367,7 +367,7 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
         content: textContent,
         tiptap_content: textBlock ? sanitizeTiptapContent(JSON.parse(JSON.stringify(textBlock))) : null,
         url: null,
-        is_checked: null,
+        is_checked: attrs.checked ?? null,
         created_at: '',
         updated_at: '',
         children,
