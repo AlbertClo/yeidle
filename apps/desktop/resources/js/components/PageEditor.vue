@@ -308,8 +308,52 @@ const AlwaysSplitListItem = Extension.create({
                 if ($head.parentOffset === $head.parent.content.size) {
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
+                            const listItem = $head.node(d);
                             const parent = $head.node(d - 1);
                             const indexInParent = $head.index(d - 1);
+
+                            // Check if the next thing is a nested bulletList (child nodes)
+                            // The listItem's content is: [paragraph, ...otherBlocks, bulletList?]
+                            const lastChild = listItem.lastChild;
+                            if (lastChild?.type.name === 'bulletList' && $head.parent.type.name !== 'bulletList') {
+                                // Merge first child's text into current text block
+                                const firstChildItem = lastChild.firstChild;
+                                if (firstChildItem) {
+                                    const firstChildParagraph = firstChildItem.firstChild;
+                                    const childContent = firstChildParagraph?.content;
+                                    const cursorPos = $head.pos;
+
+                                    // Find the first child listItem's position
+                                    const listItemStart = $head.start(d) - 1;
+                                    let nestedListPos = 0;
+                                    let childItemPos = 0;
+                                    editor.state.doc.nodesBetween(listItemStart, listItemStart + listItem.nodeSize, (node, pos) => {
+                                        if (node === lastChild) nestedListPos = pos;
+                                        if (node === firstChildItem) childItemPos = pos;
+                                    });
+
+                                    let tr = editor.state.tr;
+                                    // Insert child's content at cursor
+                                    if (childContent && childContent.size > 0) {
+                                        tr = tr.insert(cursorPos, childContent);
+                                    }
+                                    const offset = childContent?.size ?? 0;
+
+                                    // Delete the child listItem (or the whole bulletList if it's the only child)
+                                    if (lastChild.childCount === 1) {
+                                        tr = tr.delete(nestedListPos + offset, nestedListPos + offset + lastChild.nodeSize);
+                                    } else {
+                                        tr = tr.delete(childItemPos + offset, childItemPos + offset + firstChildItem.nodeSize);
+                                    }
+
+                                    tr = tr.setSelection(
+                                        editor.state.selection.constructor.near(tr.doc.resolve(cursorPos)),
+                                    );
+                                    editor.view.dispatch(tr);
+                                    return true;
+                                }
+                            }
+
                             if (indexInParent < parent.childCount - 1) {
                                 const endOfItem = $head.end(d) + 1;
                                 let tr = editor.state.tr.join(endOfItem);
