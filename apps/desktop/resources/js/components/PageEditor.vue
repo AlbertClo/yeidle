@@ -22,6 +22,10 @@ import { Plugin } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
 import { ref, nextTick } from 'vue';
 import { ExternalLink, Pencil } from 'lucide-vue-next';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import type { Node } from '@/types/node';
 
@@ -339,7 +343,9 @@ const mentionPopover = ref<{
     pageId: string;
     label: string;
     pos: number;
-}>({ visible: false, top: 0, left: 0, pageId: '', label: '', pos: 0 });
+    selectedIndex: number;
+}>({ visible: false, top: 0, left: 0, pageId: '', label: '', pos: 0, selectedIndex: 0 });
+const popoverRef = ref<HTMLElement>();
 
 function showMentionPopover(view: { coordsAtPos: (pos: number) => { top: number; left: number; bottom: number }; state: { selection: { from: number; node: { attrs: Record<string, unknown> } } } }) {
     const sel = view.state.selection;
@@ -353,7 +359,11 @@ function showMentionPopover(view: { coordsAtPos: (pos: number) => { top: number;
         pageId: sel.node.attrs.id as string,
         label: sel.node.attrs.label as string,
         pos: sel.from,
+        selectedIndex: 0,
     };
+    nextTick(() => {
+        popoverRef.value?.focus();
+    });
 }
 
 function hideMentionPopover() {
@@ -365,20 +375,123 @@ function followLink() {
     window.location.href = `/pages/${mentionPopover.value.pageId}`;
 }
 
+const popoverActions = [followLink, updateLink];
+
+function handlePopoverKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        mentionPopover.value.selectedIndex = Math.min(mentionPopover.value.selectedIndex + 1, popoverActions.length - 1);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        mentionPopover.value.selectedIndex = Math.max(mentionPopover.value.selectedIndex - 1, 0);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        popoverActions[mentionPopover.value.selectedIndex]();
+    } else if (e.key === 'Escape') {
+        hideMentionPopover();
+        editor.value?.commands.focus();
+    }
+}
+
+// Update link modal state
+const updateLinkModal = ref({
+    visible: false,
+    pageQuery: '',
+    label: '',
+    selectedPageId: '',
+    selectedPageTitle: '',
+    pos: 0,
+    searchResults: [] as { id: string; content: string }[],
+    searchSelectedIndex: 0,
+});
+
 function updateLink() {
-    hideMentionPopover();
-    // Delete the current mention and trigger the [[ suggestion at that position
+    const pageId = mentionPopover.value.pageId;
+    const label = mentionPopover.value.label;
     const pos = mentionPopover.value.pos;
+    hideMentionPopover();
+
+    updateLinkModal.value = {
+        visible: true,
+        pageQuery: '',
+        label: label,
+        selectedPageId: pageId,
+        selectedPageTitle: label,
+        pos: pos,
+        searchResults: [],
+    };
+
+    // Load initial page title
+    fetch(`/api/pages/${pageId}`, { headers: { Accept: 'application/json' } })
+        .then((res) => res.json())
+        .then((page) => {
+            updateLinkModal.value.pageQuery = page.content || '';
+            updateLinkModal.value.selectedPageTitle = page.content || '';
+        });
+}
+
+function searchPagesForUpdate(query: string) {
+    updateLinkModal.value.pageQuery = query;
+    updateLinkModal.value.selectedPageId = '';
+    updateLinkModal.value.searchSelectedIndex = 0;
+    if (query.length === 0) {
+        updateLinkModal.value.searchResults = [];
+        return;
+    }
+    fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+        headers: { Accept: 'application/json' },
+    })
+        .then((res) => res.json())
+        .then((data) => {
+            updateLinkModal.value.searchResults = data
+                .filter((n: { parent_id: string | null }) => !n.parent_id)
+                .slice(0, 10);
+        });
+}
+
+function handlePageInputKeydown(e: KeyboardEvent) {
+    const results = updateLinkModal.value.searchResults;
+    if (results.length === 0) return;
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        updateLinkModal.value.searchSelectedIndex = Math.min(updateLinkModal.value.searchSelectedIndex + 1, results.length - 1);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        updateLinkModal.value.searchSelectedIndex = Math.max(updateLinkModal.value.searchSelectedIndex - 1, 0);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        selectPageForUpdate(results[updateLinkModal.value.searchSelectedIndex]);
+    }
+}
+
+function selectPageForUpdate(page: { id: string; content: string }) {
+    updateLinkModal.value.selectedPageId = page.id;
+    updateLinkModal.value.selectedPageTitle = page.content;
+    updateLinkModal.value.pageQuery = page.content;
+    updateLinkModal.value.searchResults = [];
+}
+
+function saveUpdatedLink() {
+    const { selectedPageId, label, pos } = updateLinkModal.value;
+    if (!selectedPageId) return;
+
     const editorInstance = editor.value;
     if (!editorInstance) return;
+
     const node = editorInstance.state.doc.nodeAt(pos);
     if (!node) return;
+
     editorInstance
         .chain()
         .focus()
         .deleteRange({ from: pos, to: pos + node.nodeSize })
-        .insertContent('[[')
+        .insertContent({
+            type: 'mention',
+            attrs: { id: selectedPageId, label: label || updateLinkModal.value.selectedPageTitle },
+        })
         .run();
+
+    updateLinkModal.value.visible = false;
 }
 
 const editor = useEditor({
@@ -550,25 +663,78 @@ onBeforeUnmount(() => {
 
         <div
             v-if="mentionPopover.visible"
-            class="bg-popover border-border absolute z-50 overflow-hidden rounded-md border shadow-md"
+            ref="popoverRef"
+            tabindex="-1"
+            class="bg-popover border-border absolute z-50 overflow-hidden rounded-md border shadow-md outline-none"
             :style="{ top: `${mentionPopover.top}px`, left: `${mentionPopover.left}px` }"
+            @keydown="handlePopoverKeydown"
+            @blur="hideMentionPopover"
         >
             <button
-                class="hover:bg-accent flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                :class="mentionPopover.selectedIndex === 0 ? 'bg-accent' : 'hover:bg-accent'"
                 @mousedown.prevent="followLink"
+                @mouseenter="mentionPopover.selectedIndex = 0"
             >
                 <ExternalLink class="h-4 w-4" />
                 Follow link
             </button>
             <button
-                class="hover:bg-accent flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                :class="mentionPopover.selectedIndex === 1 ? 'bg-accent' : 'hover:bg-accent'"
                 @mousedown.prevent="updateLink"
+                @mouseenter="mentionPopover.selectedIndex = 1"
             >
                 <Pencil class="h-4 w-4" />
                 Update link
             </button>
         </div>
     </div>
+
+    <Dialog v-model:open="updateLinkModal.visible">
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Update link</DialogTitle>
+                <DialogDescription>Change the target page or display label.</DialogDescription>
+            </DialogHeader>
+            <div class="flex flex-col gap-4 py-2">
+                <div class="flex flex-col gap-2">
+                    <Label>Page</Label>
+                    <div class="relative">
+                        <Input
+                            :model-value="updateLinkModal.pageQuery"
+                            placeholder="Search for a page..."
+                            @update:model-value="searchPagesForUpdate"
+                            @keydown="handlePageInputKeydown"
+                        />
+                        <div
+                            v-if="updateLinkModal.searchResults.length > 0"
+                            class="bg-popover border-border absolute top-full z-50 mt-1 w-full overflow-hidden rounded-md border shadow-md"
+                        >
+                            <button
+                                v-for="(page, index) in updateLinkModal.searchResults"
+                                :key="page.id"
+                                class="w-full px-3 py-2 text-left text-sm transition-colors"
+                                :class="index === updateLinkModal.searchSelectedIndex ? 'bg-accent' : 'hover:bg-accent'"
+                                @mousedown.prevent="selectPageForUpdate(page)"
+                                @mouseenter="updateLinkModal.searchSelectedIndex = index"
+                            >
+                                {{ page.content || '[untitled]' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <Label>Display label</Label>
+                    <Input v-model="updateLinkModal.label" placeholder="Link text (optional)" />
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" @click="updateLinkModal.visible = false">Cancel</Button>
+                <Button :disabled="!updateLinkModal.selectedPageId" @click="saveUpdatedLink">Save</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
 </template>
 
 <style>
