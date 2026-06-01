@@ -18,8 +18,9 @@ import Heading from '@tiptap/extension-heading';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import Blockquote from '@tiptap/extension-blockquote';
 import Mention from '@tiptap/extension-mention';
-import { Plugin } from '@tiptap/pm/state';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { ref, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { ExternalLink, Pencil, RotateCcw } from 'lucide-vue-next';
@@ -112,6 +113,57 @@ const CustomListItem = ListItem.extend({
 function isInCodeBlock(editor: { state: { selection: { $head: { parent: { type: { name: string } } } } } }) {
     return editor.state.selection.$head.parent.type.name === 'codeBlock';
 }
+
+// Highlight active line and selected lines
+const ActiveLineHighlight = Extension.create({
+    name: 'activeLineHighlight',
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                key: new PluginKey('activeLineHighlight'),
+                props: {
+                    decorations: (state) => {
+                        const { from, to } = state.selection;
+                        const decorations: Decoration[] = [];
+
+                        if (from === to) {
+                            // Cursor — find the deepest listItem containing it
+                            const $pos = state.doc.resolve(from);
+                            for (let d = $pos.depth; d >= 0; d--) {
+                                if ($pos.node(d).type.name === 'listItem') {
+                                    const pos = $pos.before(d);
+                                    decorations.push(
+                                        Decoration.node(pos, pos + $pos.node(d).nodeSize, { class: 'active-line' }),
+                                    );
+                                    break;
+                                }
+                            }
+                        } else {
+                            // Selection — highlight only listItems whose direct text content overlaps
+                            state.doc.descendants((node, pos) => {
+                                if (node.type.name === 'listItem') {
+                                    // Get the range of the first child (the text block, not nested lists)
+                                    const firstChild = node.firstChild;
+                                    if (firstChild) {
+                                        const textStart = pos + 1;
+                                        const textEnd = textStart + firstChild.nodeSize;
+                                        if (from < textEnd && to > textStart) {
+                                            decorations.push(
+                                                Decoration.node(pos, pos + node.nodeSize, { class: 'selected-line' }),
+                                            );
+                                        }
+                                    }
+                                }
+                            });
+                        }
+
+                        return DecorationSet.create(state.doc, decorations);
+                    },
+                },
+            }),
+        ];
+    },
+});
 
 // Override Enter to always split list items (never lift/exit the list)
 const AlwaysSplitListItem = Extension.create({
@@ -571,6 +623,7 @@ const editor = useEditor({
         }),
         CustomListItem,
         AlwaysSplitListItem,
+        ActiveLineHighlight,
         History,
         Bold,
         Italic,
@@ -857,6 +910,28 @@ onBeforeUnmount(() => {
 
 .page-editor-list li {
     margin-bottom: 0.125em;
+    border-radius: 3px;
+    padding: 1px 4px;
+}
+
+.page-editor-list li.active-line > p,
+.page-editor-list li.active-line > h1,
+.page-editor-list li.active-line > h2,
+.page-editor-list li.active-line > h3,
+.page-editor-list li.active-line > pre,
+.page-editor-list li.active-line > blockquote {
+    background: rgba(128, 128, 128, 0.08);
+    border-radius: 3px;
+}
+
+.page-editor-list li.selected-line > p,
+.page-editor-list li.selected-line > h1,
+.page-editor-list li.selected-line > h2,
+.page-editor-list li.selected-line > h3,
+.page-editor-list li.selected-line > pre,
+.page-editor-list li.selected-line > blockquote {
+    background: rgba(128, 128, 128, 0.15);
+    border-radius: 3px;
 }
 
 .page-editor-list li p {
