@@ -20,6 +20,8 @@ import Blockquote from '@tiptap/extension-blockquote';
 import Mention from '@tiptap/extension-mention';
 import { Plugin } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
+import { ref, nextTick } from 'vue';
+import { ExternalLink, Pencil } from 'lucide-vue-next';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import type { Node } from '@/types/node';
 
@@ -329,6 +331,56 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
 
 let userHasInteracted = false;
 
+// Mention popover state
+const mentionPopover = ref<{
+    visible: boolean;
+    top: number;
+    left: number;
+    pageId: string;
+    label: string;
+    pos: number;
+}>({ visible: false, top: 0, left: 0, pageId: '', label: '', pos: 0 });
+
+function showMentionPopover(view: { coordsAtPos: (pos: number) => { top: number; left: number; bottom: number }; state: { selection: { from: number; node: { attrs: Record<string, unknown> } } } }) {
+    const sel = view.state.selection;
+    const coords = view.coordsAtPos(sel.from);
+    const editorEl = document.querySelector('.ProseMirror')?.getBoundingClientRect();
+    if (!editorEl) return;
+    mentionPopover.value = {
+        visible: true,
+        top: coords.bottom - editorEl.top + 4,
+        left: coords.left - editorEl.left,
+        pageId: sel.node.attrs.id as string,
+        label: sel.node.attrs.label as string,
+        pos: sel.from,
+    };
+}
+
+function hideMentionPopover() {
+    mentionPopover.value.visible = false;
+}
+
+function followLink() {
+    hideMentionPopover();
+    window.location.href = `/pages/${mentionPopover.value.pageId}`;
+}
+
+function updateLink() {
+    hideMentionPopover();
+    // Delete the current mention and trigger the [[ suggestion at that position
+    const pos = mentionPopover.value.pos;
+    const editorInstance = editor.value;
+    if (!editorInstance) return;
+    const node = editorInstance.state.doc.nodeAt(pos);
+    if (!node) return;
+    editorInstance
+        .chain()
+        .focus()
+        .deleteRange({ from: pos, to: pos + node.nodeSize })
+        .insertContent('[[')
+        .run();
+}
+
 const editor = useEditor({
     content: nodesToTiptap(props.nodes),
     extensions: [
@@ -370,6 +422,17 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
+            // Enter on selected mention shows popover
+            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
+                event.preventDefault();
+                showMentionPopover(view);
+                return true;
+            }
+            // Escape closes mention popover
+            if (event.key === 'Escape' && mentionPopover.value.visible) {
+                hideMentionPopover();
+                return true;
+            }
             // Select mention nodes with arrow keys
             if (event.key === 'ArrowRight') {
                 const { $head } = view.state.selection;
@@ -482,8 +545,29 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div @click="handleEditorClick">
+    <div @click="handleEditorClick" class="relative">
         <EditorContent v-if="editor" :editor="editor" />
+
+        <div
+            v-if="mentionPopover.visible"
+            class="bg-popover border-border absolute z-50 overflow-hidden rounded-md border shadow-md"
+            :style="{ top: `${mentionPopover.top}px`, left: `${mentionPopover.left}px` }"
+        >
+            <button
+                class="hover:bg-accent flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                @mousedown.prevent="followLink"
+            >
+                <ExternalLink class="h-4 w-4" />
+                Follow link
+            </button>
+            <button
+                class="hover:bg-accent flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                @mousedown.prevent="updateLink"
+            >
+                <Pencil class="h-4 w-4" />
+                Update link
+            </button>
+        </div>
     </div>
 </template>
 
