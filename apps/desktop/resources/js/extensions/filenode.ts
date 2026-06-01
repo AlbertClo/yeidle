@@ -61,11 +61,13 @@ export const FileNode = Node.create({
             mergeAttributes(HTMLAttributes, {
                 'data-file-node': '',
                 'data-media-id': mediaId,
+                'data-original-name': originalName,
                 class: 'file-node file-node-file',
             }),
             ['span', { class: 'file-node-icon' }, '📎'],
             ['span', { class: 'file-node-name' }, originalName || 'File'],
             ['span', { class: 'file-node-size' }, sizeStr],
+            ['button', { class: 'file-node-menu-btn', contenteditable: 'false', 'data-media-menu': mediaId }, '⋮'],
         ];
     },
 

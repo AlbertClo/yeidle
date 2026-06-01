@@ -23,7 +23,7 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { ref, computed, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
-import { Download, ExternalLink, FolderOpen, Pencil, RotateCcw } from 'lucide-vue-next';
+import { Download, ExternalLink, FolderOpen, Pencil, RotateCcw, Trash2 } from 'lucide-vue-next';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -542,7 +542,24 @@ function mediaOpenFolder() {
     hideMediaMenu();
 }
 
-const mediaMenuActions = [mediaDownload, mediaOpen, mediaOpenFolder];
+function mediaDelete() {
+    if (!editor.value) return;
+    // Find and delete the fileNode from the editor
+    const { state } = editor.value;
+    let nodePos: number | null = null;
+    state.doc.descendants((node, pos) => {
+        if (node.type.name === 'fileNode' && node.attrs.mediaId === mediaMenu.value.mediaId) {
+            nodePos = pos;
+            return false;
+        }
+    });
+    if (nodePos !== null) {
+        editor.value.chain().focus().deleteRange({ from: nodePos, to: nodePos + 1 }).run();
+    }
+    hideMediaMenu();
+}
+
+const mediaMenuActions = [mediaDownload, mediaOpen, mediaOpenFolder, mediaDelete];
 
 function handleMediaMenuKeydown(e: KeyboardEvent) {
     if (e.key === 'ArrowDown') {
@@ -1150,6 +1167,15 @@ onBeforeUnmount(() => {
             >
                 <FolderOpen class="h-4 w-4" />
                 Open folder
+            </button>
+            <button
+                class="text-destructive flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                :class="mediaMenu.selectedIndex === 3 ? 'bg-accent' : 'hover:bg-accent'"
+                @mousedown.prevent="mediaDelete"
+                @mouseenter="mediaMenu.selectedIndex = 3"
+            >
+                <Trash2 class="h-4 w-4" />
+                Delete
             </button>
         </div>
     </div>
