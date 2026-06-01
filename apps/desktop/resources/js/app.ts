@@ -27,8 +27,12 @@ createInertiaApp({
 // This will set light / dark mode on page load...
 initializeTheme();
 
-// Alt+Left/Right for browser history navigation
 document.addEventListener('keydown', (e) => {
+    // Prevent Ctrl+Q from closing the app (Electron default)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
+        e.preventDefault();
+    }
+    // Alt+Left/Right for browser history navigation
     if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
         window.history.back();
