@@ -631,8 +631,8 @@ const editor = useEditor({
                     }
                 }
             }
-            // ArrowDown from end of last block focuses backlinks
-            if (event.key === 'ArrowDown') {
+            // ArrowDown from end of last block focuses backlinks (skip if suggestion popup is open)
+            if (event.key === 'ArrowDown' && !document.querySelector('.tippy-box')) {
                 const { $head } = view.state.selection;
                 // Check if at the end of the last textblock in the doc
                 if ($head.parentOffset === $head.parent.content.size) {
