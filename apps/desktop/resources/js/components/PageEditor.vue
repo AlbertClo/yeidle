@@ -29,6 +29,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
+import { WebLink } from '@/extensions/weblink';
+
+function openExternal(url: string) {
+    fetch('/api/open-external', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ url }),
+    });
+}
 import type { Node } from '@/types/node';
 
 const props = defineProps<{
@@ -666,20 +675,26 @@ const editor = useEditor({
                 ['span', { class: 'wiki-link-bracket' }, ']]'],
             ],
         }),
+        WebLink,
     ],
     editorProps: {
         attributes: {
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
-            // Ctrl+Q on selected mention follows link
-            if (event.key === 'q' && (event.ctrlKey || event.metaKey) && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
-                event.preventDefault();
-                const pageId = view.state.selection.node.attrs.id;
-                if (pageId) {
-                    router.visit(`/pages/${pageId}`);
+            // Ctrl+Q on selected link (mention or web link) follows it
+            if (event.key === 'q' && (event.ctrlKey || event.metaKey) && view.state.selection instanceof NodeSelection) {
+                const node = view.state.selection.node;
+                if (node.type.name === 'mention' && node.attrs.id) {
+                    event.preventDefault();
+                    router.visit(`/pages/${node.attrs.id}`);
+                    return true;
                 }
-                return true;
+                if (node.type.name === 'webLink' && node.attrs.href) {
+                    event.preventDefault();
+                    openExternal(node.attrs.href);
+                    return true;
+                }
             }
             // Enter on selected mention shows popover
             if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
@@ -687,22 +702,28 @@ const editor = useEditor({
                 showMentionPopover(view);
                 return true;
             }
+            // Enter on selected web link opens it
+            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'webLink') {
+                event.preventDefault();
+                openExternal(view.state.selection.node.attrs.href);
+                return true;
+            }
             // Escape closes mention popover
             if (event.key === 'Escape' && mentionPopover.value.visible) {
                 hideMentionPopover();
                 return true;
             }
-            // Select mention nodes with arrow keys
+            // Select atom inline nodes (mentions, web links) with arrow keys
+            const atomTypes = ['mention', 'webLink'];
             if (event.key === 'ArrowRight') {
                 const { $head } = view.state.selection;
                 const nodeAfter = $head.nodeAfter;
-                if (nodeAfter?.type.name === 'mention') {
+                if (nodeAfter && atomTypes.includes(nodeAfter.type.name)) {
                     const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, $head.pos));
                     view.dispatch(tr);
                     return true;
                 }
-                // If a mention is already selected, move cursor past it
-                if (view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
+                if (view.state.selection instanceof NodeSelection && atomTypes.includes(view.state.selection.node.type.name)) {
                     const pos = view.state.selection.to;
                     const tr = view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(pos)));
                     view.dispatch(tr);
@@ -710,8 +731,7 @@ const editor = useEditor({
                 }
             }
             if (event.key === 'ArrowLeft') {
-                // If a mention is already selected, move cursor before it
-                if (view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
+                if (view.state.selection instanceof NodeSelection && atomTypes.includes(view.state.selection.node.type.name)) {
                     const pos = view.state.selection.from;
                     const tr = view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(pos), -1));
                     view.dispatch(tr);
@@ -719,7 +739,7 @@ const editor = useEditor({
                 }
                 const { $head } = view.state.selection;
                 const nodeBefore = $head.nodeBefore;
-                if (nodeBefore?.type.name === 'mention') {
+                if (nodeBefore && atomTypes.includes(nodeBefore.type.name)) {
                     const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, $head.pos - nodeBefore.nodeSize));
                     view.dispatch(tr);
                     return true;
@@ -810,12 +830,21 @@ const editor = useEditor({
 
 function handleEditorClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
-    const link = target.closest('[data-page-id]') as HTMLElement;
-    if (link) {
-        const pageId = link.getAttribute('data-page-id');
+    const pageLink = target.closest('[data-page-id]') as HTMLElement;
+    if (pageLink) {
+        const pageId = pageLink.getAttribute('data-page-id');
         if (pageId) {
             e.preventDefault();
             router.visit(`/pages/${pageId}`);
+        }
+        return;
+    }
+    const webLink = target.closest('[data-web-link]') as HTMLElement;
+    if (webLink) {
+        const href = webLink.getAttribute('href');
+        if (href) {
+            e.preventDefault();
+            openExternal(href);
         }
     }
 }
@@ -1037,10 +1066,20 @@ onBeforeUnmount(() => {
 }
 
 .wiki-link.ProseMirror-selectednode,
-[data-page-id].ProseMirror-selectednode {
+[data-page-id].ProseMirror-selectednode,
+.web-link.ProseMirror-selectednode {
     outline: 2px solid var(--link);
     outline-offset: 1px;
     background: rgba(96, 165, 250, 0.1);
+}
+
+.web-link {
+    color: var(--link);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 1px 2px;
 }
 
 /* Checkbox styles for list items */

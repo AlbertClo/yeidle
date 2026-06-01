@@ -32,6 +32,12 @@ Route::get('recent-pages', function () {
         ->values();
 });
 
+Route::post('open-external', function (\Illuminate\Http\Request $request) {
+    $request->validate(['url' => ['required', 'url']]);
+    \Native\Desktop\Facades\Shell::openExternal($request->url);
+    return response()->json(null, 200);
+});
+
 Route::post('page-visits', function (\Illuminate\Http\Request $request) {
     $request->validate(['node_id' => ['required', 'exists:nodes,id']]);
 
