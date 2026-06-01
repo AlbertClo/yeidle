@@ -21,7 +21,7 @@ import Mention from '@tiptap/extension-mention';
 import { Plugin } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
 import { ref, nextTick } from 'vue';
-import { ExternalLink, Pencil } from 'lucide-vue-next';
+import { ExternalLink, Pencil, RotateCcw } from 'lucide-vue-next';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -726,7 +726,16 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="flex flex-col gap-2">
                     <Label>Display label</Label>
-                    <Input v-model="updateLinkModal.label" placeholder="Link text (optional)" />
+                    <div class="relative">
+                        <Input v-model="updateLinkModal.label" placeholder="Link text (optional)" class="pr-9" />
+                        <button
+                            class="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors"
+                            title="Reset to page title"
+                            @click="updateLinkModal.label = updateLinkModal.selectedPageTitle"
+                        >
+                            <RotateCcw class="h-4 w-4" />
+                        </button>
+                    </div>
                 </div>
             </div>
             <DialogFooter>
