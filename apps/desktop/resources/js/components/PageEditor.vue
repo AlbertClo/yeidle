@@ -451,16 +451,28 @@ function searchPagesForUpdate(query: string) {
 
 function handlePageInputKeydown(e: KeyboardEvent) {
     const results = updateLinkModal.value.searchResults;
-    if (results.length === 0) return;
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown' && results.length > 0) {
         e.preventDefault();
         updateLinkModal.value.searchSelectedIndex = Math.min(updateLinkModal.value.searchSelectedIndex + 1, results.length - 1);
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === 'ArrowUp' && results.length > 0) {
         e.preventDefault();
         updateLinkModal.value.searchSelectedIndex = Math.max(updateLinkModal.value.searchSelectedIndex - 1, 0);
     } else if (e.key === 'Enter') {
         e.preventDefault();
-        selectPageForUpdate(results[updateLinkModal.value.searchSelectedIndex]);
+        if (results.length > 0) {
+            selectPageForUpdate(results[updateLinkModal.value.searchSelectedIndex]);
+        } else if (updateLinkModal.value.selectedPageId) {
+            saveUpdatedLink();
+        }
+    }
+}
+
+function handleLabelInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        if (updateLinkModal.value.selectedPageId) {
+            saveUpdatedLink();
+        }
     }
 }
 
@@ -727,11 +739,12 @@ onBeforeUnmount(() => {
                 <div class="flex flex-col gap-2">
                     <Label>Display label</Label>
                     <div class="relative">
-                        <Input v-model="updateLinkModal.label" placeholder="Link text (optional)" class="pr-9" />
+                        <Input v-model="updateLinkModal.label" placeholder="Link text (optional)" class="pr-9" @keydown="handleLabelInputKeydown" />
                         <button
                             class="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors"
                             title="Reset to page title"
                             @click="updateLinkModal.label = updateLinkModal.selectedPageTitle"
+                            @keydown.enter.prevent="updateLinkModal.label = updateLinkModal.selectedPageTitle"
                         >
                             <RotateCcw class="h-4 w-4" />
                         </button>
