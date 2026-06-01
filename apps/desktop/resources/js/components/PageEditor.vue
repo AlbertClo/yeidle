@@ -388,6 +388,9 @@ function handlePopoverKeydown(e: KeyboardEvent) {
     } else if (e.key === 'Enter') {
         e.preventDefault();
         popoverActions[mentionPopover.value.selectedIndex]();
+    } else if (e.key === 'q' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        followLink();
     } else if (e.key === 'Escape') {
         hideMentionPopover();
         editor.value?.commands.focus();
@@ -717,7 +720,8 @@ onBeforeUnmount(() => {
                 @mouseenter="mentionPopover.selectedIndex = 0"
             >
                 <ExternalLink class="h-4 w-4" />
-                Follow link
+                <span class="flex-1">Follow link</span>
+                <kbd class="text-muted-foreground ml-4 text-xs">Ctrl+Q</kbd>
             </button>
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
