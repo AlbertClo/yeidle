@@ -847,15 +847,50 @@ const editor = useEditor({
                     }
                 }
             }
+            // ArrowDown from selected block node (file, etc.) at end of last list item — create new node
+            if (event.key === 'ArrowDown' && view.state.selection instanceof NodeSelection) {
+                const sel = view.state.selection;
+                // Check if there's any content after the selected node
+                let hasContentAfter = false;
+                view.state.doc.nodesBetween(sel.to, view.state.doc.content.size, (node) => {
+                    if (node.isTextblock || node.isAtom) {
+                        hasContentAfter = true;
+                    }
+                });
+                if (hasContentAfter) {
+                    // Let ProseMirror handle navigation to next block
+                    return false;
+                }
+                const $pos = view.state.doc.resolve(sel.from);
+                for (let d = $pos.depth; d >= 0; d--) {
+                    if ($pos.node(d).type.name === 'listItem') {
+                        const parent = $pos.node(d - 1);
+                        const indexInParent = $pos.index(d - 1);
+                        if (indexInParent === parent.childCount - 1) {
+                            const listItemType = view.state.schema.nodes.listItem;
+                            const paragraphType = view.state.schema.nodes.paragraph;
+                            const endPos = $pos.end(d) + 1;
+                            const newItem = listItemType.create(null, [paragraphType.create()]);
+                            const tr = view.state.tr.insert(endPos, newItem);
+                            tr.setSelection(
+                                view.state.selection.constructor.near(tr.doc.resolve(endPos + 1)),
+                            );
+                            view.dispatch(tr);
+                            return true;
+                        }
+                        break;
+                    }
+                }
+            }
             // ArrowDown from end of last block focuses backlinks (skip if shift held or suggestion popup open)
             if (event.key === 'ArrowDown' && !event.shiftKey && !document.querySelector('.tippy-box')) {
                 const { $head } = view.state.selection;
-                // Check if at the end of the last textblock in the doc
+                // Check if at the end of the last block in the doc
                 if ($head.parentOffset === $head.parent.content.size) {
                     let isLastBlock = true;
-                    // Check there are no more textblocks after this position
+                    // Check there are no more blocks (text or atom) after this position
                     view.state.doc.nodesBetween($head.pos, view.state.doc.content.size, (node) => {
-                        if (node.isTextblock && node !== $head.parent) {
+                        if (node !== $head.parent && (node.isTextblock || node.isAtom)) {
                             isLastBlock = false;
                         }
                     });
