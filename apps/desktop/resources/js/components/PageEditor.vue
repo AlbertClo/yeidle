@@ -36,6 +36,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     update: [nodes: Node[]];
     focusTitle: [];
+    focusBacklinks: [];
 }>();
 
 // Custom document schema: doc must contain a bulletList
@@ -627,6 +628,24 @@ const editor = useEditor({
                                 break;
                             }
                         }
+                    }
+                }
+            }
+            // ArrowDown from end of last block focuses backlinks
+            if (event.key === 'ArrowDown') {
+                const { $head } = view.state.selection;
+                // Check if at the end of the last textblock in the doc
+                if ($head.parentOffset === $head.parent.content.size) {
+                    let isLastBlock = true;
+                    // Check there are no more textblocks after this position
+                    view.state.doc.nodesBetween($head.pos, view.state.doc.content.size, (node) => {
+                        if (node.isTextblock && node !== $head.parent) {
+                            isLastBlock = false;
+                        }
+                    });
+                    if (isLastBlock) {
+                        emit('focusBacklinks');
+                        return true;
                     }
                 }
             }

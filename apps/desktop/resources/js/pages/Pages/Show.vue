@@ -138,6 +138,33 @@ function handleNodesUpdate(nodes: Node[]) {
     syncFullTree(nodes);
 }
 
+function focusFirstBacklink() {
+    nextTick(() => {
+        const firstLink = document.querySelector('.backlink-item') as HTMLElement;
+        firstLink?.focus();
+    });
+}
+
+function focusNextBacklink(e: Event) {
+    const current = e.target as HTMLElement;
+    const next = current.nextElementSibling as HTMLElement;
+    if (next?.classList.contains('backlink-item')) {
+        next.focus();
+    }
+}
+
+function focusPrevBacklink(e: Event) {
+    const current = e.target as HTMLElement;
+    const prev = current.previousElementSibling as HTMLElement;
+    if (prev?.classList.contains('backlink-item')) {
+        prev.focus();
+    } else {
+        // First backlink — focus back to editor's last block
+        const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
+        editorEl?.focus();
+    }
+}
+
 function handleBeforeUnload() {
     flushSync();
 }
@@ -242,6 +269,7 @@ onBeforeUnmount(() => {
                     :nodes="page.children ?? []"
                     @update="handleNodesUpdate"
                     @focus-title="startEditingTitle()"
+                    @focus-backlinks="focusFirstBacklink"
                 />
             </div>
 
@@ -257,7 +285,11 @@ onBeforeUnmount(() => {
                         v-for="link in backlinks"
                         :key="link.id"
                         :href="`/pages/${link.page_id}`"
-                        class="hover:bg-accent rounded-lg px-3 py-2 text-sm transition-colors"
+                        class="backlink-item hover:bg-accent focus:bg-accent rounded-lg px-3 py-2 text-sm transition-colors outline-none"
+                        @keydown.enter.prevent="router.visit(`/pages/${link.page_id}`)"
+                        @keydown.space.prevent="router.visit(`/pages/${link.page_id}`)"
+                        @keydown.down.prevent="focusNextBacklink($event)"
+                        @keydown.up.prevent="focusPrevBacklink($event)"
                     >
                         <span class="text-primary font-medium">
                             {{ link.page_title }}
