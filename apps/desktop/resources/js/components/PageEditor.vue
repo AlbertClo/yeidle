@@ -513,6 +513,7 @@ function showMediaMenu(btn: HTMLElement, mediaId: string) {
 
 function hideMediaMenu() {
     mediaMenu.value.visible = false;
+    editor.value?.commands.focus();
 }
 
 function mediaDownload() {
@@ -857,7 +858,22 @@ const editor = useEditor({
                 showLinkPopover(view);
                 return true;
             }
-            // Escape closes link popover
+            // Enter on selected file node shows media menu
+            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'fileNode') {
+                event.preventDefault();
+                const dom = view.nodeDOM(view.state.selection.from) as HTMLElement;
+                const btn = dom?.querySelector('.file-node-menu-btn') as HTMLElement;
+                if (btn) {
+                    const mediaId = btn.getAttribute('data-media-menu')!;
+                    showMediaMenu(btn, mediaId);
+                }
+                return true;
+            }
+            // Escape closes link popover or media menu
+            if (event.key === 'Escape' && mediaMenu.value.visible) {
+                hideMediaMenu();
+                return true;
+            }
             if (event.key === 'Escape' && linkPopover.value.visible) {
                 hideLinkPopover();
                 return true;
