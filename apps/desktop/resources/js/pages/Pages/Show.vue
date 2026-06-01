@@ -23,6 +23,7 @@ const props = defineProps<{
 
 const isEditingTitle = ref(false);
 const titleContent = ref(props.page.content);
+const editorKey = ref(0);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'Pages', href: '/pages' },
@@ -197,10 +198,19 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('keydown', handleGlobalKeydown);
-    // Focus the editor's first node
-    nextTick(() => {
-        const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
-        editorEl?.focus();
+
+    // Reload fresh data to avoid stale Inertia cache on back/forward navigation
+    router.reload({
+        preserveScroll: true,
+        preserveState: false,
+        onSuccess: () => {
+            titleContent.value = props.page.content;
+            editorKey.value++;
+            nextTick(() => {
+                const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
+                editorEl?.focus();
+            });
+        },
     });
 });
 
@@ -266,6 +276,7 @@ onBeforeUnmount(() => {
 
             <div class="mb-4">
                 <PageEditor
+                    :key="editorKey"
                     :nodes="page.children ?? []"
                     @update="handleNodesUpdate"
                     @focus-title="startEditingTitle()"

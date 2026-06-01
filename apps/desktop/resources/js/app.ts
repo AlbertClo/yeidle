@@ -26,3 +26,15 @@ createInertiaApp({
 
 // This will set light / dark mode on page load...
 initializeTheme();
+
+// Alt+Left/Right for browser history navigation
+document.addEventListener('keydown', (e) => {
+    if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        window.history.back();
+    }
+    if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        window.history.forward();
+    }
+});
