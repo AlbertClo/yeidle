@@ -543,7 +543,9 @@ const editor = useEditor({
             renderHTML: ({ node, HTMLAttributes }) => [
                 'span',
                 { ...HTMLAttributes, 'data-page-id': node.attrs.id },
-                `[[${node.attrs.label ?? node.attrs.id}]]`,
+                ['span', { class: 'wiki-link-bracket' }, '[['],
+                ['span', { class: 'wiki-link-label' }, node.attrs.label ?? node.attrs.id],
+                ['span', { class: 'wiki-link-bracket' }, ']]'],
             ],
         }),
     ],
@@ -878,21 +880,26 @@ onBeforeUnmount(() => {
 
 .wiki-link,
 [data-page-id] {
-    color: var(--primary);
     cursor: pointer;
-    font-weight: 500;
     border-radius: 3px;
     padding: 1px 2px;
 }
 
-.wiki-link.ProseMirror-selectednode,
-[data-page-id].ProseMirror-selectednode {
-    outline: 2px solid var(--primary);
-    outline-offset: 1px;
-    background: rgba(128, 128, 128, 0.1);
+.wiki-link-bracket {
+    opacity: 0.4;
 }
 
-.wiki-link:hover {
-    text-decoration-color: var(--primary);
+.wiki-link-label {
+    color: var(--link);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    font-weight: 500;
+}
+
+.wiki-link.ProseMirror-selectednode,
+[data-page-id].ProseMirror-selectednode {
+    outline: 2px solid var(--link);
+    outline-offset: 1px;
+    background: rgba(96, 165, 250, 0.1);
 }
 </style>

@@ -296,9 +296,7 @@ onBeforeUnmount(() => {
                         @keydown.down.prevent="focusNextBacklink($event)"
                         @keydown.up.prevent="focusPrevBacklink($event)"
                     >
-                        <span class="text-primary font-medium">
-                            {{ link.page_title }}
-                        </span>
+                        <span class="opacity-40">[[</span><span class="font-medium underline underline-offset-2" style="color: var(--link)">{{ link.page_title }}</span><span class="opacity-40">]]</span>
                     </Link>
                 </div>
             </div>
