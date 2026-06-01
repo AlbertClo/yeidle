@@ -297,6 +297,11 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
     if (textBlock) {
         const extractText = (node: Record<string, unknown>): string => {
             if (node.text) return node.text as string;
+            // Include mention labels in searchable text
+            if (node.type === 'mention') {
+                const attrs = node.attrs as Record<string, unknown>;
+                return `[[${attrs?.label ?? attrs?.id ?? ''}]]`;
+            }
             const children = (node.content as Record<string, unknown>[]) ?? [];
             return children.map(extractText).join('');
         };
@@ -312,7 +317,7 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
         parent_id: parentId,
         position,
         content: textContent,
-        tiptap_content: textBlock ?? null,
+        tiptap_content: textBlock ? sanitizeTiptapContent(JSON.parse(JSON.stringify(textBlock))) : null,
         url: null,
         is_checked: null,
         created_at: '',

@@ -112,7 +112,6 @@ export function wikiLinkSuggestion(): Omit<SuggestionOptions<SuggestionItem>, 'e
                         type: 'mention',
                         attrs: { id: item.id, label: item.content },
                     })
-                    .insertContent(' ')
                     .run();
             }
         },

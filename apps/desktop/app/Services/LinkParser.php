@@ -30,8 +30,8 @@ class LinkParser
             $linkData[$targetPage->id] = $link['display_name'];
         }
 
-        // Delete existing links from this node
-        $node->outgoingLinks()->delete();
+        // Hard delete existing links (soft delete leaves rows that violate unique constraint)
+        $node->outgoingLinks()->forceDelete();
 
         // Create new links
         foreach ($linkData as $targetId => $displayName) {
