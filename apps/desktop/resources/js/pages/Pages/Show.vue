@@ -22,9 +22,9 @@ const props = defineProps<{
 }>();
 
 const isEditingTitle = ref(false);
-const titleContent = ref('');
-const pageNodes = ref<Node[]>([]);
-const isLoaded = ref(false);
+const titleContent = ref(props.page.content);
+const pageNodes = ref<Node[]>(props.page.children ?? []);
+const editorKey = ref(0);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'Pages', href: '/pages' },
@@ -37,18 +37,22 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let lastNodes: Node[] = [];
 let hasPendingSync = false;
 
-function loadPageData() {
+function refreshPageData() {
     fetch(`/api/pages/${props.page.id}`, { headers: { Accept: 'application/json' } })
         .then((res) => res.json())
         .then((data) => {
-            titleContent.value = data.content;
-            pageNodes.value = data.children ?? [];
-            lastNodes = pageNodes.value;
-            isLoaded.value = true;
-            nextTick(() => {
-                const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
-                editorEl?.focus();
-            });
+            const freshNodes = data.children ?? [];
+            const currentJson = JSON.stringify(pageNodes.value.map((n: Node) => ({ id: n.id, content: n.content, tiptap_content: n.tiptap_content })));
+            const freshJson = JSON.stringify(freshNodes.map((n: Node) => ({ id: n.id, content: n.content, tiptap_content: n.tiptap_content })));
+
+            if (currentJson !== freshJson) {
+                pageNodes.value = freshNodes;
+                lastNodes = freshNodes;
+                editorKey.value++;
+            }
+            if (data.content !== titleContent.value) {
+                titleContent.value = data.content;
+            }
         });
 }
 
@@ -214,7 +218,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('keydown', handleGlobalKeydown);
-    loadPageData();
+    nextTick(() => {
+        const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
+        editorEl?.focus();
+    });
+    refreshPageData();
 });
 
 onBeforeUnmount(() => {
@@ -279,7 +287,7 @@ onBeforeUnmount(() => {
 
             <div class="mb-4">
                 <PageEditor
-                    v-if="isLoaded"
+                    :key="editorKey"
                     :nodes="pageNodes"
                     @update="handleNodesUpdate"
                     @focus-title="startEditingTitle()"
