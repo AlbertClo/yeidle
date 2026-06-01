@@ -19,6 +19,7 @@ import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import Blockquote from '@tiptap/extension-blockquote';
 import Mention from '@tiptap/extension-mention';
 import { Plugin } from '@tiptap/pm/state';
+import { NodeSelection } from '@tiptap/pm/state';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import type { Node } from '@/types/node';
 
@@ -369,6 +370,39 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
+            // Select mention nodes with arrow keys
+            if (event.key === 'ArrowRight') {
+                const { $head } = view.state.selection;
+                const nodeAfter = $head.nodeAfter;
+                if (nodeAfter?.type.name === 'mention') {
+                    const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, $head.pos));
+                    view.dispatch(tr);
+                    return true;
+                }
+                // If a mention is already selected, move cursor past it
+                if (view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
+                    const pos = view.state.selection.to;
+                    const tr = view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(pos)));
+                    view.dispatch(tr);
+                    return true;
+                }
+            }
+            if (event.key === 'ArrowLeft') {
+                // If a mention is already selected, move cursor before it
+                if (view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
+                    const pos = view.state.selection.from;
+                    const tr = view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(pos), -1));
+                    view.dispatch(tr);
+                    return true;
+                }
+                const { $head } = view.state.selection;
+                const nodeBefore = $head.nodeBefore;
+                if (nodeBefore?.type.name === 'mention') {
+                    const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, $head.pos - nodeBefore.nodeSize));
+                    view.dispatch(tr);
+                    return true;
+                }
+            }
             if (event.key === 'ArrowDown') {
                 const { $head } = view.state.selection;
                 // If in a code block at the end of the last list item, create a new item below
@@ -538,6 +572,15 @@ onBeforeUnmount(() => {
     color: var(--primary);
     cursor: pointer;
     font-weight: 500;
+    border-radius: 3px;
+    padding: 1px 2px;
+}
+
+.wiki-link.ProseMirror-selectednode,
+[data-page-id].ProseMirror-selectednode {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+    background: rgba(128, 128, 128, 0.1);
 }
 
 .wiki-link:hover {
