@@ -59,6 +59,22 @@ const CustomListItem = ListItem.extend({
                     return { 'data-block-id': attributes.blockId };
                 },
             },
+            checked: {
+                default: null,
+                parseHTML: (element: HTMLElement) => {
+                    const val = element.getAttribute('data-checked');
+                    if (val === 'true') return true;
+                    if (val === 'false') return false;
+                    return null;
+                },
+                renderHTML: (attributes: Record<string, unknown>) => {
+                    if (attributes.checked === null) return {};
+                    return {
+                        'data-checked': String(attributes.checked),
+                        class: attributes.checked ? 'is-checked' : 'is-unchecked',
+                    };
+                },
+            },
         };
     },
     addProseMirrorPlugins() {
@@ -102,6 +118,29 @@ const AlwaysSplitListItem = Extension.create({
     name: 'alwaysSplitListItem',
     addKeyboardShortcuts() {
         return {
+            'Mod-Enter': ({ editor }) => {
+                const { $head } = editor.state.selection;
+                for (let d = $head.depth; d >= 0; d--) {
+                    if ($head.node(d).type.name === 'listItem') {
+                        const node = $head.node(d);
+                        const pos = $head.before(d);
+                        const currentChecked = node.attrs.checked;
+                        // Cycle: null → false → true → null
+                        let nextChecked: boolean | null;
+                        if (currentChecked === null) nextChecked = false;
+                        else if (currentChecked === false) nextChecked = true;
+                        else nextChecked = null;
+                        editor.view.dispatch(
+                            editor.state.tr.setNodeMarkup(pos, undefined, {
+                                ...node.attrs,
+                                checked: nextChecked,
+                            }),
+                        );
+                        return true;
+                    }
+                }
+                return false;
+            },
             Tab: ({ editor }) => {
                 if (isInCodeBlock(editor)) return false;
                 editor.commands.sinkListItem('listItem');
@@ -901,5 +940,31 @@ onBeforeUnmount(() => {
     outline: 2px solid var(--link);
     outline-offset: 1px;
     background: rgba(96, 165, 250, 0.1);
+}
+
+/* Checkbox styles for list items */
+.page-editor-list li[data-checked]::before {
+    content: '☐ ';
+    cursor: pointer;
+}
+
+.page-editor-list li[data-checked] > p,
+.page-editor-list li[data-checked] > h1,
+.page-editor-list li[data-checked] > h2,
+.page-editor-list li[data-checked] > h3 {
+    display: inline;
+}
+
+.page-editor-list li[data-checked="true"]::before {
+    content: '☑ ';
+    opacity: 0.5;
+}
+
+.page-editor-list li[data-checked="true"] > p,
+.page-editor-list li[data-checked="true"] > h1,
+.page-editor-list li[data-checked="true"] > h2,
+.page-editor-list li[data-checked="true"] > h3 {
+    text-decoration: line-through;
+    opacity: 0.5;
 }
 </style>
