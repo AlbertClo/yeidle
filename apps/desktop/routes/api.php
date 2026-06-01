@@ -43,7 +43,7 @@ Route::get('recent-pages', function () {
 
 Route::post('open-external', function (\Illuminate\Http\Request $request) {
     $request->validate(['url' => ['required', 'url']]);
-    \Native\Desktop\Facades\Shell::openExternal($request->url);
+    exec('xdg-open '.escapeshellarg($request->url).' > /dev/null 2>&1 &');
     return response()->json(null, 200);
 });
 

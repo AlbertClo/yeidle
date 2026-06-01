@@ -126,7 +126,7 @@ class MediaController extends Controller
     public function open(Media $media): JsonResponse
     {
         $path = Storage::disk('local')->path("media/{$media->filename}");
-        \Native\Desktop\Facades\Shell::openFile($path);
+        exec('xdg-open '.escapeshellarg($path).' > /dev/null 2>&1 &');
 
         return response()->json(null, 200);
     }
@@ -134,7 +134,7 @@ class MediaController extends Controller
     public function openFolder(Media $media): JsonResponse
     {
         $dir = Storage::disk('local')->path('media');
-        \Native\Desktop\Facades\Shell::openExternal("file://{$dir}");
+        exec('xdg-open '.escapeshellarg($dir).' > /dev/null 2>&1 &');
 
         return response()->json(null, 200);
     }
