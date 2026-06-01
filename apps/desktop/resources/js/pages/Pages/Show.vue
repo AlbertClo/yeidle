@@ -118,6 +118,19 @@ function stripTiptapContent(nodes: Node[]): Record<string, unknown>[] {
 
 const lastTiptapContentMap = new Map<string, string>();
 
+// Pre-populate the map so the first sync doesn't re-send everything
+function initTiptapContentMap(nodes: Node[]) {
+    for (const n of nodes) {
+        if (n.tiptap_content) {
+            lastTiptapContentMap.set(n.id, JSON.stringify(n.tiptap_content));
+        }
+        if (n.children) {
+            initTiptapContentMap(n.children);
+        }
+    }
+}
+initTiptapContentMap(pageNodes.value);
+
 function collectChangedTiptapContent(nodes: Node[]): { id: string; tiptap_content: unknown }[] {
     const result: { id: string; tiptap_content: unknown }[] = [];
     for (const n of nodes) {
