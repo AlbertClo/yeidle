@@ -21,7 +21,7 @@ import Mention from '@tiptap/extension-mention';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { ref, nextTick } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { ExternalLink, Pencil, RotateCcw } from 'lucide-vue-next';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -463,29 +463,34 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
 
 let userHasInteracted = false;
 
-// Mention popover state
-const mentionPopover = ref<{
+// Link popover state (shared for wikilinks and web links)
+const linkPopover = ref<{
     visible: boolean;
     top: number;
     left: number;
+    type: 'mention' | 'webLink';
     pageId: string;
     label: string;
+    href: string;
     pos: number;
     selectedIndex: number;
-}>({ visible: false, top: 0, left: 0, pageId: '', label: '', pos: 0, selectedIndex: 0 });
+}>({ visible: false, top: 0, left: 0, type: 'mention', pageId: '', label: '', href: '', pos: 0, selectedIndex: 0 });
 const popoverRef = ref<HTMLElement>();
 
-function showMentionPopover(view: { coordsAtPos: (pos: number) => { top: number; left: number; bottom: number }; state: { selection: { from: number; node: { attrs: Record<string, unknown> } } } }) {
+function showLinkPopover(view: any) {
     const sel = view.state.selection;
+    const node = sel.node;
     const coords = view.coordsAtPos(sel.from);
     const editorEl = document.querySelector('.ProseMirror')?.getBoundingClientRect();
     if (!editorEl) return;
-    mentionPopover.value = {
+    linkPopover.value = {
         visible: true,
         top: coords.bottom - editorEl.top + 4,
         left: coords.left - editorEl.left,
-        pageId: sel.node.attrs.id as string,
-        label: sel.node.attrs.label as string,
+        type: node.type.name as 'mention' | 'webLink',
+        pageId: node.attrs.id ?? '',
+        label: node.attrs.label ?? '',
+        href: node.attrs.href ?? '',
         pos: sel.from,
         selectedIndex: 0,
     };
@@ -494,32 +499,38 @@ function showMentionPopover(view: { coordsAtPos: (pos: number) => { top: number;
     });
 }
 
-function hideMentionPopover() {
-    mentionPopover.value.visible = false;
+function hideLinkPopover() {
+    linkPopover.value.visible = false;
 }
 
 function followLink() {
-    hideMentionPopover();
-    router.visit(`/pages/${mentionPopover.value.pageId}`);
+    const { type, pageId, href } = linkPopover.value;
+    hideLinkPopover();
+    if (type === 'mention' && pageId) {
+        router.visit(`/pages/${pageId}`);
+    } else if (type === 'webLink' && href) {
+        openExternal(href);
+    }
 }
 
-const popoverActions = [followLink, updateLink];
-
 function handlePopoverKeydown(e: KeyboardEvent) {
+    const actions = linkPopover.value.type === 'mention'
+        ? [followLink, updateLink]
+        : [followLink, updateWebLink];
     if (e.key === 'ArrowDown') {
         e.preventDefault();
-        mentionPopover.value.selectedIndex = Math.min(mentionPopover.value.selectedIndex + 1, popoverActions.length - 1);
+        linkPopover.value.selectedIndex = Math.min(linkPopover.value.selectedIndex + 1, actions.length - 1);
     } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        mentionPopover.value.selectedIndex = Math.max(mentionPopover.value.selectedIndex - 1, 0);
+        linkPopover.value.selectedIndex = Math.max(linkPopover.value.selectedIndex - 1, 0);
     } else if (e.key === 'Enter') {
         e.preventDefault();
-        popoverActions[mentionPopover.value.selectedIndex]();
+        actions[linkPopover.value.selectedIndex]();
     } else if (e.key === 'q' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         followLink();
     } else if (e.key === 'Escape') {
-        hideMentionPopover();
+        hideLinkPopover();
         editor.value?.commands.focus();
     }
 }
@@ -537,10 +548,10 @@ const updateLinkModal = ref({
 });
 
 function updateLink() {
-    const pageId = mentionPopover.value.pageId;
-    const label = mentionPopover.value.label;
-    const pos = mentionPopover.value.pos;
-    hideMentionPopover();
+    const pageId = linkPopover.value.pageId;
+    const label = linkPopover.value.label;
+    const pos = linkPopover.value.pos;
+    hideLinkPopover();
 
     updateLinkModal.value = {
         visible: true,
@@ -637,6 +648,55 @@ function saveUpdatedLink() {
     updateLinkModal.value.visible = false;
 }
 
+// Web link update modal
+const updateWebLinkModal = ref({
+    visible: false,
+    href: '',
+    label: '',
+    pos: 0,
+});
+
+function updateWebLink() {
+    const href = linkPopover.value.href;
+    const label = linkPopover.value.label;
+    const pos = linkPopover.value.pos;
+    hideLinkPopover();
+    updateWebLinkModal.value = { visible: true, href, label, pos };
+}
+
+const isValidUrl = computed(() => {
+    try {
+        const url = new URL(updateWebLinkModal.value.href);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+        return false;
+    }
+});
+
+function saveUpdatedWebLink() {
+    if (!isValidUrl.value) return;
+    const { href, label, pos } = updateWebLinkModal.value;
+    if (!href) return;
+    const editorInstance = editor.value;
+    if (!editorInstance) return;
+    const node = editorInstance.state.doc.nodeAt(pos);
+    if (!node) return;
+    editorInstance
+        .chain()
+        .focus()
+        .deleteRange({ from: pos, to: pos + node.nodeSize })
+        .insertContent({ type: 'webLink', attrs: { href, label: label || null } })
+        .run();
+    updateWebLinkModal.value.visible = false;
+}
+
+function handleWebLinkKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        saveUpdatedWebLink();
+    }
+}
+
 const editor = useEditor({
     content: nodesToTiptap(props.nodes),
     extensions: [
@@ -696,21 +756,15 @@ const editor = useEditor({
                     return true;
                 }
             }
-            // Enter on selected mention shows popover
-            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
+            // Enter on selected link shows popover
+            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && ['mention', 'webLink'].includes(view.state.selection.node.type.name)) {
                 event.preventDefault();
-                showMentionPopover(view);
+                showLinkPopover(view);
                 return true;
             }
-            // Enter on selected web link opens it
-            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'webLink') {
-                event.preventDefault();
-                openExternal(view.state.selection.node.attrs.href);
-                return true;
-            }
-            // Escape closes mention popover
-            if (event.key === 'Escape' && mentionPopover.value.visible) {
-                hideMentionPopover();
+            // Escape closes link popover
+            if (event.key === 'Escape' && linkPopover.value.visible) {
+                hideLinkPopover();
                 return true;
             }
             // Select atom inline nodes (mentions, web links) with arrow keys
@@ -859,19 +913,19 @@ onBeforeUnmount(() => {
         <EditorContent v-if="editor" :editor="editor" />
 
         <div
-            v-if="mentionPopover.visible"
+            v-if="linkPopover.visible"
             ref="popoverRef"
             tabindex="-1"
             class="bg-popover border-border absolute z-50 overflow-hidden rounded-md border shadow-md outline-none"
-            :style="{ top: `${mentionPopover.top}px`, left: `${mentionPopover.left}px` }"
+            :style="{ top: `${linkPopover.top}px`, left: `${linkPopover.left}px` }"
             @keydown="handlePopoverKeydown"
-            @blur="hideMentionPopover"
+            @blur="hideLinkPopover"
         >
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="mentionPopover.selectedIndex === 0 ? 'bg-accent' : 'hover:bg-accent'"
+                :class="linkPopover.selectedIndex === 0 ? 'bg-accent' : 'hover:bg-accent'"
                 @mousedown.prevent="followLink"
-                @mouseenter="mentionPopover.selectedIndex = 0"
+                @mouseenter="linkPopover.selectedIndex = 0"
             >
                 <ExternalLink class="h-4 w-4" />
                 <span class="flex-1">Follow link</span>
@@ -879,9 +933,9 @@ onBeforeUnmount(() => {
             </button>
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="mentionPopover.selectedIndex === 1 ? 'bg-accent' : 'hover:bg-accent'"
-                @mousedown.prevent="updateLink"
-                @mouseenter="mentionPopover.selectedIndex = 1"
+                :class="linkPopover.selectedIndex === 1 ? 'bg-accent' : 'hover:bg-accent'"
+                @mousedown.prevent="linkPopover.type === 'mention' ? updateLink() : updateWebLink()"
+                @mouseenter="linkPopover.selectedIndex = 1"
             >
                 <Pencil class="h-4 w-4" />
                 Update link
@@ -940,6 +994,29 @@ onBeforeUnmount(() => {
             <DialogFooter>
                 <Button variant="outline" @click="updateLinkModal.visible = false">Cancel</Button>
                 <Button :disabled="!updateLinkModal.selectedPageId" @click="saveUpdatedLink">Save</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="updateWebLinkModal.visible">
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Update web link</DialogTitle>
+                <DialogDescription>Change the URL or display label.</DialogDescription>
+            </DialogHeader>
+            <div class="flex flex-col gap-4 py-2">
+                <div class="flex flex-col gap-2">
+                    <Label>URL</Label>
+                    <Input v-model="updateWebLinkModal.href" placeholder="https://..." @keydown="handleWebLinkKeydown" />
+                </div>
+                <div class="flex flex-col gap-2">
+                    <Label>Display label</Label>
+                    <Input v-model="updateWebLinkModal.label" placeholder="Optional display text" @keydown="handleWebLinkKeydown" />
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" @click="updateWebLinkModal.visible = false">Cancel</Button>
+                <Button :disabled="!isValidUrl" @click="saveUpdatedWebLink">Save</Button>
             </DialogFooter>
         </DialogContent>
     </Dialog>

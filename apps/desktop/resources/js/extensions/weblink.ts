@@ -15,6 +15,9 @@ export const WebLink = Node.create({
             href: {
                 default: null,
             },
+            label: {
+                default: null,
+            },
         };
     },
 
@@ -32,12 +35,12 @@ export const WebLink = Node.create({
                 target: '_blank',
                 rel: 'noopener noreferrer',
             }),
-            node.attrs.href,
+            node.attrs.label || node.attrs.href,
         ];
     },
 
     renderText({ node }) {
-        return node.attrs.href;
+        return node.attrs.label || node.attrs.href;
     },
 
     addInputRules() {
