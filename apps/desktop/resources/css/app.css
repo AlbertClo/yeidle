@@ -181,6 +181,20 @@ body {
     margin-right: 0 !important;
 }
 
+.ProseMirror ul ul {
+    position: relative;
+}
+
+.ProseMirror ul ul::before {
+    content: '';
+    position: absolute;
+    left: -1.1em;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+}
+
 ::-webkit-scrollbar {
     width: 8px;
 }
