@@ -944,8 +944,17 @@ onBeforeUnmount(() => {
 
 /* Checkbox styles for list items */
 .page-editor-list li[data-checked]::before {
-    content: '☐ ';
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    border: 1.5px solid rgba(128, 128, 128, 0.5);
+    border-radius: 3px;
     cursor: pointer;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
 }
 
 .page-editor-list li[data-checked] > p,
@@ -956,15 +965,20 @@ onBeforeUnmount(() => {
 }
 
 .page-editor-list li[data-checked="true"]::before {
-    content: '☑ ';
-    opacity: 0.5;
+    background: var(--link);
+    border-color: var(--link);
+    content: '✓';
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 14px;
+    text-align: center;
+    color: var(--background);
 }
 
 .page-editor-list li[data-checked="true"] > p,
 .page-editor-list li[data-checked="true"] > h1,
 .page-editor-list li[data-checked="true"] > h2,
 .page-editor-list li[data-checked="true"] > h3 {
-    text-decoration: line-through;
     opacity: 0.5;
 }
 </style>
