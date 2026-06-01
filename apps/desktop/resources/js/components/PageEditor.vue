@@ -1053,7 +1053,6 @@ onBeforeUnmount(() => {
     margin-top: 3px;
     border: 1.5px solid rgba(128, 128, 128, 0.5);
     border-radius: 3px;
-    cursor: pointer;
 }
 
 .page-editor-list li[data-checked="true"]::before {
