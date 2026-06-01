@@ -363,18 +363,6 @@ const editor = useEditor({
         attributes: {
             class: 'outline-none',
         },
-        handleClick: (view, pos, event) => {
-            const target = event.target as HTMLElement;
-            const wikiLink = target.closest('.wiki-link') as HTMLElement;
-            if (wikiLink) {
-                const pageId = wikiLink.getAttribute('data-page-id');
-                if (pageId) {
-                    window.location.href = `/pages/${pageId}`;
-                    return true;
-                }
-            }
-            return false;
-        },
         handleKeyDown: (view, event) => {
             if (event.key === 'ArrowDown') {
                 const { $head } = view.state.selection;
@@ -437,13 +425,27 @@ const editor = useEditor({
     },
 });
 
+function handleEditorClick(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    const link = target.closest('[data-page-id]') as HTMLElement;
+    if (link) {
+        const pageId = link.getAttribute('data-page-id');
+        if (pageId) {
+            e.preventDefault();
+            window.location.href = `/pages/${pageId}`;
+        }
+    }
+}
+
 onBeforeUnmount(() => {
     editor.value?.destroy();
 });
 </script>
 
 <template>
-    <EditorContent v-if="editor" :editor="editor" />
+    <div @click="handleEditorClick">
+        <EditorContent v-if="editor" :editor="editor" />
+    </div>
 </template>
 
 <style>
@@ -526,13 +528,11 @@ onBeforeUnmount(() => {
     font-size: 0.85em;
 }
 
-.wiki-link {
+.wiki-link,
+[data-page-id] {
     color: var(--primary);
     cursor: pointer;
     font-weight: 500;
-    text-decoration: underline;
-    text-decoration-color: rgba(var(--primary), 0.3);
-    text-underline-offset: 2px;
 }
 
 .wiki-link:hover {
