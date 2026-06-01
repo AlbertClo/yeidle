@@ -26,6 +26,7 @@ const isEditingTitle = ref(false);
 const cached = getCachedPage(props.page.id);
 const titleContent = ref(cached?.title ?? props.page.content);
 const pageNodes = ref<Node[]>(cached?.children ?? props.page.children ?? []);
+const pageBacklinks = ref(props.backlinks);
 const editorKey = ref(0);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
@@ -113,7 +114,17 @@ function doSync(nodes: Node[]) {
             content: titleContent.value,
             children: nodes,
         }),
-    });
+    }).then(() => refreshBacklinks());
+}
+
+function refreshBacklinks() {
+    fetch(`/api/pages/${props.page.id}/backlinks`, {
+        headers: { Accept: 'application/json' },
+    })
+        .then((res) => res.json())
+        .then((data) => {
+            pageBacklinks.value = data;
+        });
 }
 
 function syncFullTree(nodes: Node[]) {
@@ -204,6 +215,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('keydown', handleGlobalKeydown);
+    refreshBacklinks();
 });
 
 onBeforeUnmount(() => {
@@ -277,7 +289,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div
-                v-if="backlinks.length > 0"
+                v-if="pageBacklinks.length > 0"
                 class="border-border mt-8 border-t pt-6"
             >
                 <h2 class="text-muted-foreground mb-3 text-xs font-semibold uppercase tracking-wider">
@@ -285,7 +297,7 @@ onBeforeUnmount(() => {
                 </h2>
                 <div class="flex flex-col gap-2">
                     <Link
-                        v-for="link in backlinks"
+                        v-for="link in pageBacklinks"
                         :key="link.id"
                         :href="`/pages/${link.page_id}`"
                         class="backlink-item hover:bg-accent focus:bg-accent rounded-lg px-3 py-2 text-sm outline-none"
