@@ -547,6 +547,15 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
+            // Ctrl+Q on selected mention follows link
+            if (event.key === 'q' && (event.ctrlKey || event.metaKey) && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
+                event.preventDefault();
+                const pageId = view.state.selection.node.attrs.id;
+                if (pageId) {
+                    window.location.href = `/pages/${pageId}`;
+                }
+                return true;
+            }
             // Enter on selected mention shows popover
             if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'mention') {
                 event.preventDefault();
