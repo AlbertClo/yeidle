@@ -21,6 +21,7 @@ import Mention from '@tiptap/extension-mention';
 import { Plugin } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
 import { ref, nextTick } from 'vue';
+import { router } from '@inertiajs/vue3';
 import { ExternalLink, Pencil, RotateCcw } from 'lucide-vue-next';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -373,7 +374,7 @@ function hideMentionPopover() {
 
 function followLink() {
     hideMentionPopover();
-    window.location.href = `/pages/${mentionPopover.value.pageId}`;
+    router.visit(`/pages/${mentionPopover.value.pageId}`);
 }
 
 const popoverActions = [followLink, updateLink];
@@ -556,7 +557,7 @@ const editor = useEditor({
                 event.preventDefault();
                 const pageId = view.state.selection.node.attrs.id;
                 if (pageId) {
-                    window.location.href = `/pages/${pageId}`;
+                    router.visit(`/pages/${pageId}`);
                 }
                 return true;
             }
@@ -690,7 +691,7 @@ function handleEditorClick(e: MouseEvent) {
         const pageId = link.getAttribute('data-page-id');
         if (pageId) {
             e.preventDefault();
-            window.location.href = `/pages/${pageId}`;
+            router.visit(`/pages/${pageId}`);
         }
     }
 }

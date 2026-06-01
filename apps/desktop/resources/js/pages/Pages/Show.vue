@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import type { Node, NodeLink } from '@/types/node';
+import { getCachedPage, setCachedPage } from '@/stores/pageCache';
 
 const props = defineProps<{
     page: Node;
@@ -22,8 +23,9 @@ const props = defineProps<{
 }>();
 
 const isEditingTitle = ref(false);
-const titleContent = ref(props.page.content);
-const pageNodes = ref<Node[]>(props.page.children ?? []);
+const cached = getCachedPage(props.page.id);
+const titleContent = ref(cached?.title ?? props.page.content);
+const pageNodes = ref<Node[]>(cached?.children ?? props.page.children ?? []);
 const editorKey = ref(0);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
@@ -37,24 +39,6 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let lastNodes: Node[] = [];
 let hasPendingSync = false;
 
-function refreshPageData() {
-    fetch(`/api/pages/${props.page.id}`, { headers: { Accept: 'application/json' } })
-        .then((res) => res.json())
-        .then((data) => {
-            const freshNodes = data.children ?? [];
-            const currentJson = JSON.stringify(pageNodes.value.map((n: Node) => ({ id: n.id, content: n.content, tiptap_content: n.tiptap_content })));
-            const freshJson = JSON.stringify(freshNodes.map((n: Node) => ({ id: n.id, content: n.content, tiptap_content: n.tiptap_content })));
-
-            if (currentJson !== freshJson) {
-                pageNodes.value = freshNodes;
-                lastNodes = freshNodes;
-                editorKey.value++;
-            }
-            if (data.content !== titleContent.value) {
-                titleContent.value = data.content;
-            }
-        });
-}
 
 function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
@@ -113,6 +97,7 @@ function syncTitleDebounced() {
                 });
             } else {
                 titleError.value = false;
+                setCachedPage(props.page.id, titleContent.value, lastNodes);
             }
         });
         titleSyncTimer = null;
@@ -156,6 +141,7 @@ function flushSync() {
 }
 
 function handleNodesUpdate(nodes: Node[]) {
+    setCachedPage(props.page.id, titleContent.value, nodes);
     syncFullTree(nodes);
 }
 
@@ -222,7 +208,6 @@ onMounted(() => {
         const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
         editorEl?.focus();
     });
-    refreshPageData();
 });
 
 onBeforeUnmount(() => {
