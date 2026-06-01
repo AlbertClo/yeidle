@@ -204,10 +204,6 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('keydown', handleGlobalKeydown);
-    nextTick(() => {
-        const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
-        editorEl?.focus();
-    });
 });
 
 onBeforeUnmount(() => {

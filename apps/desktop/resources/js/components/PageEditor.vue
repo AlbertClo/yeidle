@@ -671,6 +671,10 @@ const editor = useEditor({
             return false;
         },
     },
+    onCreate: ({ editor }) => {
+        // Focus the start of the first node on page load
+        editor.commands.focus('start');
+    },
     onFocus: () => {
         userHasInteracted = true;
     },
