@@ -386,6 +386,7 @@ const AlwaysSplitListItem = Extension.create({
                 const isEmptyBlock = $enterHead.parent.content.size === 0;
 
                 if (!isEmptyBlock && editor.commands.splitListItem('listItem')) {
+                    editor.view.dispatch(editor.state.tr.scrollIntoView());
                     return true;
                 }
                 // Empty node or splitListItem failed — manually insert a new list item after current
@@ -401,6 +402,7 @@ const AlwaysSplitListItem = Extension.create({
                         tr.setSelection(
                             editor.state.selection.constructor.near(tr.doc.resolve(endPos + 1)),
                         );
+                        tr.scrollIntoView();
                         editor.view.dispatch(tr);
                         return true;
                     }
