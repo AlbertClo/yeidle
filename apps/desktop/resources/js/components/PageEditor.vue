@@ -17,7 +17,9 @@ import CodeBlock from '@tiptap/extension-code-block';
 import Heading from '@tiptap/extension-heading';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import Blockquote from '@tiptap/extension-blockquote';
+import Mention from '@tiptap/extension-mention';
 import { Plugin } from '@tiptap/pm/state';
+import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import type { Node } from '@/types/node';
 
 const props = defineProps<{
@@ -327,10 +329,32 @@ const editor = useEditor({
         Heading.configure({ levels: [1, 2, 3] }),
         HorizontalRule,
         Blockquote,
+        Mention.configure({
+            HTMLAttributes: { class: 'wiki-link' },
+            suggestion: wikiLinkSuggestion(),
+            renderText: ({ node }) => `[[${node.attrs.label ?? node.attrs.id}]]`,
+            renderHTML: ({ node, HTMLAttributes }) => [
+                'span',
+                { ...HTMLAttributes, 'data-page-id': node.attrs.id },
+                `[[${node.attrs.label ?? node.attrs.id}]]`,
+            ],
+        }),
     ],
     editorProps: {
         attributes: {
             class: 'outline-none',
+        },
+        handleClick: (view, pos, event) => {
+            const target = event.target as HTMLElement;
+            const wikiLink = target.closest('.wiki-link') as HTMLElement;
+            if (wikiLink) {
+                const pageId = wikiLink.getAttribute('data-page-id');
+                if (pageId) {
+                    window.location.href = `/pages/${pageId}`;
+                    return true;
+                }
+            }
+            return false;
         },
         handleKeyDown: (view, event) => {
             if (event.key === 'ArrowDown') {
@@ -475,5 +499,18 @@ onBeforeUnmount(() => {
     padding: 0;
     border-radius: 0;
     font-size: 0.85em;
+}
+
+.wiki-link {
+    color: var(--primary);
+    cursor: pointer;
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-color: rgba(var(--primary), 0.3);
+    text-underline-offset: 2px;
+}
+
+.wiki-link:hover {
+    text-decoration-color: var(--primary);
 }
 </style>
