@@ -8,29 +8,45 @@ use App\Models\NodeLink;
 class LinkParser
 {
     /**
-     * Parse [[wikilinks]] from content and sync the node_links table.
-     * Supports [[Page Title]] and [[Page Title|display name]].
+     * Sync node_links by extracting mentions from tiptap_content,
+     * falling back to parsing [[wikilinks]] from plain text content.
      */
     public function syncLinks(Node $node): void
     {
-        $parsed = $this->parse($node->content);
-
         $linkData = [];
 
-        foreach ($parsed as $link) {
-            $targetPage = Node::pages()->whereRaw('LOWER(content) = ?', [strtolower($link['target'])])->first();
-
-            if (! $targetPage) {
-                $targetPage = Node::create([
-                    'content' => $link['target'],
-                    'position' => 0,
-                ]);
+        // Primary: extract mentions from tiptap_content (has page UUID directly)
+        if ($node->tiptap_content) {
+            $mentions = $this->extractMentions($node->tiptap_content);
+            foreach ($mentions as $mention) {
+                $targetId = $mention['id'];
+                // Verify the target page exists
+                if (Node::where('id', $targetId)->exists()) {
+                    $linkData[$targetId] = $mention['label'];
+                }
             }
-
-            $linkData[$targetPage->id] = $link['display_name'];
         }
 
-        // Hard delete existing links (soft delete leaves rows that violate unique constraint)
+        // Fallback: parse [[wikilinks]] from plain text content
+        if (empty($linkData)) {
+            $parsed = $this->parse($node->content);
+            foreach ($parsed as $link) {
+                $targetPage = Node::pages()
+                    ->whereRaw('LOWER(content) = ?', [strtolower($link['target'])])
+                    ->first();
+
+                if (! $targetPage) {
+                    $targetPage = Node::create([
+                        'content' => $link['target'],
+                        'position' => 0,
+                    ]);
+                }
+
+                $linkData[$targetPage->id] = $link['display_name'];
+            }
+        }
+
+        // Hard delete existing links
         $node->outgoingLinks()->forceDelete();
 
         // Create new links
@@ -41,6 +57,28 @@ class LinkParser
                 'display_name' => $displayName,
             ]);
         }
+    }
+
+    /**
+     * Extract mention nodes from tiptap_content JSON.
+     * Returns array of ['id' => pageId, 'label' => label]
+     */
+    private function extractMentions(array $content): array
+    {
+        $mentions = [];
+
+        if (($content['type'] ?? '') === 'mention' && isset($content['attrs']['id'])) {
+            $mentions[] = [
+                'id' => $content['attrs']['id'],
+                'label' => $content['attrs']['label'] ?? null,
+            ];
+        }
+
+        foreach ($content['content'] ?? [] as $child) {
+            $mentions = array_merge($mentions, $this->extractMentions($child));
+        }
+
+        return $mentions;
     }
 
     /**
