@@ -256,11 +256,11 @@ onBeforeUnmount(() => {
                     <Link
                         v-for="link in backlinks"
                         :key="link.id"
-                        :href="`/pages/${link.source_node?.parent_id ?? link.source_node_id}`"
+                        :href="`/pages/${link.page_id}`"
                         class="hover:bg-accent rounded-lg px-3 py-2 text-sm transition-colors"
                     >
                         <span class="text-primary font-medium">
-                            {{ link.display_name || link.source_node?.content }}
+                            {{ link.page_title }}
                         </span>
                     </Link>
                 </div>
