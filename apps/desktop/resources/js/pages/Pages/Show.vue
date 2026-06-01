@@ -295,6 +295,8 @@ onBeforeUnmount(() => {
                         class="backlink-item hover:bg-accent focus:bg-accent rounded-lg px-3 py-2 text-sm transition-colors outline-none"
                         @keydown.enter.prevent="router.visit(`/pages/${link.page_id}`)"
                         @keydown.space.prevent="router.visit(`/pages/${link.page_id}`)"
+                        @keydown.q.ctrl.prevent="router.visit(`/pages/${link.page_id}`)"
+                        @keydown.q.meta.prevent="router.visit(`/pages/${link.page_id}`)"
                         @keydown.down.prevent="focusNextBacklink($event)"
                         @keydown.up.prevent="focusPrevBacklink($event)"
                     >
