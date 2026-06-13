@@ -64,9 +64,10 @@ function handleTitleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === 'ArrowDown') {
         e.preventDefault();
         finishEditingTitle();
-        // Focus the editor
         const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
         editorEl?.focus();
+    } else if (e.key === 'ArrowUp') {
+        window.scrollTo({ top: 0 });
     }
 }
 

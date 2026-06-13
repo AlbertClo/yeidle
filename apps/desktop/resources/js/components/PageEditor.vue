@@ -1068,16 +1068,32 @@ const editor = useEditor({
                 }
             }
             if (event.key === 'ArrowUp' && !event.shiftKey) {
-                const { $head } = view.state.selection;
-                // Only jump to title from char 0 of the first top-level list item
-                if ($head.parentOffset === 0) {
+                const sel = view.state.selection;
+                const { $head } = sel;
+
+                // Check if we're in the first top-level list item
+                const isFirstListItem = (() => {
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
-                            if ($head.index(d - 1) === 0 && d === 2) {
-                                emit('focusTitle');
-                                return true;
-                            }
-                            break;
+                            return $head.index(d - 1) === 0 && d === 2;
+                        }
+                    }
+                    return false;
+                })();
+
+                if (isFirstListItem) {
+                    // Text cursor at position 0
+                    if ($head.parentOffset === 0 && !(sel instanceof NodeSelection)) {
+                        emit('focusTitle');
+                        return true;
+                    }
+                    // NodeSelection on the first block node in the first list item
+                    if (sel instanceof NodeSelection) {
+                        const $sel = view.state.doc.resolve(sel.from);
+                        // Check nothing comes before this node in its parent
+                        if ($sel.index($sel.depth) === 0) {
+                            emit('focusTitle');
+                            return true;
                         }
                     }
                 }
