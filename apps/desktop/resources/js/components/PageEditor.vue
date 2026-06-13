@@ -475,6 +475,9 @@ const AlwaysSplitListItem = Extension.create({
                                         firstChildParagraph?.content;
                                     const cursorPos = $head.pos;
 
+                                    // Check if the first child has its own nested list (grandchildren)
+                                    const firstChildNestedList = firstChildItem.lastChild?.type.name === 'bulletList' ? firstChildItem.lastChild : null;
+
                                     // Find the first child listItem's position
                                     const listItemStart = $head.start(d) - 1;
                                     let nestedListPos = 0;
@@ -500,10 +503,18 @@ const AlwaysSplitListItem = Extension.create({
                                         tr = tr.insert(cursorPos, childContent);
                                     }
 
-                                    const offset = childContent?.size ?? 0;
+                                    let offset = childContent?.size ?? 0;
+
+                                    // If the first child had grandchildren, insert them into the parent's nested list
+                                    if (firstChildNestedList) {
+                                        // Insert grandchildren's items into the parent's nested list, before the remaining siblings
+                                        const grandchildrenInsertPos = nestedListPos + offset + 1; // inside the bulletList, at the start
+                                        tr = tr.insert(grandchildrenInsertPos, firstChildNestedList.content);
+                                        offset += firstChildNestedList.content.size;
+                                    }
 
                                     // Delete the child listItem (or the whole bulletList if it's the only child)
-                                    if (lastChild.childCount === 1) {
+                                    if (lastChild.childCount === 1 && !firstChildNestedList) {
                                         tr = tr.delete(
                                             nestedListPos + offset,
                                             nestedListPos +
