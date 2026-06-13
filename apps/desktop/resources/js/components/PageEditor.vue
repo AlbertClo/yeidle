@@ -1240,20 +1240,31 @@ const editor = useEditor({
         Blockquote,
         Highlight,
         Gapcursor,
-        // Convert NodeSelection on fileNodes from arrow keys to GapCursor
+        // Convert NodeSelection on fileNodes from arrow keys to GapCursor,
+        // and always scroll GapCursor into view
         Extension.create({
             name: 'fileNodeGapCursor',
             addProseMirrorPlugins() {
                 return [
                     new Plugin({
                         appendTransaction: (_trs, oldState, newState) => {
-                            if (lastArrowDirection === 0) return null;
+                            // Scroll into view whenever selection becomes a GapCursor
                             const sel = newState.selection;
+                            const isGapCursor = sel.empty && !sel.$head.parent.isTextblock;
+                            if (isGapCursor && !oldState.selection.eq(sel)) {
+                                // Convert fileNode NodeSelection from arrow keys
+                                if (lastArrowDirection !== 0) {
+                                    lastArrowDirection = 0;
+                                }
+                                return newState.tr.scrollIntoView();
+                            }
+
+                            // Convert fileNode NodeSelection from up/down arrows
+                            if (lastArrowDirection === 0) return null;
                             if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'fileNode') {
                                 lastArrowDirection = 0;
                                 return null;
                             }
-                            // Only convert if selection actually changed
                             if (oldState.selection.eq(sel)) {
                                 lastArrowDirection = 0;
                                 return null;
@@ -1261,7 +1272,9 @@ const editor = useEditor({
                             const pos = lastArrowDirection === -1 ? sel.to : sel.from;
                             lastArrowDirection = 0;
                             if (GapCursor.valid(newState.doc.resolve(pos))) {
-                                return newState.tr.setSelection(new GapCursor(newState.doc.resolve(pos)));
+                                const tr = newState.tr.setSelection(new GapCursor(newState.doc.resolve(pos)));
+                                tr.scrollIntoView();
+                                return tr;
                             }
                             return null;
                         },
