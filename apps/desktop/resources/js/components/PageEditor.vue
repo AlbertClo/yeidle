@@ -769,6 +769,7 @@ function listItemToNode(
 }
 
 let userHasInteracted = false;
+let lastArrowDirection = 0; // -1 for up, 1 for down, 0 for none
 
 // Media menu popover
 const mediaMenu = ref<{
@@ -1239,6 +1240,35 @@ const editor = useEditor({
         Blockquote,
         Highlight,
         Gapcursor,
+        // Convert NodeSelection on fileNodes from arrow keys to GapCursor
+        Extension.create({
+            name: 'fileNodeGapCursor',
+            addProseMirrorPlugins() {
+                return [
+                    new Plugin({
+                        appendTransaction: (_trs, oldState, newState) => {
+                            if (lastArrowDirection === 0) return null;
+                            const sel = newState.selection;
+                            if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'fileNode') {
+                                lastArrowDirection = 0;
+                                return null;
+                            }
+                            // Only convert if selection actually changed
+                            if (oldState.selection.eq(sel)) {
+                                lastArrowDirection = 0;
+                                return null;
+                            }
+                            const pos = lastArrowDirection === -1 ? sel.to : sel.from;
+                            lastArrowDirection = 0;
+                            if (GapCursor.valid(newState.doc.resolve(pos))) {
+                                return newState.tr.setSelection(new GapCursor(newState.doc.resolve(pos)));
+                            }
+                            return null;
+                        },
+                    }),
+                ];
+            },
+        }),
         HardBreak.configure({
             keepMarks: false,
         }).extend({
@@ -1593,6 +1623,11 @@ const editor = useEditor({
                         }
                     }
                 }
+            }
+
+            // Track arrow direction for fileNode selection conversion
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                lastArrowDirection = event.key === 'ArrowUp' ? -1 : 1;
             }
 
             return false;
