@@ -381,6 +381,9 @@ const AlwaysSplitListItem = Extension.create({
                                 break;
                             }
 
+                            const currentItem = $head.node(d);
+                            const nestedList = currentItem.lastChild?.type.name === 'bulletList' ? currentItem.lastChild : null;
+
                             let tr = editor.state.tr;
 
                             // Insert current block's content at end of target text block
@@ -388,20 +391,36 @@ const AlwaysSplitListItem = Extension.create({
                                 tr = tr.insert(targetEnd, currentContent);
                             }
 
-                            // Determine delete range — if this is the only item in its
-                            // parent bulletList, delete the entire bulletList wrapper
                             const offset = currentContent.size;
-                            let delFrom = currentItemStart + offset;
-                            let delTo = currentItemEnd + offset;
+
+                            // If the current item has children, move them to the target listItem
+                            if (nestedList) {
+                                // Find the target listItem that contains targetEnd
+                                let targetListItemEnd = 0;
+                                const $target = editor.state.doc.resolve(targetEnd);
+                                for (let td = $target.depth; td >= 0; td--) {
+                                    if ($target.node(td).type.name === 'listItem') {
+                                        targetListItemEnd = $target.end(td);
+                                        break;
+                                    }
+                                }
+                                // Insert the nested list at the end of the target listItem
+                                tr = tr.insert(targetListItemEnd + offset, nestedList);
+                            }
+
+                            const nestedOffset = nestedList ? nestedList.nodeSize : 0;
+
+                            // Determine delete range
+                            let delFrom = currentItemStart + offset + nestedOffset;
+                            let delTo = currentItemEnd + offset + nestedOffset;
                             const parentList = $head.node(d - 1);
 
                             if (
                                 parentList.type.name === 'bulletList' &&
                                 parentList.childCount === 1
                             ) {
-                                // Delete the entire bulletList wrapper
-                                delFrom = $head.start(d - 1) - 1 + offset;
-                                delTo = $head.end(d - 1) + 1 + offset;
+                                delFrom = $head.start(d - 1) - 1 + offset + nestedOffset;
+                                delTo = $head.end(d - 1) + 1 + offset + nestedOffset;
                             }
 
                             tr = tr.delete(delFrom, delTo);
