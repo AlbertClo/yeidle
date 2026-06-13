@@ -7,6 +7,7 @@ import BulletList from '@tiptap/extension-bullet-list';
 import Code from '@tiptap/extension-code';
 import CodeBlock from '@tiptap/extension-code-block';
 import Document from '@tiptap/extension-document';
+import Gapcursor from '@tiptap/extension-gapcursor';
 import Heading from '@tiptap/extension-heading';
 import Highlight from '@tiptap/extension-highlight';
 import History from '@tiptap/extension-history';
@@ -18,7 +19,8 @@ import Paragraph from '@tiptap/extension-paragraph';
 import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { NodeSelection } from '@tiptap/pm/state';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
+import { GapCursor } from 'prosemirror-gapcursor';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import {
@@ -1235,6 +1237,7 @@ const editor = useEditor({
         HorizontalRule,
         Blockquote,
         Highlight,
+        Gapcursor,
         Mention.configure({
             HTMLAttributes: { class: 'wiki-link' },
             suggestion: wikiLinkSuggestion(),
@@ -1261,6 +1264,18 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
+            // Enter at GapCursor: insert paragraph between block nodes
+            if (event.key === 'Enter' && view.state.selection.empty && !view.state.selection.$head.parent.isTextblock) {
+                event.preventDefault();
+                const pos = view.state.selection.head;
+                const paragraph = view.state.schema.nodes.paragraph.create();
+                const tr = view.state.tr.insert(pos, paragraph);
+                tr.setSelection(TextSelection.create(tr.doc, pos + 1));
+                tr.scrollIntoView();
+                view.dispatch(tr);
+                return true;
+            }
+
             // Ctrl+Q on selected link (mention or web link) follows it
             if (
                 event.key === 'q' &&
