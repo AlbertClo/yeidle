@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Node;
+use App\Models\PageVisit;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class PageController extends Controller
 {
@@ -36,6 +38,23 @@ class PageController extends Controller
         }
     }
 
+    public function recent(): JsonResponse
+    {
+        $recentIds = PageVisit::select('node_id')
+            ->selectRaw('MAX(visited_at) as last_visit')
+            ->groupBy('node_id')
+            ->orderByDesc('last_visit')
+            ->limit(10)
+            ->pluck('node_id');
+
+        $pages = Node::whereIn('id', $recentIds)
+            ->get()
+            ->sortBy(fn ($node) => $recentIds->search($node->id))
+            ->values();
+
+        return response()->json($pages);
+    }
+
     public function backlinks(Node $node): JsonResponse
     {
         $backlinks = $node->incomingLinks()
@@ -60,5 +79,25 @@ class PageController extends Controller
             ->values();
 
         return response()->json($backlinks);
+    }
+
+    public function visit(Request $request): JsonResponse
+    {
+        $request->validate(['node_id' => ['required', 'exists:nodes,id']]);
+
+        PageVisit::create([
+            'node_id' => $request->node_id,
+            'visited_at' => now(),
+        ]);
+
+        return response()->json(null, 201);
+    }
+
+    public function openExternal(Request $request): JsonResponse
+    {
+        $request->validate(['url' => ['required', 'url']]);
+        \App\Support\Shell::open($request->url);
+
+        return response()->json(null, 200);
     }
 }

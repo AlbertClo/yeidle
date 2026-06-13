@@ -34,6 +34,7 @@ const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: titleContent.value || '[untitled]', href: `/pages/${props.page.id}` },
 ]);
 const titleRef = ref<HTMLInputElement>();
+const pageEditorRef = ref<InstanceType<typeof PageEditor>>();
 
 // Debounce timer for syncing
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -61,7 +62,11 @@ function finishEditingTitle() {
 }
 
 function handleTitleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        pageEditorRef.value?.insertNodeAtTop();
+    } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         finishEditingTitle();
         const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
@@ -336,6 +341,7 @@ onBeforeUnmount(() => {
 
             <div class="mb-4">
                 <PageEditor
+                    ref="pageEditorRef"
                     :key="editorKey"
                     :nodes="pageNodes"
                     @update="handleNodesUpdate"

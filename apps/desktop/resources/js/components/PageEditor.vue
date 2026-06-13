@@ -1,43 +1,60 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue';
-import { uuidv7 } from 'uuidv7';
+import { router } from '@inertiajs/vue3';
 import { Extension } from '@tiptap/core';
-import { useEditor, EditorContent } from '@tiptap/vue-3';
-import Document from '@tiptap/extension-document';
-import Text from '@tiptap/extension-text';
-import Paragraph from '@tiptap/extension-paragraph';
-import BulletList from '@tiptap/extension-bullet-list';
-import ListItem from '@tiptap/extension-list-item';
-import History from '@tiptap/extension-history';
+import Blockquote from '@tiptap/extension-blockquote';
 import Bold from '@tiptap/extension-bold';
-import Italic from '@tiptap/extension-italic';
-import Strike from '@tiptap/extension-strike';
+import BulletList from '@tiptap/extension-bullet-list';
 import Code from '@tiptap/extension-code';
 import CodeBlock from '@tiptap/extension-code-block';
+import Document from '@tiptap/extension-document';
 import Heading from '@tiptap/extension-heading';
-import HorizontalRule from '@tiptap/extension-horizontal-rule';
-import Blockquote from '@tiptap/extension-blockquote';
 import Highlight from '@tiptap/extension-highlight';
+import History from '@tiptap/extension-history';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import Italic from '@tiptap/extension-italic';
+import ListItem from '@tiptap/extension-list-item';
 import Mention from '@tiptap/extension-mention';
+import Paragraph from '@tiptap/extension-paragraph';
+import Strike from '@tiptap/extension-strike';
+import Text from '@tiptap/extension-text';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { useEditor, EditorContent } from '@tiptap/vue-3';
+import {
+    Download,
+    ExternalLink,
+    FolderOpen,
+    Pencil,
+    RotateCcw,
+    Trash2,
+} from 'lucide-vue-next';
+import { uuidv7 } from 'uuidv7';
 import { ref, computed, nextTick } from 'vue';
-import { router } from '@inertiajs/vue3';
-import { Download, ExternalLink, FolderOpen, Pencil, RotateCcw, Trash2 } from 'lucide-vue-next';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { onBeforeUnmount } from 'vue';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { wikiLinkSuggestion } from '@/extensions/wikilink';
-import { WebLink } from '@/extensions/weblink';
 import { FileNode } from '@/extensions/filenode';
 import { SlashCommand } from '@/extensions/slashcommand';
+import { WebLink } from '@/extensions/weblink';
+import { wikiLinkSuggestion } from '@/extensions/wikilink';
 
 function openExternal(url: string) {
     fetch('/api/open-external', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+        },
         body: JSON.stringify({ url }),
     });
 }
@@ -53,6 +70,36 @@ const emit = defineEmits<{
     focusBacklinks: [];
 }>();
 
+function insertNodeAtTop() {
+    if (!editor.value) {
+        return;
+    }
+
+    console.trace('[insertNodeAtTop] called');
+    editor.value
+        .chain()
+        .command(({ tr, state, dispatch }) => {
+            if (!dispatch) {
+                return true;
+            }
+
+            const newItem = state.schema.nodes.listItem.create(null, [
+                state.schema.nodes.paragraph.create(),
+            ]);
+            tr.insert(2, newItem);
+            tr.setSelection(
+                state.selection.constructor.near(tr.doc.resolve(3)),
+            );
+            tr.scrollIntoView();
+
+            return true;
+        })
+        .focus()
+        .run();
+}
+
+defineExpose({ insertNodeAtTop });
+
 // Custom document schema: doc must contain a bulletList
 const CustomDocument = Document.extend({
     content: 'bulletList',
@@ -66,9 +113,13 @@ const CustomListItem = ListItem.extend({
             blockId: {
                 default: null,
                 rendered: false,
-                parseHTML: (element: HTMLElement) => element.getAttribute('data-block-id'),
+                parseHTML: (element: HTMLElement) =>
+                    element.getAttribute('data-block-id'),
                 renderHTML: (attributes: Record<string, unknown>) => {
-                    if (!attributes.blockId) return {};
+                    if (!attributes.blockId) {
+                        return {};
+                    }
+
                     return { 'data-block-id': attributes.blockId };
                 },
             },
@@ -76,15 +127,27 @@ const CustomListItem = ListItem.extend({
                 default: null,
                 parseHTML: (element: HTMLElement) => {
                     const val = element.getAttribute('data-checked');
-                    if (val === 'true') return true;
-                    if (val === 'false') return false;
+
+                    if (val === 'true') {
+                        return true;
+                    }
+
+                    if (val === 'false') {
+                        return false;
+                    }
+
                     return null;
                 },
                 renderHTML: (attributes: Record<string, unknown>) => {
-                    if (attributes.checked === null) return {};
+                    if (attributes.checked === null) {
+                        return {};
+                    }
+
                     return {
                         'data-checked': String(attributes.checked),
-                        class: attributes.checked ? 'is-checked' : 'is-unchecked',
+                        class: attributes.checked
+                            ? 'is-checked'
+                            : 'is-unchecked',
                     };
                 },
             },
@@ -95,11 +158,12 @@ const CustomListItem = ListItem.extend({
             new Plugin({
                 appendTransaction: (_transactions, _oldState, newState) => {
                     const seen = new Set<string>();
-                    let tr = newState.tr;
+                    const tr = newState.tr;
                     let modified = false;
                     newState.doc.descendants((node, pos) => {
                         if (node.type.name === 'listItem') {
                             const id = node.attrs.blockId;
+
                             if (!id || seen.has(id)) {
                                 tr.setNodeMarkup(pos, undefined, {
                                     ...node.attrs,
@@ -111,10 +175,13 @@ const CustomListItem = ListItem.extend({
                             }
                         }
                     });
+
                     if (modified) {
                         tr.setMeta('blockIdAssignment', true);
+
                         return tr;
                     }
+
                     return null;
                 },
             }),
@@ -122,7 +189,9 @@ const CustomListItem = ListItem.extend({
     },
 });
 
-function isInCodeBlock(editor: { state: { selection: { $head: { parent: { type: { name: string } } } } } }) {
+function isInCodeBlock(editor: {
+    state: { selection: { $head: { parent: { type: { name: string } } } } };
+}) {
     return editor.state.selection.$head.parent.type.name === 'codeBlock';
 }
 
@@ -141,11 +210,16 @@ const ActiveLineHighlight = Extension.create({
                         if (from === to) {
                             // Cursor — find the deepest listItem containing it
                             const $pos = state.doc.resolve(from);
+
                             for (let d = $pos.depth; d >= 0; d--) {
                                 if ($pos.node(d).type.name === 'listItem') {
                                     const pos = $pos.before(d);
                                     decorations.push(
-                                        Decoration.node(pos, pos + $pos.node(d).nodeSize, { class: 'active-line' }),
+                                        Decoration.node(
+                                            pos,
+                                            pos + $pos.node(d).nodeSize,
+                                            { class: 'active-line' },
+                                        ),
                                     );
                                     break;
                                 }
@@ -156,12 +230,19 @@ const ActiveLineHighlight = Extension.create({
                                 if (node.type.name === 'listItem') {
                                     // Get the range of the first child (the text block, not nested lists)
                                     const firstChild = node.firstChild;
+
                                     if (firstChild) {
                                         const textStart = pos + 1;
-                                        const textEnd = textStart + firstChild.nodeSize;
+                                        const textEnd =
+                                            textStart + firstChild.nodeSize;
+
                                         if (from < textEnd && to > textStart) {
                                             decorations.push(
-                                                Decoration.node(pos, pos + node.nodeSize, { class: 'selected-line' }),
+                                                Decoration.node(
+                                                    pos,
+                                                    pos + node.nodeSize,
+                                                    { class: 'selected-line' },
+                                                ),
                                             );
                                         }
                                     }
@@ -189,9 +270,13 @@ const AlwaysSplitListItem = Extension.create({
                 if (from === to) {
                     // Single cursor — find deepest listItem only
                     const $pos = editor.state.doc.resolve(from);
+
                     for (let d = $pos.depth; d >= 0; d--) {
                         if ($pos.node(d).type.name === 'listItem') {
-                            listItems.push({ node: $pos.node(d), pos: $pos.before(d) });
+                            listItems.push({
+                                node: $pos.node(d),
+                                pos: $pos.before(d),
+                            });
                             break;
                         }
                     }
@@ -200,9 +285,11 @@ const AlwaysSplitListItem = Extension.create({
                     editor.state.doc.descendants((node, pos) => {
                         if (node.type.name === 'listItem') {
                             const firstChild = node.firstChild;
+
                             if (firstChild) {
                                 const textStart = pos + 1;
                                 const textEnd = textStart + firstChild.nodeSize;
+
                                 if (from < textEnd && to > textStart) {
                                     listItems.push({ node, pos });
                                 }
@@ -211,14 +298,21 @@ const AlwaysSplitListItem = Extension.create({
                     });
                 }
 
-                if (listItems.length === 0) return false;
+                if (listItems.length === 0) {
+                    return false;
+                }
 
                 // Determine next state based on the first item
                 const currentChecked = listItems[0].node.attrs.checked;
                 let nextChecked: boolean | null;
-                if (currentChecked === null) nextChecked = false;
-                else if (currentChecked === false) nextChecked = true;
-                else nextChecked = null;
+
+                if (currentChecked === null) {
+                    nextChecked = false;
+                } else if (currentChecked === false) {
+                    nextChecked = true;
+                } else {
+                    nextChecked = null;
+                }
 
                 // Apply to all items in selection
                 const tr = editor.state.tr;
@@ -229,36 +323,64 @@ const AlwaysSplitListItem = Extension.create({
                     });
                 });
                 editor.view.dispatch(tr);
+
                 return true;
             },
             Tab: ({ editor }) => {
-                if (isInCodeBlock(editor)) return false;
+                if (isInCodeBlock(editor)) {
+                    return false;
+                }
+
                 editor.commands.sinkListItem('listItem');
+
                 return true;
             },
             'Shift-Tab': ({ editor }) => {
-                if (isInCodeBlock(editor)) return false;
+                if (isInCodeBlock(editor)) {
+                    return false;
+                }
+
                 editor.commands.liftListItem('listItem');
+
                 return true;
             },
             Backspace: ({ editor }) => {
-                if (isInCodeBlock(editor)) return false;
-                if (!editor.state.selection.empty) return false;
+                if (isInCodeBlock(editor)) {
+                    return false;
+                }
+
+                if (!editor.state.selection.empty) {
+                    return false;
+                }
+
                 const { $head } = editor.state.selection;
+
                 if ($head.parentOffset === 0) {
                     // If in a non-paragraph textblock (heading, etc.), convert to paragraph first
                     if ($head.parent.type.name !== 'paragraph') {
                         const pos = $head.before($head.depth);
-                        const tr = editor.state.tr.setNodeMarkup(pos, editor.schema.nodes.paragraph);
+                        const tr = editor.state.tr.setNodeMarkup(
+                            pos,
+                            editor.schema.nodes.paragraph,
+                        );
                         editor.view.dispatch(tr);
+
                         return true;
                     }
+
                     // Find the current list item
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
                             const indexInParent = $head.index(d - 1);
+
                             // First item in the top-level list — nothing to merge with
-                            if (indexInParent === 0 && $head.node(d - 1) === editor.state.doc.firstChild) break;
+                            if (
+                                indexInParent === 0 &&
+                                $head.node(d - 1) ===
+                                    editor.state.doc.firstChild
+                            ) {
+                                break;
+                            }
 
                             const currentItemStart = $head.start(d) - 1;
                             const currentItemEnd = $head.end(d) + 1;
@@ -266,46 +388,70 @@ const AlwaysSplitListItem = Extension.create({
 
                             // Find the end of the previous visible text block
                             let targetEnd = currentItemStart;
-                            editor.state.doc.nodesBetween(0, currentItemStart, (node, pos) => {
-                                if (node.isTextblock) {
-                                    targetEnd = pos + node.nodeSize - 1;
-                                }
-                            });
+                            editor.state.doc.nodesBetween(
+                                0,
+                                currentItemStart,
+                                (node, pos) => {
+                                    if (node.isTextblock) {
+                                        targetEnd = pos + node.nodeSize - 1;
+                                    }
+                                },
+                            );
 
-                            if (targetEnd === currentItemStart) break;
+                            if (targetEnd === currentItemStart) {
+                                break;
+                            }
 
                             let tr = editor.state.tr;
+
                             // Insert current block's content at end of target text block
                             if (currentContent.size > 0) {
                                 tr = tr.insert(targetEnd, currentContent);
                             }
+
                             // Determine delete range — if this is the only item in its
                             // parent bulletList, delete the entire bulletList wrapper
                             const offset = currentContent.size;
                             let delFrom = currentItemStart + offset;
                             let delTo = currentItemEnd + offset;
                             const parentList = $head.node(d - 1);
-                            if (parentList.type.name === 'bulletList' && parentList.childCount === 1) {
+
+                            if (
+                                parentList.type.name === 'bulletList' &&
+                                parentList.childCount === 1
+                            ) {
                                 // Delete the entire bulletList wrapper
                                 delFrom = $head.start(d - 1) - 1 + offset;
                                 delTo = $head.end(d - 1) + 1 + offset;
                             }
+
                             tr = tr.delete(delFrom, delTo);
                             // Place cursor at join point
                             tr = tr.setSelection(
-                                editor.state.selection.constructor.near(tr.doc.resolve(targetEnd)),
+                                editor.state.selection.constructor.near(
+                                    tr.doc.resolve(targetEnd),
+                                ),
                             );
                             editor.view.dispatch(tr);
+
                             return true;
                         }
                     }
                 }
+
                 return false;
             },
             Delete: ({ editor }) => {
-                if (isInCodeBlock(editor)) return false;
-                if (!editor.state.selection.empty) return false;
+                if (isInCodeBlock(editor)) {
+                    return false;
+                }
+
+                if (!editor.state.selection.empty) {
+                    return false;
+                }
+
                 const { $head } = editor.state.selection;
+
                 if ($head.parentOffset === $head.parent.content.size) {
                     for (let d = $head.depth; d >= 0; d--) {
                         if ($head.node(d).type.name === 'listItem') {
@@ -316,41 +462,72 @@ const AlwaysSplitListItem = Extension.create({
                             // Check if the next thing is a nested bulletList (child nodes)
                             // The listItem's content is: [paragraph, ...otherBlocks, bulletList?]
                             const lastChild = listItem.lastChild;
-                            if (lastChild?.type.name === 'bulletList' && $head.parent.type.name !== 'bulletList') {
+
+                            if (
+                                lastChild?.type.name === 'bulletList' &&
+                                $head.parent.type.name !== 'bulletList'
+                            ) {
                                 // Merge first child's text into current text block
                                 const firstChildItem = lastChild.firstChild;
+
                                 if (firstChildItem) {
-                                    const firstChildParagraph = firstChildItem.firstChild;
-                                    const childContent = firstChildParagraph?.content;
+                                    const firstChildParagraph =
+                                        firstChildItem.firstChild;
+                                    const childContent =
+                                        firstChildParagraph?.content;
                                     const cursorPos = $head.pos;
 
                                     // Find the first child listItem's position
                                     const listItemStart = $head.start(d) - 1;
                                     let nestedListPos = 0;
                                     let childItemPos = 0;
-                                    editor.state.doc.nodesBetween(listItemStart, listItemStart + listItem.nodeSize, (node, pos) => {
-                                        if (node === lastChild) nestedListPos = pos;
-                                        if (node === firstChildItem) childItemPos = pos;
-                                    });
+                                    editor.state.doc.nodesBetween(
+                                        listItemStart,
+                                        listItemStart + listItem.nodeSize,
+                                        (node, pos) => {
+                                            if (node === lastChild) {
+                                                nestedListPos = pos;
+                                            }
+
+                                            if (node === firstChildItem) {
+                                                childItemPos = pos;
+                                            }
+                                        },
+                                    );
 
                                     let tr = editor.state.tr;
+
                                     // Insert child's content at cursor
                                     if (childContent && childContent.size > 0) {
                                         tr = tr.insert(cursorPos, childContent);
                                     }
+
                                     const offset = childContent?.size ?? 0;
 
                                     // Delete the child listItem (or the whole bulletList if it's the only child)
                                     if (lastChild.childCount === 1) {
-                                        tr = tr.delete(nestedListPos + offset, nestedListPos + offset + lastChild.nodeSize);
+                                        tr = tr.delete(
+                                            nestedListPos + offset,
+                                            nestedListPos +
+                                                offset +
+                                                lastChild.nodeSize,
+                                        );
                                     } else {
-                                        tr = tr.delete(childItemPos + offset, childItemPos + offset + firstChildItem.nodeSize);
+                                        tr = tr.delete(
+                                            childItemPos + offset,
+                                            childItemPos +
+                                                offset +
+                                                firstChildItem.nodeSize,
+                                        );
                                     }
 
                                     tr = tr.setSelection(
-                                        editor.state.selection.constructor.near(tr.doc.resolve(cursorPos)),
+                                        editor.state.selection.constructor.near(
+                                            tr.doc.resolve(cursorPos),
+                                        ),
                                     );
                                     editor.view.dispatch(tr);
+
                                     return true;
                                 }
                             }
@@ -360,53 +537,77 @@ const AlwaysSplitListItem = Extension.create({
                                 let tr = editor.state.tr.join(endOfItem);
                                 // After joining list items, join the text blocks inside
                                 const $joinPos = tr.doc.resolve(endOfItem - 1);
-                                if ($joinPos.nodeBefore?.isTextblock && $joinPos.nodeAfter?.isTextblock) {
+
+                                if (
+                                    $joinPos.nodeBefore?.isTextblock &&
+                                    $joinPos.nodeAfter?.isTextblock
+                                ) {
                                     tr = tr.join(endOfItem - 1);
                                 }
+
                                 editor.view.dispatch(tr);
+
                                 return true;
                             }
+
                             break;
                         }
                     }
                 }
+
                 return false;
             },
             Enter: ({ editor }) => {
+                console.trace('[Enter handler] fired');
+
                 if (isInCodeBlock(editor)) {
                     return editor.commands.command(({ tr, dispatch }) => {
                         if (dispatch) {
                             tr.insertText('\n');
                         }
+
                         return true;
                     });
                 }
+
                 // Check if current block is empty — splitListItem would lift/outdent it
                 const { $head: $enterHead } = editor.state.selection;
                 const isEmptyBlock = $enterHead.parent.content.size === 0;
 
-                if (!isEmptyBlock && editor.commands.splitListItem('listItem')) {
+                if (
+                    !isEmptyBlock &&
+                    editor.commands.splitListItem('listItem')
+                ) {
                     editor.view.dispatch(editor.state.tr.scrollIntoView());
+
                     return true;
                 }
+
                 // Empty node or splitListItem failed — manually insert a new list item after current
                 const { $head } = editor.state.selection;
                 const listItemType = editor.schema.nodes.listItem;
                 const paragraphType = editor.schema.nodes.paragraph;
+
                 // Find the end of the current list item
                 for (let d = $head.depth; d >= 0; d--) {
                     if ($head.node(d).type === listItemType) {
                         const endPos = $head.end(d) + 1;
-                        const newItem = listItemType.create(null, [paragraphType.create()]);
+                        const newItem = listItemType.create(null, [
+                            paragraphType.create(),
+                        ]);
                         const tr = editor.state.tr.insert(endPos, newItem);
                         tr.setSelection(
-                            editor.state.selection.constructor.near(tr.doc.resolve(endPos + 1)),
+                            editor.state.selection.constructor.near(
+                                tr.doc.resolve(endPos + 1),
+                            ),
                         );
                         tr.scrollIntoView();
                         editor.view.dispatch(tr);
+
                         return true;
                     }
                 }
+
                 return false;
             },
         };
@@ -420,41 +621,66 @@ function nodesToTiptap(nodes: Node[]): Record<string, unknown> {
         content: [
             {
                 type: 'bulletList',
-                content: nodes.length > 0
-                    ? nodes.map(nodeToListItem)
-                    : [{ type: 'listItem', attrs: { blockId: uuidv7() }, content: [{ type: 'paragraph' }] }],
+                content:
+                    nodes.length > 0
+                        ? nodes.map(nodeToListItem)
+                        : [
+                              {
+                                  type: 'listItem',
+                                  attrs: { blockId: uuidv7() },
+                                  content: [{ type: 'paragraph' }],
+                              },
+                          ],
             },
         ],
     };
 }
 
-function sanitizeTiptapContent(node: Record<string, unknown>): Record<string, unknown> {
+function sanitizeTiptapContent(
+    node: Record<string, unknown>,
+): Record<string, unknown> {
     if (node.content && Array.isArray(node.content)) {
-        node.content = (node.content as Record<string, unknown>[]).filter((child) => {
-            // Remove text nodes with null/undefined text
-            if (child.type === 'text' && !child.text) return false;
-            return true;
-        }).map(sanitizeTiptapContent);
+        node.content = (node.content as Record<string, unknown>[])
+            .filter((child) => {
+                // Remove text nodes with null/undefined text
+                if (child.type === 'text' && !child.text) {
+                    return false;
+                }
+
+                return true;
+            })
+            .map(sanitizeTiptapContent);
     }
+
     return node;
 }
 
 function nodeToListItem(node: Node): Record<string, unknown> {
     // Use stored TipTap JSON if available, otherwise fall back to plain text paragraph
     let contentBlocks: Record<string, unknown>[];
+
     if (node.tiptap_content) {
         if (Array.isArray(node.tiptap_content)) {
-            contentBlocks = node.tiptap_content.map((b: Record<string, unknown>) => sanitizeTiptapContent(JSON.parse(JSON.stringify(b))));
+            contentBlocks = node.tiptap_content.map(
+                (b: Record<string, unknown>) =>
+                    sanitizeTiptapContent(JSON.parse(JSON.stringify(b))),
+            );
         } else {
-            contentBlocks = [sanitizeTiptapContent(JSON.parse(JSON.stringify(node.tiptap_content)))];
+            contentBlocks = [
+                sanitizeTiptapContent(
+                    JSON.parse(JSON.stringify(node.tiptap_content)),
+                ),
+            ];
         }
     } else {
-        contentBlocks = [{
-            type: 'paragraph',
-            content: node.content
-                ? [{ type: 'text', text: node.content }]
-                : undefined,
-        }];
+        contentBlocks = [
+            {
+                type: 'paragraph',
+                content: node.content
+                    ? [{ type: 'text', text: node.content }]
+                    : undefined,
+            },
+        ];
     }
 
     const content: Record<string, unknown>[] = [...contentBlocks];
@@ -474,18 +700,33 @@ function nodeToListItem(node: Node): Record<string, unknown> {
 }
 
 // Convert TipTap JSON back to our Node tree
-function tiptapToNodes(doc: Record<string, unknown>, parentId: string | null): Node[] {
+function tiptapToNodes(
+    doc: Record<string, unknown>,
+    parentId: string | null,
+): Node[] {
     const bulletList = (doc.content as Record<string, unknown>[])?.[0];
-    if (!bulletList || bulletList.type !== 'bulletList') return [];
+
+    if (!bulletList || bulletList.type !== 'bulletList') {
+        return [];
+    }
+
     return listToNodes(bulletList, parentId);
 }
 
-function listToNodes(bulletList: Record<string, unknown>, parentId: string | null): Node[] {
+function listToNodes(
+    bulletList: Record<string, unknown>,
+    parentId: string | null,
+): Node[] {
     const items = (bulletList.content as Record<string, unknown>[]) ?? [];
+
     return items.map((item, index) => listItemToNode(item, parentId, index));
 }
 
-function listItemToNode(item: Record<string, unknown>, parentId: string | null, position: number): Node {
+function listItemToNode(
+    item: Record<string, unknown>,
+    parentId: string | null,
+    position: number,
+): Node {
     const attrs = (item.attrs as Record<string, unknown>) ?? {};
     const content = (item.content as Record<string, unknown>[]) ?? [];
 
@@ -493,16 +734,24 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
     const contentBlocks = content.filter((c) => c.type !== 'bulletList');
     let textContent = '';
     const extractText = (node: Record<string, unknown>): string => {
-        if (node.text) return node.text as string;
+        if (node.text) {
+            return node.text as string;
+        }
+
         if (node.type === 'mention') {
             const a = node.attrs as Record<string, unknown>;
+
             return `[[${a?.label ?? a?.id ?? ''}]]`;
         }
+
         if (node.type === 'fileNode') {
             const a = node.attrs as Record<string, unknown>;
+
             return `[${a?.originalName ?? 'File'}]`;
         }
+
         const children = (node.content as Record<string, unknown>[]) ?? [];
+
         return children.map(extractText).join('');
     };
     textContent = contentBlocks.map(extractText).join(' ');
@@ -512,11 +761,19 @@ function listItemToNode(item: Record<string, unknown>, parentId: string | null, 
     const children = nestedList ? listToNodes(nestedList, blockId) : [];
 
     // Store tiptap_content: single block as object, multiple as array
-    let tiptapContent: Record<string, unknown> | Record<string, unknown>[] | null = null;
+    let tiptapContent:
+        | Record<string, unknown>
+        | Record<string, unknown>[]
+        | null = null;
+
     if (contentBlocks.length === 1) {
-        tiptapContent = sanitizeTiptapContent(JSON.parse(JSON.stringify(contentBlocks[0])));
+        tiptapContent = sanitizeTiptapContent(
+            JSON.parse(JSON.stringify(contentBlocks[0])),
+        );
     } else if (contentBlocks.length > 1) {
-        tiptapContent = contentBlocks.map((b) => sanitizeTiptapContent(JSON.parse(JSON.stringify(b))));
+        tiptapContent = contentBlocks.map((b) =>
+            sanitizeTiptapContent(JSON.parse(JSON.stringify(b))),
+        );
     }
 
     return {
@@ -544,15 +801,33 @@ const mediaMenu = ref<{
     src: string;
     originalName: string;
     selectedIndex: number;
-}>({ visible: false, top: 0, left: 0, mediaId: '', src: '', originalName: '', selectedIndex: 0 });
+}>({
+    visible: false,
+    top: 0,
+    left: 0,
+    mediaId: '',
+    src: '',
+    originalName: '',
+    selectedIndex: 0,
+});
 const mediaMenuRef = ref<HTMLElement>();
 
 function showMediaMenu(btn: HTMLElement, mediaId: string) {
     const rect = btn.getBoundingClientRect();
-    const editorEl = document.querySelector('.ProseMirror')?.closest('.relative')?.getBoundingClientRect();
-    if (!editorEl) return;
+    const editorEl = document
+        .querySelector('.ProseMirror')
+        ?.closest('.relative')
+        ?.getBoundingClientRect();
+
+    if (!editorEl) {
+        return;
+    }
+
     const fileNode = btn.closest('.file-node') as HTMLElement;
-    const src = fileNode?.querySelector('img')?.src || fileNode?.querySelector('video')?.src || '';
+    const src =
+        fileNode?.querySelector('img')?.src ||
+        fileNode?.querySelector('video')?.src ||
+        '';
     const originalName = fileNode?.getAttribute('data-original-name') || 'file';
     mediaMenu.value = {
         visible: true,
@@ -597,31 +872,55 @@ function mediaOpenFolder() {
 }
 
 function mediaDelete() {
-    if (!editor.value) return;
+    if (!editor.value) {
+        return;
+    }
+
     // Find and delete the fileNode from the editor
     const { state } = editor.value;
     let nodePos: number | null = null;
     state.doc.descendants((node, pos) => {
-        if (node.type.name === 'fileNode' && node.attrs.mediaId === mediaMenu.value.mediaId) {
+        if (
+            node.type.name === 'fileNode' &&
+            node.attrs.mediaId === mediaMenu.value.mediaId
+        ) {
             nodePos = pos;
+
             return false;
         }
     });
+
     if (nodePos !== null) {
-        editor.value.chain().focus().deleteRange({ from: nodePos, to: nodePos + 1 }).run();
+        editor.value
+            .chain()
+            .focus()
+            .deleteRange({ from: nodePos, to: nodePos + 1 })
+            .run();
     }
+
     hideMediaMenu();
 }
 
-const mediaMenuActions = [mediaDownload, mediaOpen, mediaOpenFolder, mediaDelete];
+const mediaMenuActions = [
+    mediaDownload,
+    mediaOpen,
+    mediaOpenFolder,
+    mediaDelete,
+];
 
 function handleMediaMenuKeydown(e: KeyboardEvent) {
     if (e.key === 'ArrowDown') {
         e.preventDefault();
-        mediaMenu.value.selectedIndex = Math.min(mediaMenu.value.selectedIndex + 1, mediaMenuActions.length - 1);
+        mediaMenu.value.selectedIndex = Math.min(
+            mediaMenu.value.selectedIndex + 1,
+            mediaMenuActions.length - 1,
+        );
     } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        mediaMenu.value.selectedIndex = Math.max(mediaMenu.value.selectedIndex - 1, 0);
+        mediaMenu.value.selectedIndex = Math.max(
+            mediaMenu.value.selectedIndex - 1,
+            0,
+        );
     } else if (e.key === 'Enter') {
         e.preventDefault();
         mediaMenuActions[mediaMenu.value.selectedIndex]();
@@ -641,15 +940,31 @@ const linkPopover = ref<{
     href: string;
     pos: number;
     selectedIndex: number;
-}>({ visible: false, top: 0, left: 0, type: 'mention', pageId: '', label: '', href: '', pos: 0, selectedIndex: 0 });
+}>({
+    visible: false,
+    top: 0,
+    left: 0,
+    type: 'mention',
+    pageId: '',
+    label: '',
+    href: '',
+    pos: 0,
+    selectedIndex: 0,
+});
 const popoverRef = ref<HTMLElement>();
 
 function showLinkPopover(view: any) {
     const sel = view.state.selection;
     const node = sel.node;
     const coords = view.coordsAtPos(sel.from);
-    const editorEl = document.querySelector('.ProseMirror')?.getBoundingClientRect();
-    if (!editorEl) return;
+    const editorEl = document
+        .querySelector('.ProseMirror')
+        ?.getBoundingClientRect();
+
+    if (!editorEl) {
+        return;
+    }
+
     linkPopover.value = {
         visible: true,
         top: coords.bottom - editorEl.top + 4,
@@ -673,6 +988,7 @@ function hideLinkPopover() {
 function followLink() {
     const { type, pageId, href } = linkPopover.value;
     hideLinkPopover();
+
     if (type === 'mention' && pageId) {
         router.visit(`/pages/${pageId}`);
     } else if (type === 'webLink' && href) {
@@ -681,15 +997,23 @@ function followLink() {
 }
 
 function handlePopoverKeydown(e: KeyboardEvent) {
-    const actions = linkPopover.value.type === 'mention'
-        ? [followLink, updateLink]
-        : [followLink, updateWebLink];
+    const actions =
+        linkPopover.value.type === 'mention'
+            ? [followLink, updateLink]
+            : [followLink, updateWebLink];
+
     if (e.key === 'ArrowDown') {
         e.preventDefault();
-        linkPopover.value.selectedIndex = Math.min(linkPopover.value.selectedIndex + 1, actions.length - 1);
+        linkPopover.value.selectedIndex = Math.min(
+            linkPopover.value.selectedIndex + 1,
+            actions.length - 1,
+        );
     } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        linkPopover.value.selectedIndex = Math.max(linkPopover.value.selectedIndex - 1, 0);
+        linkPopover.value.selectedIndex = Math.max(
+            linkPopover.value.selectedIndex - 1,
+            0,
+        );
     } else if (e.key === 'Enter') {
         e.preventDefault();
         actions[linkPopover.value.selectedIndex]();
@@ -743,10 +1067,13 @@ function searchPagesForUpdate(query: string) {
     updateLinkModal.value.pageQuery = query;
     updateLinkModal.value.selectedPageId = '';
     updateLinkModal.value.searchSelectedIndex = 0;
+
     if (query.length === 0) {
         updateLinkModal.value.searchResults = [];
+
         return;
     }
+
     fetch(`/api/search?q=${encodeURIComponent(query)}`, {
         headers: { Accept: 'application/json' },
     })
@@ -760,16 +1087,26 @@ function searchPagesForUpdate(query: string) {
 
 function handlePageInputKeydown(e: KeyboardEvent) {
     const results = updateLinkModal.value.searchResults;
+
     if (e.key === 'ArrowDown' && results.length > 0) {
         e.preventDefault();
-        updateLinkModal.value.searchSelectedIndex = Math.min(updateLinkModal.value.searchSelectedIndex + 1, results.length - 1);
+        updateLinkModal.value.searchSelectedIndex = Math.min(
+            updateLinkModal.value.searchSelectedIndex + 1,
+            results.length - 1,
+        );
     } else if (e.key === 'ArrowUp' && results.length > 0) {
         e.preventDefault();
-        updateLinkModal.value.searchSelectedIndex = Math.max(updateLinkModal.value.searchSelectedIndex - 1, 0);
+        updateLinkModal.value.searchSelectedIndex = Math.max(
+            updateLinkModal.value.searchSelectedIndex - 1,
+            0,
+        );
     } else if (e.key === 'Enter') {
         e.preventDefault();
+
         if (results.length > 0) {
-            selectPageForUpdate(results[updateLinkModal.value.searchSelectedIndex]);
+            selectPageForUpdate(
+                results[updateLinkModal.value.searchSelectedIndex],
+            );
         } else if (updateLinkModal.value.selectedPageId) {
             saveUpdatedLink();
         }
@@ -779,6 +1116,7 @@ function handlePageInputKeydown(e: KeyboardEvent) {
 function handleLabelInputKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
         e.preventDefault();
+
         if (updateLinkModal.value.selectedPageId) {
             saveUpdatedLink();
         }
@@ -794,13 +1132,22 @@ function selectPageForUpdate(page: { id: string; content: string }) {
 
 function saveUpdatedLink() {
     const { selectedPageId, label, pos } = updateLinkModal.value;
-    if (!selectedPageId) return;
+
+    if (!selectedPageId) {
+        return;
+    }
 
     const editorInstance = editor.value;
-    if (!editorInstance) return;
+
+    if (!editorInstance) {
+        return;
+    }
 
     const node = editorInstance.state.doc.nodeAt(pos);
-    if (!node) return;
+
+    if (!node) {
+        return;
+    }
 
     editorInstance
         .chain()
@@ -808,7 +1155,10 @@ function saveUpdatedLink() {
         .deleteRange({ from: pos, to: pos + node.nodeSize })
         .insertContent({
             type: 'mention',
-            attrs: { id: selectedPageId, label: label || updateLinkModal.value.selectedPageTitle },
+            attrs: {
+                id: selectedPageId,
+                label: label || updateLinkModal.value.selectedPageTitle,
+            },
         })
         .run();
 
@@ -834,6 +1184,7 @@ function updateWebLink() {
 const isValidUrl = computed(() => {
     try {
         const url = new URL(updateWebLinkModal.value.href);
+
         return url.protocol === 'http:' || url.protocol === 'https:';
     } catch {
         return false;
@@ -841,18 +1192,36 @@ const isValidUrl = computed(() => {
 });
 
 function saveUpdatedWebLink() {
-    if (!isValidUrl.value) return;
+    if (!isValidUrl.value) {
+        return;
+    }
+
     const { href, label, pos } = updateWebLinkModal.value;
-    if (!href) return;
+
+    if (!href) {
+        return;
+    }
+
     const editorInstance = editor.value;
-    if (!editorInstance) return;
+
+    if (!editorInstance) {
+        return;
+    }
+
     const node = editorInstance.state.doc.nodeAt(pos);
-    if (!node) return;
+
+    if (!node) {
+        return;
+    }
+
     editorInstance
         .chain()
         .focus()
         .deleteRange({ from: pos, to: pos + node.nodeSize })
-        .insertContent({ type: 'webLink', attrs: { href, label: label || null } })
+        .insertContent({
+            type: 'webLink',
+            attrs: { href, label: label || null },
+        })
         .run();
     updateWebLinkModal.value.visible = false;
 }
@@ -894,12 +1263,17 @@ const editor = useEditor({
         Mention.configure({
             HTMLAttributes: { class: 'wiki-link' },
             suggestion: wikiLinkSuggestion(),
-            renderText: ({ node }) => `[[${node.attrs.label ?? node.attrs.id}]]`,
+            renderText: ({ node }) =>
+                `[[${node.attrs.label ?? node.attrs.id}]]`,
             renderHTML: ({ node, HTMLAttributes }) => [
                 'span',
                 { ...HTMLAttributes, 'data-page-id': node.attrs.id },
                 ['span', { class: 'wiki-link-bracket' }, '[['],
-                ['span', { class: 'wiki-link-label' }, node.attrs.label ?? node.attrs.id],
+                [
+                    'span',
+                    { class: 'wiki-link-label' },
+                    node.attrs.label ?? node.attrs.id,
+                ],
                 ['span', { class: 'wiki-link-bracket' }, ']]'],
             ],
         }),
@@ -913,79 +1287,145 @@ const editor = useEditor({
         },
         handleKeyDown: (view, event) => {
             // Ctrl+Q on selected link (mention or web link) follows it
-            if (event.key === 'q' && (event.ctrlKey || event.metaKey) && view.state.selection instanceof NodeSelection) {
+            if (
+                event.key === 'q' &&
+                (event.ctrlKey || event.metaKey) &&
+                view.state.selection instanceof NodeSelection
+            ) {
                 const node = view.state.selection.node;
+
                 if (node.type.name === 'mention' && node.attrs.id) {
                     event.preventDefault();
                     router.visit(`/pages/${node.attrs.id}`);
+
                     return true;
                 }
+
                 if (node.type.name === 'webLink' && node.attrs.href) {
                     event.preventDefault();
                     openExternal(node.attrs.href);
+
                     return true;
                 }
             }
+
             // Enter on selected link shows popover
-            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && ['mention', 'webLink'].includes(view.state.selection.node.type.name)) {
+            if (
+                event.key === 'Enter' &&
+                view.state.selection instanceof NodeSelection &&
+                ['mention', 'webLink'].includes(
+                    view.state.selection.node.type.name,
+                )
+            ) {
                 event.preventDefault();
                 showLinkPopover(view);
+
                 return true;
             }
+
             // Enter on selected file node shows media menu
-            if (event.key === 'Enter' && view.state.selection instanceof NodeSelection && view.state.selection.node.type.name === 'fileNode') {
+            if (
+                event.key === 'Enter' &&
+                view.state.selection instanceof NodeSelection &&
+                view.state.selection.node.type.name === 'fileNode'
+            ) {
                 event.preventDefault();
-                const dom = view.nodeDOM(view.state.selection.from) as HTMLElement;
-                const btn = dom?.querySelector('.file-node-menu-btn') as HTMLElement;
+                const dom = view.nodeDOM(
+                    view.state.selection.from,
+                ) as HTMLElement;
+                const btn = dom?.querySelector(
+                    '.file-node-menu-btn',
+                ) as HTMLElement;
+
                 if (btn) {
                     const mediaId = btn.getAttribute('data-media-menu')!;
                     showMediaMenu(btn, mediaId);
                 }
+
                 return true;
             }
+
             // Escape closes link popover or media menu
             if (event.key === 'Escape' && mediaMenu.value.visible) {
                 hideMediaMenu();
+
                 return true;
             }
+
             if (event.key === 'Escape' && linkPopover.value.visible) {
                 hideLinkPopover();
+
                 return true;
             }
+
             // Select atom inline nodes (mentions, web links) with arrow keys
             const atomTypes = ['mention', 'webLink'];
+
             if (event.key === 'ArrowRight') {
                 const { $head } = view.state.selection;
                 const nodeAfter = $head.nodeAfter;
+
                 if (nodeAfter && atomTypes.includes(nodeAfter.type.name)) {
-                    const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, $head.pos));
+                    const tr = view.state.tr.setSelection(
+                        NodeSelection.create(view.state.doc, $head.pos),
+                    );
                     view.dispatch(tr);
+
                     return true;
                 }
-                if (view.state.selection instanceof NodeSelection && atomTypes.includes(view.state.selection.node.type.name)) {
+
+                if (
+                    view.state.selection instanceof NodeSelection &&
+                    atomTypes.includes(view.state.selection.node.type.name)
+                ) {
                     const pos = view.state.selection.to;
-                    const tr = view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(pos)));
+                    const tr = view.state.tr.setSelection(
+                        view.state.selection.constructor.near(
+                            view.state.doc.resolve(pos),
+                        ),
+                    );
                     view.dispatch(tr);
+
                     return true;
                 }
             }
+
             if (event.key === 'ArrowLeft') {
-                if (view.state.selection instanceof NodeSelection && atomTypes.includes(view.state.selection.node.type.name)) {
+                if (
+                    view.state.selection instanceof NodeSelection &&
+                    atomTypes.includes(view.state.selection.node.type.name)
+                ) {
                     const pos = view.state.selection.from;
-                    const tr = view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(pos), -1));
+                    const tr = view.state.tr.setSelection(
+                        view.state.selection.constructor.near(
+                            view.state.doc.resolve(pos),
+                            -1,
+                        ),
+                    );
                     view.dispatch(tr);
+
                     return true;
                 }
+
                 const { $head } = view.state.selection;
                 const nodeBefore = $head.nodeBefore;
+
                 if (nodeBefore && atomTypes.includes(nodeBefore.type.name)) {
-                    const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, $head.pos - nodeBefore.nodeSize));
+                    const tr = view.state.tr.setSelection(
+                        NodeSelection.create(
+                            view.state.doc,
+                            $head.pos - nodeBefore.nodeSize,
+                        ),
+                    );
                     view.dispatch(tr);
+
                     return true;
                 }
             }
+
             if (event.key === 'ArrowDown') {
                 const { $head } = view.state.selection;
+
                 // If in a code block at the end of the last list item, create a new item below
                 if ($head.parent.type.name === 'codeBlock') {
                     // Check if cursor is at the end of the code block
@@ -995,78 +1435,126 @@ const editor = useEditor({
                             if ($head.node(d).type.name === 'listItem') {
                                 const parent = $head.node(d - 1);
                                 const indexInParent = $head.index(d - 1);
+
                                 // If this is the last list item, create a new one
                                 if (indexInParent === parent.childCount - 1) {
-                                    const listItemType = view.state.schema.nodes.listItem;
-                                    const paragraphType = view.state.schema.nodes.paragraph;
+                                    const listItemType =
+                                        view.state.schema.nodes.listItem;
+                                    const paragraphType =
+                                        view.state.schema.nodes.paragraph;
                                     const endPos = $head.end(d) + 1;
-                                    const newItem = listItemType.create(null, [paragraphType.create()]);
-                                    const tr = view.state.tr.insert(endPos, newItem);
+                                    const newItem = listItemType.create(null, [
+                                        paragraphType.create(),
+                                    ]);
+                                    const tr = view.state.tr.insert(
+                                        endPos,
+                                        newItem,
+                                    );
                                     tr.setSelection(
-                                        view.state.selection.constructor.near(tr.doc.resolve(endPos + 1)),
+                                        view.state.selection.constructor.near(
+                                            tr.doc.resolve(endPos + 1),
+                                        ),
                                     );
                                     view.dispatch(tr);
+
                                     return true;
                                 }
+
                                 break;
                             }
                         }
                     }
                 }
             }
+
             // ArrowDown from selected block node (file, etc.) at end of last list item — create new node
-            if (event.key === 'ArrowDown' && view.state.selection instanceof NodeSelection) {
+            if (
+                event.key === 'ArrowDown' &&
+                view.state.selection instanceof NodeSelection
+            ) {
                 const sel = view.state.selection;
                 // Check if there's any content after the selected node
                 let hasContentAfter = false;
-                view.state.doc.nodesBetween(sel.to, view.state.doc.content.size, (node) => {
-                    if (node.isTextblock || node.isAtom) {
-                        hasContentAfter = true;
-                    }
-                });
+                view.state.doc.nodesBetween(
+                    sel.to,
+                    view.state.doc.content.size,
+                    (node) => {
+                        if (node.isTextblock || node.isAtom) {
+                            hasContentAfter = true;
+                        }
+                    },
+                );
+
                 if (hasContentAfter) {
                     // Let ProseMirror handle navigation to next block
                     return false;
                 }
+
                 const $pos = view.state.doc.resolve(sel.from);
+
                 for (let d = $pos.depth; d >= 0; d--) {
                     if ($pos.node(d).type.name === 'listItem') {
                         const parent = $pos.node(d - 1);
                         const indexInParent = $pos.index(d - 1);
+
                         if (indexInParent === parent.childCount - 1) {
-                            const listItemType = view.state.schema.nodes.listItem;
-                            const paragraphType = view.state.schema.nodes.paragraph;
+                            const listItemType =
+                                view.state.schema.nodes.listItem;
+                            const paragraphType =
+                                view.state.schema.nodes.paragraph;
                             const endPos = $pos.end(d) + 1;
-                            const newItem = listItemType.create(null, [paragraphType.create()]);
+                            const newItem = listItemType.create(null, [
+                                paragraphType.create(),
+                            ]);
                             const tr = view.state.tr.insert(endPos, newItem);
                             tr.setSelection(
-                                view.state.selection.constructor.near(tr.doc.resolve(endPos + 1)),
+                                view.state.selection.constructor.near(
+                                    tr.doc.resolve(endPos + 1),
+                                ),
                             );
                             view.dispatch(tr);
+
                             return true;
                         }
+
                         break;
                     }
                 }
             }
+
             // ArrowDown from end of last block focuses backlinks (skip if shift held or suggestion popup open)
-            if (event.key === 'ArrowDown' && !event.shiftKey && !document.querySelector('.tippy-box')) {
+            if (
+                event.key === 'ArrowDown' &&
+                !event.shiftKey &&
+                !document.querySelector('.tippy-box')
+            ) {
                 const { $head } = view.state.selection;
+
                 // Check if at the end of the last block in the doc
                 if ($head.parentOffset === $head.parent.content.size) {
                     let isLastBlock = true;
                     // Check there are no more blocks (text or atom) after this position
-                    view.state.doc.nodesBetween($head.pos, view.state.doc.content.size, (node) => {
-                        if (node !== $head.parent && (node.isTextblock || node.isAtom)) {
-                            isLastBlock = false;
-                        }
-                    });
+                    view.state.doc.nodesBetween(
+                        $head.pos,
+                        view.state.doc.content.size,
+                        (node) => {
+                            if (
+                                node !== $head.parent &&
+                                (node.isTextblock || node.isAtom)
+                            ) {
+                                isLastBlock = false;
+                            }
+                        },
+                    );
+
                     if (isLastBlock) {
                         emit('focusBacklinks');
+
                         return true;
                     }
                 }
             }
+
             if (event.key === 'ArrowUp' && !event.shiftKey) {
                 const sel = view.state.selection;
                 const { $head } = sel;
@@ -1078,26 +1566,35 @@ const editor = useEditor({
                             return $head.index(d - 1) === 0 && d === 2;
                         }
                     }
+
                     return false;
                 })();
 
                 if (isFirstListItem) {
                     // Text cursor at position 0
-                    if ($head.parentOffset === 0 && !(sel instanceof NodeSelection)) {
+                    if (
+                        $head.parentOffset === 0 &&
+                        !(sel instanceof NodeSelection)
+                    ) {
                         emit('focusTitle');
+
                         return true;
                     }
+
                     // NodeSelection on the first block node in the first list item
                     if (sel instanceof NodeSelection) {
                         const $sel = view.state.doc.resolve(sel.from);
+
                         // Check nothing comes before this node in its parent
                         if ($sel.index($sel.depth) === 0) {
                             emit('focusTitle');
+
                             return true;
                         }
                     }
                 }
             }
+
             return false;
         },
     },
@@ -1109,9 +1606,18 @@ const editor = useEditor({
         userHasInteracted = true;
     },
     onTransaction: ({ transaction, editor }) => {
-        if (!transaction.docChanged) return;
-        if (!userHasInteracted) return;
-        if (transaction.getMeta('blockIdAssignment')) return;
+        if (!transaction.docChanged) {
+            return;
+        }
+
+        if (!userHasInteracted) {
+            return;
+        }
+
+        if (transaction.getMeta('blockIdAssignment')) {
+            return;
+        }
+
         const json = editor.getJSON();
         const nodes = tiptapToNodes(json, null);
         emit('update', nodes);
@@ -1123,18 +1629,22 @@ function handleEditorClick(e: MouseEvent) {
 
     // Click on media menu button
     const menuBtn = target.closest('[data-media-menu]') as HTMLElement;
+
     if (menuBtn) {
         e.preventDefault();
         e.stopPropagation();
         const mediaId = menuBtn.getAttribute('data-media-menu')!;
         showMediaMenu(menuBtn, mediaId);
+
         return;
     }
 
     // Click on file node (non-image, non-video) opens in OS
     const fileNode = target.closest('.file-node-file') as HTMLElement;
+
     if (fileNode) {
         const mediaId = fileNode.getAttribute('data-media-id');
+
         if (mediaId) {
             e.preventDefault();
             fetch(`/api/media/${mediaId}/open`, {
@@ -1142,21 +1652,28 @@ function handleEditorClick(e: MouseEvent) {
                 headers: { Accept: 'application/json' },
             });
         }
+
         return;
     }
 
     const pageLink = target.closest('[data-page-id]') as HTMLElement;
+
     if (pageLink) {
         const pageId = pageLink.getAttribute('data-page-id');
+
         if (pageId) {
             e.preventDefault();
             router.visit(`/pages/${pageId}`);
         }
+
         return;
     }
+
     const webLink = target.closest('[data-web-link]') as HTMLElement;
+
     if (webLink) {
         const href = webLink.getAttribute('href');
+
         if (href) {
             e.preventDefault();
             openExternal(href);
@@ -1177,25 +1694,40 @@ onBeforeUnmount(() => {
             v-if="linkPopover.visible"
             ref="popoverRef"
             tabindex="-1"
-            class="bg-popover border-border absolute z-50 overflow-hidden rounded-md border shadow-md outline-none"
-            :style="{ top: `${linkPopover.top}px`, left: `${linkPopover.left}px` }"
+            class="absolute z-50 overflow-hidden rounded-md border border-border bg-popover shadow-md outline-none"
+            :style="{
+                top: `${linkPopover.top}px`,
+                left: `${linkPopover.left}px`,
+            }"
             @keydown="handlePopoverKeydown"
             @blur="hideLinkPopover"
         >
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="linkPopover.selectedIndex === 0 ? 'bg-accent' : 'hover:bg-accent'"
+                :class="
+                    linkPopover.selectedIndex === 0
+                        ? 'bg-accent'
+                        : 'hover:bg-accent'
+                "
                 @mousedown.prevent="followLink"
                 @mouseenter="linkPopover.selectedIndex = 0"
             >
                 <ExternalLink class="h-4 w-4" />
                 <span class="flex-1">Follow link</span>
-                <kbd class="text-muted-foreground ml-4 text-xs">Ctrl+Q</kbd>
+                <kbd class="ml-4 text-xs text-muted-foreground">Ctrl+Q</kbd>
             </button>
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="linkPopover.selectedIndex === 1 ? 'bg-accent' : 'hover:bg-accent'"
-                @mousedown.prevent="linkPopover.type === 'mention' ? updateLink() : updateWebLink()"
+                :class="
+                    linkPopover.selectedIndex === 1
+                        ? 'bg-accent'
+                        : 'hover:bg-accent'
+                "
+                @mousedown.prevent="
+                    linkPopover.type === 'mention'
+                        ? updateLink()
+                        : updateWebLink()
+                "
                 @mouseenter="linkPopover.selectedIndex = 1"
             >
                 <Pencil class="h-4 w-4" />
@@ -1207,14 +1739,18 @@ onBeforeUnmount(() => {
             v-if="mediaMenu.visible"
             ref="mediaMenuRef"
             tabindex="-1"
-            class="bg-popover border-border absolute z-50 overflow-hidden rounded-md border shadow-md outline-none whitespace-nowrap"
+            class="absolute z-50 overflow-hidden rounded-md border border-border bg-popover whitespace-nowrap shadow-md outline-none"
             :style="{ top: `${mediaMenu.top}px`, left: `${mediaMenu.left}px` }"
             @keydown="handleMediaMenuKeydown"
             @blur="hideMediaMenu"
         >
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="mediaMenu.selectedIndex === 0 ? 'bg-accent' : 'hover:bg-accent'"
+                :class="
+                    mediaMenu.selectedIndex === 0
+                        ? 'bg-accent'
+                        : 'hover:bg-accent'
+                "
                 @mousedown.prevent="mediaDownload"
                 @mouseenter="mediaMenu.selectedIndex = 0"
             >
@@ -1223,7 +1759,11 @@ onBeforeUnmount(() => {
             </button>
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="mediaMenu.selectedIndex === 1 ? 'bg-accent' : 'hover:bg-accent'"
+                :class="
+                    mediaMenu.selectedIndex === 1
+                        ? 'bg-accent'
+                        : 'hover:bg-accent'
+                "
                 @mousedown.prevent="mediaOpen"
                 @mouseenter="mediaMenu.selectedIndex = 1"
             >
@@ -1232,7 +1772,11 @@ onBeforeUnmount(() => {
             </button>
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="mediaMenu.selectedIndex === 2 ? 'bg-accent' : 'hover:bg-accent'"
+                :class="
+                    mediaMenu.selectedIndex === 2
+                        ? 'bg-accent'
+                        : 'hover:bg-accent'
+                "
                 @mousedown.prevent="mediaOpenFolder"
                 @mouseenter="mediaMenu.selectedIndex = 2"
             >
@@ -1240,8 +1784,12 @@ onBeforeUnmount(() => {
                 Open folder
             </button>
             <button
-                class="text-destructive flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
-                :class="mediaMenu.selectedIndex === 3 ? 'bg-accent' : 'hover:bg-accent'"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive transition-colors"
+                :class="
+                    mediaMenu.selectedIndex === 3
+                        ? 'bg-accent'
+                        : 'hover:bg-accent'
+                "
                 @mousedown.prevent="mediaDelete"
                 @mouseenter="mediaMenu.selectedIndex = 3"
             >
@@ -1255,7 +1803,9 @@ onBeforeUnmount(() => {
         <DialogContent>
             <DialogHeader>
                 <DialogTitle>Update link</DialogTitle>
-                <DialogDescription>Change the target page or display label.</DialogDescription>
+                <DialogDescription
+                    >Change the target page or display label.</DialogDescription
+                >
             </DialogHeader>
             <div class="flex flex-col gap-4 py-2">
                 <div class="flex flex-col gap-2">
@@ -1269,15 +1819,24 @@ onBeforeUnmount(() => {
                         />
                         <div
                             v-if="updateLinkModal.searchResults.length > 0"
-                            class="bg-popover border-border absolute top-full z-50 mt-1 w-full overflow-hidden rounded-md border shadow-md"
+                            class="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md"
                         >
                             <button
-                                v-for="(page, index) in updateLinkModal.searchResults"
+                                v-for="(
+                                    page, index
+                                ) in updateLinkModal.searchResults"
                                 :key="page.id"
                                 class="w-full px-3 py-2 text-left text-sm transition-colors"
-                                :class="index === updateLinkModal.searchSelectedIndex ? 'bg-accent' : 'hover:bg-accent'"
+                                :class="
+                                    index ===
+                                    updateLinkModal.searchSelectedIndex
+                                        ? 'bg-accent'
+                                        : 'hover:bg-accent'
+                                "
                                 @mousedown.prevent="selectPageForUpdate(page)"
-                                @mouseenter="updateLinkModal.searchSelectedIndex = index"
+                                @mouseenter="
+                                    updateLinkModal.searchSelectedIndex = index
+                                "
                             >
                                 {{ page.content || '[untitled]' }}
                             </button>
@@ -1287,12 +1846,23 @@ onBeforeUnmount(() => {
                 <div class="flex flex-col gap-2">
                     <Label>Display label</Label>
                     <div class="relative">
-                        <Input v-model="updateLinkModal.label" placeholder="Link text (optional)" class="pr-9" @keydown="handleLabelInputKeydown" />
+                        <Input
+                            v-model="updateLinkModal.label"
+                            placeholder="Link text (optional)"
+                            class="pr-9"
+                            @keydown="handleLabelInputKeydown"
+                        />
                         <button
-                            class="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors"
+                            class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
                             title="Reset to page title"
-                            @click="updateLinkModal.label = updateLinkModal.selectedPageTitle"
-                            @keydown.enter.prevent="updateLinkModal.label = updateLinkModal.selectedPageTitle"
+                            @click="
+                                updateLinkModal.label =
+                                    updateLinkModal.selectedPageTitle
+                            "
+                            @keydown.enter.prevent="
+                                updateLinkModal.label =
+                                    updateLinkModal.selectedPageTitle
+                            "
                         >
                             <RotateCcw class="h-4 w-4" />
                         </button>
@@ -1300,8 +1870,16 @@ onBeforeUnmount(() => {
                 </div>
             </div>
             <DialogFooter>
-                <Button variant="outline" @click="updateLinkModal.visible = false">Cancel</Button>
-                <Button :disabled="!updateLinkModal.selectedPageId" @click="saveUpdatedLink">Save</Button>
+                <Button
+                    variant="outline"
+                    @click="updateLinkModal.visible = false"
+                    >Cancel</Button
+                >
+                <Button
+                    :disabled="!updateLinkModal.selectedPageId"
+                    @click="saveUpdatedLink"
+                    >Save</Button
+                >
             </DialogFooter>
         </DialogContent>
     </Dialog>
@@ -1310,21 +1888,37 @@ onBeforeUnmount(() => {
         <DialogContent>
             <DialogHeader>
                 <DialogTitle>Update web link</DialogTitle>
-                <DialogDescription>Change the URL or display label.</DialogDescription>
+                <DialogDescription
+                    >Change the URL or display label.</DialogDescription
+                >
             </DialogHeader>
             <div class="flex flex-col gap-4 py-2">
                 <div class="flex flex-col gap-2">
                     <Label>URL</Label>
-                    <Input v-model="updateWebLinkModal.href" placeholder="https://..." @keydown="handleWebLinkKeydown" />
+                    <Input
+                        v-model="updateWebLinkModal.href"
+                        placeholder="https://..."
+                        @keydown="handleWebLinkKeydown"
+                    />
                 </div>
                 <div class="flex flex-col gap-2">
                     <Label>Display label</Label>
-                    <Input v-model="updateWebLinkModal.label" placeholder="Optional display text" @keydown="handleWebLinkKeydown" />
+                    <Input
+                        v-model="updateWebLinkModal.label"
+                        placeholder="Optional display text"
+                        @keydown="handleWebLinkKeydown"
+                    />
                 </div>
             </div>
             <DialogFooter>
-                <Button variant="outline" @click="updateWebLinkModal.visible = false">Cancel</Button>
-                <Button :disabled="!isValidUrl" @click="saveUpdatedWebLink">Save</Button>
+                <Button
+                    variant="outline"
+                    @click="updateWebLinkModal.visible = false"
+                    >Cancel</Button
+                >
+                <Button :disabled="!isValidUrl" @click="saveUpdatedWebLink"
+                    >Save</Button
+                >
             </DialogFooter>
         </DialogContent>
     </Dialog>
@@ -1559,7 +2153,7 @@ onBeforeUnmount(() => {
     border-radius: 3px;
 }
 
-.page-editor-list li[data-checked="true"]::before {
+.page-editor-list li[data-checked='true']::before {
     background: var(--link);
     border-color: var(--link);
     content: '✓';
@@ -1570,10 +2164,10 @@ onBeforeUnmount(() => {
     color: var(--background);
 }
 
-.page-editor-list li[data-checked="true"] > p,
-.page-editor-list li[data-checked="true"] > h1,
-.page-editor-list li[data-checked="true"] > h2,
-.page-editor-list li[data-checked="true"] > h3 {
+.page-editor-list li[data-checked='true'] > p,
+.page-editor-list li[data-checked='true'] > h1,
+.page-editor-list li[data-checked='true'] > h2,
+.page-editor-list li[data-checked='true'] > h3 {
     opacity: 0.5;
 }
 </style>

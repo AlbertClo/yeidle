@@ -27,33 +27,6 @@ Route::get('media/{media}', [MediaController::class, 'show']);
 Route::post('media/{media}/open', [MediaController::class, 'open']);
 Route::post('media/{media}/open-folder', [MediaController::class, 'openFolder']);
 
-Route::get('recent-pages', function () {
-    $recentIds = \App\Models\PageVisit::select('node_id')
-        ->selectRaw('MAX(visited_at) as last_visit')
-        ->groupBy('node_id')
-        ->orderByDesc('last_visit')
-        ->limit(10)
-        ->pluck('node_id');
-
-    return \App\Models\Node::whereIn('id', $recentIds)
-        ->get()
-        ->sortBy(fn ($node) => $recentIds->search($node->id))
-        ->values();
-});
-
-Route::post('open-external', function (\Illuminate\Http\Request $request) {
-    $request->validate(['url' => ['required', 'url']]);
-    \App\Http\Controllers\MediaController::openInBackground($request->url);
-    return response()->json(null, 200);
-});
-
-Route::post('page-visits', function (\Illuminate\Http\Request $request) {
-    $request->validate(['node_id' => ['required', 'exists:nodes,id']]);
-
-    \App\Models\PageVisit::create([
-        'node_id' => $request->node_id,
-        'visited_at' => now(),
-    ]);
-
-    return response()->json(null, 201);
-});
+Route::get('recent-pages', [PageController::class, 'recent']);
+Route::post('page-visits', [PageController::class, 'visit']);
+Route::post('open-external', [PageController::class, 'openExternal']);
