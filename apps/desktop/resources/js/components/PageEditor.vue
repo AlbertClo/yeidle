@@ -1901,7 +1901,7 @@ onBeforeUnmount(() => {
 
 <style>
 .page-editor-list {
-    list-style: disc;
+    list-style: none;
     padding-left: 1.5em;
 }
 
@@ -1910,9 +1910,25 @@ onBeforeUnmount(() => {
 }
 
 .page-editor-list li {
+    position: relative;
     margin-bottom: 0.125em;
     border-radius: 3px;
     padding: 1px 4px;
+}
+
+.page-editor-list li::marker {
+    content: none;
+}
+
+.page-editor-list li:not([data-checked])::before {
+    content: '';
+    position: absolute;
+    left: -1em;
+    top: 0.55em;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--muted-foreground);
 }
 
 .page-editor-list li.active-line > p,
