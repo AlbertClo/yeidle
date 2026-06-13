@@ -70,35 +70,6 @@ const emit = defineEmits<{
     focusBacklinks: [];
 }>();
 
-function insertNodeAtTop() {
-    if (!editor.value) {
-        return;
-    }
-
-    console.trace('[insertNodeAtTop] called');
-    editor.value
-        .chain()
-        .command(({ tr, state, dispatch }) => {
-            if (!dispatch) {
-                return true;
-            }
-
-            const newItem = state.schema.nodes.listItem.create(null, [
-                state.schema.nodes.paragraph.create(),
-            ]);
-            tr.insert(2, newItem);
-            tr.setSelection(
-                state.selection.constructor.near(tr.doc.resolve(3)),
-            );
-            tr.scrollIntoView();
-
-            return true;
-        })
-        .focus()
-        .run();
-}
-
-defineExpose({ insertNodeAtTop });
 
 // Custom document schema: doc must contain a bulletList
 const CustomDocument = Document.extend({
@@ -558,8 +529,6 @@ const AlwaysSplitListItem = Extension.create({
                 return false;
             },
             Enter: ({ editor }) => {
-                console.trace('[Enter handler] fired');
-
                 if (isInCodeBlock(editor)) {
                     return editor.commands.command(({ tr, dispatch }) => {
                         if (dispatch) {
