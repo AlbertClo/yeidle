@@ -71,6 +71,12 @@ const emit = defineEmits<{
 }>();
 
 
+function focusStart() {
+    editor.value?.commands.focus('start');
+}
+
+defineExpose({ focusStart });
+
 // Custom document schema: doc must contain a bulletList
 const CustomDocument = Document.extend({
     content: 'bulletList',

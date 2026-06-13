@@ -19,7 +19,7 @@ export const SlashCommand = Extension.create({
         return {
             suggestion: {
                 char: '/',
-                startOfLine: true,
+                startOfLine: false,
                 items: ({ query }: { query: string }) => {
                     return COMMANDS.filter((item) =>
                         item.label.toLowerCase().includes(query.toLowerCase()),
