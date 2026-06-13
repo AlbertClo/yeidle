@@ -8,6 +8,7 @@ import Code from '@tiptap/extension-code';
 import CodeBlock from '@tiptap/extension-code-block';
 import Document from '@tiptap/extension-document';
 import Gapcursor from '@tiptap/extension-gapcursor';
+import HardBreak from '@tiptap/extension-hard-break';
 import Heading from '@tiptap/extension-heading';
 import Highlight from '@tiptap/extension-highlight';
 import History from '@tiptap/extension-history';
@@ -1238,6 +1239,15 @@ const editor = useEditor({
         Blockquote,
         Highlight,
         Gapcursor,
+        HardBreak.configure({
+            keepMarks: false,
+        }).extend({
+            addKeyboardShortcuts() {
+                return {
+                    'Shift-Enter': () => this.editor.commands.setHardBreak(),
+                };
+            },
+        }),
         Mention.configure({
             HTMLAttributes: { class: 'wiki-link' },
             suggestion: wikiLinkSuggestion(),
