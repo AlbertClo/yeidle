@@ -1304,16 +1304,54 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
-            // Enter at GapCursor: insert paragraph between block nodes
+            // Enter at GapCursor: split listItem at the gap position
             if (event.key === 'Enter' && view.state.selection.empty && !view.state.selection.$head.parent.isTextblock) {
                 event.preventDefault();
                 const pos = view.state.selection.head;
-                const paragraph = view.state.schema.nodes.paragraph.create();
-                const tr = view.state.tr.insert(pos, paragraph);
-                tr.setSelection(TextSelection.create(tr.doc, pos + 1));
-                tr.scrollIntoView();
-                view.dispatch(tr);
-                return true;
+                const $pos = view.state.doc.resolve(pos);
+
+                // Find the containing listItem
+                for (let d = $pos.depth; d >= 0; d--) {
+                    if ($pos.node(d).type.name === 'listItem') {
+                        const listItem = $pos.node(d);
+                        const listItemStart = $pos.start(d);
+                        const listItemEnd = $pos.end(d);
+
+                        // Content before and after the gap
+                        const beforeContent = listItem.content.cut(0, pos - listItemStart);
+                        const afterContent = listItem.content.cut(pos - listItemStart);
+
+                        if (afterContent.size === 0) {
+                            // Gap is at the end — just insert a new empty node after
+                            const newItem = view.state.schema.nodes.listItem.create(null, [
+                                view.state.schema.nodes.paragraph.create(),
+                            ]);
+                            const insertPos = listItemEnd + 1;
+                            const tr = view.state.tr.insert(insertPos, newItem);
+                            tr.setSelection(TextSelection.create(tr.doc, insertPos + 2));
+                            tr.scrollIntoView();
+                            view.dispatch(tr);
+                        } else {
+                            // Split: replace current listItem with before, insert new listItem with after
+                            const nodePos = $pos.before(d);
+                            const newItem = view.state.schema.nodes.listItem.create(
+                                { ...listItem.attrs, blockId: null },
+                                afterContent,
+                            );
+                            let tr = view.state.tr;
+                            // Replace current listItem content with just the before part
+                            tr = tr.replaceWith(listItemStart, listItemEnd, beforeContent);
+                            // Insert new listItem after the current one
+                            const insertPos = tr.mapping.map(listItemEnd + 1);
+                            tr = tr.insert(insertPos, newItem);
+                            // Place cursor at start of new listItem
+                            tr.setSelection(TextSelection.near(tr.doc.resolve(insertPos + 1)));
+                            tr.scrollIntoView();
+                            view.dispatch(tr);
+                        }
+                        return true;
+                    }
+                }
             }
 
             // Ctrl+Q on selected link (mention or web link) follows it
