@@ -393,22 +393,32 @@ const AlwaysSplitListItem = Extension.create({
 
                             const offset = currentContent.size;
 
-                            // If the current item has children, move them to the target listItem
+                            // If the current item has children, merge them into the parent's children
                             if (nestedList) {
-                                // Find the target listItem that contains targetEnd
-                                let targetListItemEnd = 0;
-                                const $target = editor.state.doc.resolve(targetEnd);
-                                for (let td = $target.depth; td >= 0; td--) {
-                                    if ($target.node(td).type.name === 'listItem') {
-                                        targetListItemEnd = $target.end(td);
-                                        break;
+                                // If this is the first child in a nested list (indexInParent === 0),
+                                // insert children's items at the start of the parent's nested list
+                                // (before any siblings). Otherwise insert at end of target listItem.
+                                if (indexInParent === 0) {
+                                    // Insert child items at the position of the current item
+                                    // (which is at currentItemStart), so they appear before siblings
+                                    tr = tr.insert(currentItemStart + offset, nestedList.content);
+                                } else {
+                                    // Find the target listItem that contains targetEnd
+                                    let targetListItemEnd = 0;
+                                    const $target = editor.state.doc.resolve(targetEnd);
+                                    for (let td = $target.depth; td >= 0; td--) {
+                                        if ($target.node(td).type.name === 'listItem') {
+                                            targetListItemEnd = $target.end(td);
+                                            break;
+                                        }
                                     }
+                                    tr = tr.insert(targetListItemEnd + offset, nestedList);
                                 }
-                                // Insert the nested list at the end of the target listItem
-                                tr = tr.insert(targetListItemEnd + offset, nestedList);
                             }
 
-                            const nestedOffset = nestedList ? nestedList.nodeSize : 0;
+                            const nestedOffset = nestedList
+                                ? (indexInParent === 0 ? nestedList.content.size : nestedList.nodeSize)
+                                : 0;
 
                             // Determine delete range
                             let delFrom = currentItemStart + offset + nestedOffset;
