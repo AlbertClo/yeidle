@@ -73,7 +73,6 @@ const emit = defineEmits<{
     focusBacklinks: [];
 }>();
 
-
 function focusStart() {
     editor.value?.commands.focus('start');
 }
@@ -1250,7 +1249,8 @@ const editor = useEditor({
                         appendTransaction: (_trs, oldState, newState) => {
                             // Scroll into view whenever selection becomes a GapCursor
                             const sel = newState.selection;
-                            const isGapCursor = sel.empty && !sel.$head.parent.isTextblock;
+                            const isGapCursor =
+                                sel.empty && !sel.$head.parent.isTextblock;
                             if (isGapCursor && !oldState.selection.eq(sel)) {
                                 // Convert fileNode NodeSelection from arrow keys
                                 if (lastArrowDirection !== 0) {
@@ -1261,7 +1261,10 @@ const editor = useEditor({
 
                             // Convert fileNode NodeSelection from up/down arrows
                             if (lastArrowDirection === 0) return null;
-                            if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'fileNode') {
+                            if (
+                                !(sel instanceof NodeSelection) ||
+                                sel.node.type.name !== 'fileNode'
+                            ) {
                                 lastArrowDirection = 0;
                                 return null;
                             }
@@ -1269,10 +1272,13 @@ const editor = useEditor({
                                 lastArrowDirection = 0;
                                 return null;
                             }
-                            const pos = lastArrowDirection === -1 ? sel.to : sel.from;
+                            const pos =
+                                lastArrowDirection === -1 ? sel.to : sel.from;
                             lastArrowDirection = 0;
                             if (GapCursor.valid(newState.doc.resolve(pos))) {
-                                const tr = newState.tr.setSelection(new GapCursor(newState.doc.resolve(pos)));
+                                const tr = newState.tr.setSelection(
+                                    new GapCursor(newState.doc.resolve(pos)),
+                                );
                                 tr.scrollIntoView();
                                 return tr;
                             }
@@ -1318,7 +1324,11 @@ const editor = useEditor({
         },
         handleKeyDown: (view, event) => {
             // Enter at GapCursor: split listItem at the gap position
-            if (event.key === 'Enter' && view.state.selection.empty && !view.state.selection.$head.parent.isTextblock) {
+            if (
+                event.key === 'Enter' &&
+                view.state.selection.empty &&
+                !view.state.selection.$head.parent.isTextblock
+            ) {
                 event.preventDefault();
                 const pos = view.state.selection.head;
                 const $pos = view.state.doc.resolve(pos);
@@ -1331,34 +1341,51 @@ const editor = useEditor({
                         const listItemEnd = $pos.end(d);
 
                         // Content before and after the gap
-                        const beforeContent = listItem.content.cut(0, pos - listItemStart);
-                        const afterContent = listItem.content.cut(pos - listItemStart);
+                        const beforeContent = listItem.content.cut(
+                            0,
+                            pos - listItemStart,
+                        );
+                        const afterContent = listItem.content.cut(
+                            pos - listItemStart,
+                        );
 
                         if (afterContent.size === 0) {
                             // Gap is at the end — just insert a new empty node after
-                            const newItem = view.state.schema.nodes.listItem.create(null, [
-                                view.state.schema.nodes.paragraph.create(),
-                            ]);
+                            const newItem =
+                                view.state.schema.nodes.listItem.create(null, [
+                                    view.state.schema.nodes.paragraph.create(),
+                                ]);
                             const insertPos = listItemEnd + 1;
                             const tr = view.state.tr.insert(insertPos, newItem);
-                            tr.setSelection(TextSelection.create(tr.doc, insertPos + 2));
+                            tr.setSelection(
+                                TextSelection.create(tr.doc, insertPos + 2),
+                            );
                             tr.scrollIntoView();
                             view.dispatch(tr);
                         } else {
                             // Split: replace current listItem with before, insert new listItem with after
                             const nodePos = $pos.before(d);
-                            const newItem = view.state.schema.nodes.listItem.create(
-                                { ...listItem.attrs, blockId: null },
-                                afterContent,
-                            );
+                            const newItem =
+                                view.state.schema.nodes.listItem.create(
+                                    { ...listItem.attrs, blockId: null },
+                                    afterContent,
+                                );
                             let tr = view.state.tr;
                             // Replace current listItem content with just the before part
-                            tr = tr.replaceWith(listItemStart, listItemEnd, beforeContent);
+                            tr = tr.replaceWith(
+                                listItemStart,
+                                listItemEnd,
+                                beforeContent,
+                            );
                             // Insert new listItem after the current one
                             const insertPos = tr.mapping.map(listItemEnd + 1);
                             tr = tr.insert(insertPos, newItem);
                             // Place cursor at start of new listItem
-                            tr.setSelection(TextSelection.near(tr.doc.resolve(insertPos + 1)));
+                            tr.setSelection(
+                                TextSelection.near(
+                                    tr.doc.resolve(insertPos + 1),
+                                ),
+                            );
                             tr.scrollIntoView();
                             view.dispatch(tr);
                         }
@@ -2035,7 +2062,7 @@ onBeforeUnmount(() => {
     content: '';
     position: absolute;
     left: -1em;
-    top: 0.55em;
+    top: 0.65em;
     width: 5px;
     height: 5px;
     border-radius: 50%;
