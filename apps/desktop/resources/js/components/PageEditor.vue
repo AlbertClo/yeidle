@@ -74,7 +74,31 @@ const emit = defineEmits<{
 }>();
 
 function focusStart() {
-    editor.value?.commands.focus('start');
+    const e = editor.value;
+    if (!e) return;
+
+    const doc = e.state.doc;
+    let firstItemPos = -1;
+    let firstItemNode: any = null;
+    doc.descendants((node, pos) => {
+        if (firstItemPos >= 0) return false;
+        if (node.type.name === 'listItem') {
+            firstItemPos = pos;
+            firstItemNode = node;
+            return false;
+        }
+    });
+
+    if (firstItemNode?.firstChild?.type.name === 'fileNode') {
+        const gapPos = firstItemPos + 1;
+        e.view.focus();
+        e.view.dispatch(
+            e.state.tr.setSelection(new GapCursor(doc.resolve(gapPos))).scrollIntoView(),
+        );
+        return;
+    }
+
+    e.commands.focus('start');
 }
 
 defineExpose({ focusStart });
