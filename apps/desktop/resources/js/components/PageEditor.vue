@@ -19,6 +19,7 @@ import Mention from '@tiptap/extension-mention';
 import Paragraph from '@tiptap/extension-paragraph';
 import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
+import { Fragment } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { GapCursor } from 'prosemirror-gapcursor';
@@ -702,12 +703,23 @@ const AlwaysSplitListItem = Extension.create({
                     });
                 }
 
-                // Check if current block is empty — splitListItem would lift/outdent it
                 const { $head: $enterHead } = editor.state.selection;
                 const isEmptyBlock = $enterHead.parent.content.size === 0;
 
+                let isLastBlockInItem = false;
+                if (isEmptyBlock) {
+                    for (let d = $enterHead.depth; d >= 0; d--) {
+                        if ($enterHead.node(d).type.name === 'listItem') {
+                            isLastBlockInItem =
+                                $enterHead.indexAfter(d) ===
+                                $enterHead.node(d).childCount;
+                            break;
+                        }
+                    }
+                }
+
                 if (
-                    !isEmptyBlock &&
+                    !(isEmptyBlock && isLastBlockInItem) &&
                     editor.commands.splitListItem('listItem')
                 ) {
                     editor.view.dispatch(editor.state.tr.scrollIntoView());
@@ -1558,11 +1570,16 @@ const editor = useEditor({
                             view.dispatch(tr);
                         } else {
                             // Split: replace current listItem with before, insert new listItem with after
-                            const nodePos = $pos.before(d);
+                            const paragraphType = view.state.schema.nodes.paragraph;
+                            const firstAfter = afterContent.firstChild;
+                            const needsParagraph = firstAfter && !firstAfter.isTextblock;
+                            const newContent = needsParagraph
+                                ? Fragment.from(paragraphType.create()).append(afterContent)
+                                : afterContent;
                             const newItem =
                                 view.state.schema.nodes.listItem.create(
                                     { ...listItem.attrs, blockId: null },
-                                    afterContent,
+                                    newContent,
                                 );
                             let tr = view.state.tr;
                             // Replace current listItem content with just the before part
@@ -1574,11 +1591,9 @@ const editor = useEditor({
                             // Insert new listItem after the current one
                             const insertPos = tr.mapping.map(listItemEnd + 1);
                             tr = tr.insert(insertPos, newItem);
-                            // Place cursor at start of new listItem
+                            // Place cursor in the new listItem's first paragraph
                             tr.setSelection(
-                                TextSelection.near(
-                                    tr.doc.resolve(insertPos + 1),
-                                ),
+                                TextSelection.create(tr.doc, insertPos + 2),
                             );
                             tr.scrollIntoView();
                             view.dispatch(tr);
