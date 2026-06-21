@@ -174,6 +174,97 @@ function isInCodeBlock(editor: {
     return editor.state.selection.$head.parent.type.name === 'codeBlock';
 }
 
+function isListItemEmpty(node: { childCount: number; child: (i: number) => { type: { name: string }; content: { size: number }; isTextblock: boolean } }) {
+    for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child.type.name !== 'bulletList') {
+            if (child.content.size > 0 || !child.isTextblock) return false;
+        }
+    }
+    return true;
+}
+
+function handleRangeDeleteAcrossListItems(editor: { state: any; view: any }): boolean {
+    const { from, to } = editor.state.selection;
+    const $from = editor.state.doc.resolve(from);
+    const $to = editor.state.doc.resolve(to);
+
+    let fromItemDepth = -1;
+    for (let d = $from.depth; d >= 0; d--) {
+        if ($from.node(d).type.name === 'listItem') { fromItemDepth = d; break; }
+    }
+    let toItemDepth = -1;
+    for (let d = $to.depth; d >= 0; d--) {
+        if ($to.node(d).type.name === 'listItem') { toItemDepth = d; break; }
+    }
+
+    if (fromItemDepth < 0 || toItemDepth < 0) return false;
+    if ($from.before(fromItemDepth) === $to.before(toItemDepth)) return false;
+
+    const keepBlockId = $from.node(fromItemDepth).attrs.blockId;
+
+    // Track nodes that currently have content — if they become empty after
+    // the delete, they're artifacts that need cleanup
+    const hadContent = new Set<string>();
+    editor.state.doc.descendants((node: any) => {
+        if (node.type.name === 'listItem' && node.attrs.blockId && !isListItemEmpty(node)) {
+            hadContent.add(node.attrs.blockId);
+        }
+    });
+
+    const tr = editor.state.tr;
+    tr.deleteSelection();
+
+    // Remove newly-emptied listItems (artifacts of the range delete).
+    // Process one at a time and re-scan, since each removal shifts positions.
+    for (;;) {
+        let emptyPos = -1;
+        let emptyNode: any = null;
+        tr.doc.descendants((node: any, pos: number) => {
+            if (emptyNode) return false;
+            if (node.type.name === 'listItem' && hadContent.has(node.attrs.blockId) && isListItemEmpty(node)) {
+                emptyPos = pos;
+                emptyNode = node;
+                return false;
+            }
+        });
+        if (!emptyNode) break;
+
+        const nestedList = emptyNode.lastChild?.type.name === 'bulletList' ? emptyNode.lastChild : null;
+        if (nestedList) {
+            tr.replaceWith(emptyPos, emptyPos + emptyNode.nodeSize, nestedList.content);
+        } else {
+            const $p = tr.doc.resolve(emptyPos);
+            if ($p.parent.type.name === 'bulletList' && $p.parent.childCount === 1) {
+                tr.delete($p.before($p.depth), $p.after($p.depth));
+            } else {
+                tr.delete(emptyPos, emptyPos + emptyNode.nodeSize);
+            }
+        }
+    }
+
+    // Restore blockId on the merged listItem
+    const cursorPos = tr.mapping.map(from);
+    const $cursor = tr.doc.resolve(cursorPos);
+    for (let d = $cursor.depth; d >= 0; d--) {
+        if ($cursor.node(d).type.name === 'listItem') {
+            const itemPos = $cursor.before(d);
+            const item = $cursor.node(d);
+            if (item.attrs.blockId !== keepBlockId) {
+                tr.setNodeMarkup(itemPos, undefined, {
+                    ...item.attrs,
+                    blockId: keepBlockId,
+                });
+            }
+            break;
+        }
+    }
+
+    tr.setSelection(TextSelection.near(tr.doc.resolve(cursorPos)));
+    editor.view.dispatch(tr);
+    return true;
+}
+
 // Highlight active line and selected lines
 const ActiveLineHighlight = Extension.create({
     name: 'activeLineHighlight',
@@ -329,7 +420,7 @@ const AlwaysSplitListItem = Extension.create({
                 }
 
                 if (!editor.state.selection.empty) {
-                    return false;
+                    return handleRangeDeleteAcrossListItems(editor);
                 }
 
                 const { $head } = editor.state.selection;
@@ -455,7 +546,7 @@ const AlwaysSplitListItem = Extension.create({
                 }
 
                 if (!editor.state.selection.empty) {
-                    return false;
+                    return handleRangeDeleteAcrossListItems(editor);
                 }
 
                 const { $head } = editor.state.selection;
