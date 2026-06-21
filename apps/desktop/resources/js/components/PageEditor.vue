@@ -1525,6 +1525,24 @@ const editor = useEditor({
                 }
             }
 
+            // Down/Up at GapCursor: select adjacent node
+            if (
+                (event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+                view.state.selection instanceof GapCursor
+            ) {
+                const $gap = view.state.selection.$head;
+                const targetNode = event.key === 'ArrowDown' ? $gap.nodeAfter : $gap.nodeBefore;
+                if (targetNode && !targetNode.isTextblock) {
+                    const pos = event.key === 'ArrowDown' ? $gap.pos : $gap.pos - targetNode.nodeSize;
+                    const tr = view.state.tr.setSelection(
+                        NodeSelection.create(view.state.doc, pos),
+                    );
+                    tr.scrollIntoView();
+                    view.dispatch(tr);
+                    return true;
+                }
+            }
+
             // Ctrl+Q on selected link (mention or web link) follows it
             if (
                 event.key === 'q' &&
