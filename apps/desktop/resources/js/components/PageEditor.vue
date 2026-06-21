@@ -1383,36 +1383,75 @@ const editor = useEditor({
                             const isGapCursor =
                                 sel.empty && !sel.$head.parent.isTextblock;
                             if (isGapCursor && !oldState.selection.eq(sel)) {
-                                // Convert fileNode NodeSelection from arrow keys
                                 if (lastArrowDirection !== 0) {
                                     lastArrowDirection = 0;
                                 }
                                 return newState.tr.scrollIntoView();
                             }
 
-                            // Convert fileNode NodeSelection from up/down arrows
                             if (lastArrowDirection === 0) return null;
-                            if (
-                                !(sel instanceof NodeSelection) ||
-                                sel.node.type.name !== 'fileNode'
-                            ) {
-                                lastArrowDirection = 0;
-                                return null;
-                            }
-                            if (oldState.selection.eq(sel)) {
-                                lastArrowDirection = 0;
-                                return null;
-                            }
-                            const pos =
-                                lastArrowDirection === -1 ? sel.to : sel.from;
+                            const dir = lastArrowDirection;
                             lastArrowDirection = 0;
-                            if (GapCursor.valid(newState.doc.resolve(pos))) {
+
+                            if (oldState.selection.eq(sel)) return null;
+
+                            // Convert NodeSelection on fileNode to GapCursor
+                            if (
+                                sel instanceof NodeSelection &&
+                                sel.node.type.name === 'fileNode'
+                            ) {
+                                const pos = dir === -1 ? sel.to : sel.from;
                                 const tr = newState.tr.setSelection(
                                     new GapCursor(newState.doc.resolve(pos)),
                                 );
                                 tr.scrollIntoView();
                                 return tr;
                             }
+
+                            // When navigating to a new listItem, create GapCursor
+                            // if the boundary content is a fileNode
+                            if (sel instanceof TextSelection) {
+                                let curDepth = -1;
+                                for (let d = sel.$head.depth; d >= 0; d--) {
+                                    if (sel.$head.node(d).type.name === 'listItem') { curDepth = d; break; }
+                                }
+                                let oldDepth = -1;
+                                for (let d = oldState.selection.$head.depth; d >= 0; d--) {
+                                    if (oldState.selection.$head.node(d).type.name === 'listItem') { oldDepth = d; break; }
+                                }
+                                if (curDepth < 0 || oldDepth < 0) return null;
+                                if (sel.$head.before(curDepth) === oldState.selection.$head.before(oldDepth)) return null;
+
+                                const listItem = sel.$head.node(curDepth);
+                                const listItemStart = sel.$head.start(curDepth);
+
+                                if (dir === 1) {
+                                    if (listItem.firstChild?.type.name === 'fileNode') {
+                                        const tr = newState.tr.setSelection(
+                                            new GapCursor(newState.doc.resolve(listItemStart)),
+                                        );
+                                        tr.scrollIntoView();
+                                        return tr;
+                                    }
+                                } else {
+                                    let lastContentOffset = 0;
+                                    for (let i = 0; i < listItem.childCount; i++) {
+                                        const child = listItem.child(i);
+                                        if (child.type.name === 'bulletList') break;
+                                        lastContentOffset += child.nodeSize;
+                                        if (i === listItem.childCount - 1 || listItem.child(i + 1).type.name === 'bulletList') {
+                                            if (child.type.name === 'fileNode') {
+                                                const tr = newState.tr.setSelection(
+                                                    new GapCursor(newState.doc.resolve(listItemStart + lastContentOffset)),
+                                                );
+                                                tr.scrollIntoView();
+                                                return tr;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             return null;
                         },
                     }),
@@ -1525,17 +1564,33 @@ const editor = useEditor({
                 }
             }
 
-            // Down/Up at GapCursor: select adjacent node
+            // Down/Right at GapCursor: select node after gap
             if (
-                (event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+                (event.key === 'ArrowDown' || event.key === 'ArrowRight') &&
                 view.state.selection instanceof GapCursor
             ) {
                 const $gap = view.state.selection.$head;
-                const targetNode = event.key === 'ArrowDown' ? $gap.nodeAfter : $gap.nodeBefore;
+                const targetNode = $gap.nodeAfter;
                 if (targetNode && !targetNode.isTextblock) {
-                    const pos = event.key === 'ArrowDown' ? $gap.pos : $gap.pos - targetNode.nodeSize;
                     const tr = view.state.tr.setSelection(
-                        NodeSelection.create(view.state.doc, pos),
+                        NodeSelection.create(view.state.doc, $gap.pos),
+                    );
+                    tr.scrollIntoView();
+                    view.dispatch(tr);
+                    return true;
+                }
+            }
+
+            // Up/Left at GapCursor: select node before gap
+            if (
+                (event.key === 'ArrowUp' || event.key === 'ArrowLeft') &&
+                view.state.selection instanceof GapCursor
+            ) {
+                const $gap = view.state.selection.$head;
+                const targetNode = $gap.nodeBefore;
+                if (targetNode && !targetNode.isTextblock) {
+                    const tr = view.state.tr.setSelection(
+                        NodeSelection.create(view.state.doc, $gap.pos - targetNode.nodeSize),
                     );
                     tr.scrollIntoView();
                     view.dispatch(tr);
