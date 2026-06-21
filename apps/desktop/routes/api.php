@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\BookmarkController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
@@ -14,9 +13,6 @@ Route::put('nodes/{node}/sync-content', [NodeController::class, 'syncContent']);
 Route::get('pages', [PageController::class, 'index']);
 Route::get('pages/{node}', [PageController::class, 'show']);
 Route::get('pages/{node}/backlinks', [PageController::class, 'backlinks']);
-
-Route::get('bookmarks', [BookmarkController::class, 'index']);
-Route::post('bookmarks', [BookmarkController::class, 'store']);
 
 Route::get('search', SearchController::class);
 
