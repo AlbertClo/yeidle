@@ -1093,7 +1093,6 @@ function listItemToNode(
         position,
         content: textContent,
         tiptap_content: tiptapContent,
-        url: null,
         is_checked: attrs.checked ?? null,
         created_at: '',
         updated_at: '',

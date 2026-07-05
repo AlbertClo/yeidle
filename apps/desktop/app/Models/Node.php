@@ -18,7 +18,6 @@ class Node extends Model
         'position',
         'content',
         'tiptap_content',
-        'url',
         'is_checked',
     ];
 
@@ -55,18 +54,8 @@ class Node extends Model
         return $query->whereNull('parent_id');
     }
 
-    public function scopeBookmarks($query)
-    {
-        return $query->whereNotNull('url');
-    }
-
     public function isPage(): bool
     {
         return $this->parent_id === null;
-    }
-
-    public function isBookmark(): bool
-    {
-        return $this->url !== null;
     }
 }

@@ -4,7 +4,6 @@ export type Node = {
     position: string;
     content: string;
     tiptap_content: Record<string, unknown> | null;
-    url: string | null;
     is_checked: boolean | null;
     created_at: string;
     updated_at: string;

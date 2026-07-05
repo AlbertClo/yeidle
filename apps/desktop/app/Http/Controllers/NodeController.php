@@ -21,7 +21,6 @@ class NodeController extends Controller
             'position' => ['required', 'string'],
             'content' => ['nullable', 'string'],
             'tiptap_content' => ['nullable'],
-            'url' => ['nullable', 'url', 'unique:nodes,url'],
             'is_checked' => ['nullable', 'boolean'],
         ]);
 
@@ -51,7 +50,6 @@ class NodeController extends Controller
             'position' => ['string'],
             'content' => ['nullable', 'string'],
             'tiptap_content' => ['nullable'],
-            'url' => ['nullable', 'url', 'unique:nodes,url,'.$node->id],
             'is_checked' => ['nullable', 'boolean'],
         ]);
 

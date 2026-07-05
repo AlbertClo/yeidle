@@ -423,15 +423,6 @@ onBeforeUnmount(() => {
                     >
                         {{ titleContent || '[untitled]' }}
                     </h1>
-
-                    <p v-if="page.url" class="text-muted-foreground mt-1 text-sm">
-                        <a
-                            :href="page.url"
-                            target="_blank"
-                            class="hover:underline"
-                            >{{ page.url }}</a
-                        >
-                    </p>
                 </div>
 
                 <div class="mb-4">
