@@ -26,6 +26,8 @@ class Node extends Model
         return [
             'is_checked' => 'boolean',
             'tiptap_content' => 'array',
+            'field_clocks' => 'array',
+            'purged' => 'boolean',
         ];
     }
 
@@ -57,5 +59,39 @@ class Node extends Model
     public function isPage(): bool
     {
         return $this->parent_id === null;
+    }
+
+    /**
+     * Derived subtree visibility (sync design §5): deletion is stored
+     * per-node and never cascaded at write time, so whether a node is
+     * actually visible depends on its merged parent chain. Cycles (possible
+     * under concurrent moves) are treated as unreachable — deterministic
+     * and safe.
+     */
+    public function isReachable(): bool
+    {
+        $node = $this;
+        $visited = [];
+
+        while (true) {
+            if ($node->purged || $node->trashed()) {
+                return false;
+            }
+
+            if ($node->parent_id === null) {
+                return true;
+            }
+
+            if (isset($visited[$node->id])) {
+                return false;
+            }
+
+            $visited[$node->id] = true;
+            $node = self::withTrashed()->find($node->parent_id);
+
+            if (! $node) {
+                return false;
+            }
+        }
     }
 }

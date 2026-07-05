@@ -177,18 +177,28 @@ Notes:
   changed), unlike the current full-payload batch: field-level LWW requires
   knowing which fields an op actually touched. Creation is just a `node.set`
   whose fields happen to be complete.
-- `node.delete` cascade vs. concurrent moves: a delete only cascades to
-  children whose `parent_id` (after HLC merge) still points inside the
-  deleted subtree. A child concurrently moved out survives — same semantics
-  the batch endpoint has today, now made explicit.
-- Deletion is a field write too: internally `deleted_at` participates in LWW
-  so that a delete and a concurrent edit resolve deterministically.
-  **Decided: an edit with a newer HLC revives a deleted node** — content
-  written on any device is never silently discarded by an earlier delete,
-  matching the restore-on-upsert behavior the batch endpoint already has.
-  Reviving a node also revives its deleted ancestors (with their old
-  content), so the revived node is reachable; without this, an edit that
-  outlives a subtree delete would resurrect an invisible orphan.
+- `node.delete` marks **only its target node**; subtree deletion is derived
+  at read time from the merged parent chain (`Node::isReachable`), never
+  materialized at apply time. *(Amended during implementation: the
+  convergence harness showed that any apply-time walk of the tree — cascade
+  or ancestor revival — depends on the interim parent chain at the moment
+  the op happens to arrive, so replicas diverge.)* This gives the intended
+  semantics for free: a child concurrently moved out of a deleted subtree
+  is reachable through its new parent; one left inside is not.
+- Deletion is a field write too: internally the `deleted` clock participates
+  in LWW, and **every `node.set` also writes it** (asserting liveness), so
+  an edit with a newer HLC revives a deleted node — content written on any
+  device is never silently discarded by an earlier delete. A `node.set`
+  with empty `fields` is thereby a pure "revive" op.
+  Ancestor revival is **not** done by the applier (order-dependent, see
+  above); instead it is edge repair (§7): a client that observes its own
+  revived/edited node is unreachable mints explicit empty-`fields` liveness
+  ops for the deleted ancestors — ordinary ops, so convergence is
+  unaffected.
+- Concurrent moves can create parent **cycles** (A→B on one device, B→A on
+  another; both field writes win their respective LWW races).
+  `isReachable` treats members of a cycle as unreachable — deterministic
+  and safe; edge repair (a client re-parenting one member) resolves it.
 - **Tombstones and forced hard deletes**: ordinary soft-deleted nodes are
   retained for **at least 180 days**, and compacted only once every known
   client's cursor has passed the delete. A user-initiated hard delete before
@@ -199,7 +209,11 @@ Notes:
   permanent id-only tombstone (~bytes) so resurrection by offline devices is
   impossible; the server also redacts that node's prior op payloads in the
   log (seq numbers keep their places, snapshots are rebuilt) and clients
-  scrub locally on receipt. Media blobs are only GC'd when their last
+  scrub locally on receipt. The purged row is scrubbed to a fully canonical
+  state (`parent_id` null, default position, empty content) — leaving any
+  mutable field as-is would preserve whichever ops happened to arrive
+  before the purge, diverging replicas — and concurrent purges converge on
+  the earliest timestamp. Media blobs are only GC'd when their last
   reference is gone — content-addressed dedup means a blob may outlive any
   one purged node. Honest limit: a device that never syncs again keeps its
   local copy; purge reaches every device that ever reconnects.
@@ -259,14 +273,17 @@ projection (§8), so bootstrap is: download projection snapshot at
 `server_seq = N`, set cursor to N, then pull normally. This also enables log
 compaction later (drop ops below the oldest snapshot any client needs).
 
-### Local transport (two instances, one machine)
+### What "two instances" means
 
-Phase 0 needs no cloud: both instances share the local SQLite, so the `ops`
-table itself is the transport. Each instance tails the table (poll
-`local_seq > cursor` every ~1s, or a filesystem/NativePHP broadcast to
-nudge) and applies every op whose `op_id` it didn't generate itself. This
-phase exercises the exact code path (apply-remote-op → SQLite + live
-editor) that cloud sync will use.
+Clarified: two instances = two separate machines, each running its own app
+with its own SQLite — there is no shared-database transport. Convergence
+between real instances therefore arrives with Phase 1's cloud relay; in
+Phase 0 the convergence harness *simulates* multiple instances (independent
+projections receiving the same op set in different orders), and the
+remote-op → live-editor path (§7) is exercised by feeding ops from a
+simulated second client. Two windows on one machine share a PHP server and
+database, so they converge through the ordinary op pipeline plus editor
+refresh — the trivial case, not the design driver.
 
 ## 7. Applying remote ops to a live editor
 
@@ -405,14 +422,16 @@ Each phase ships something usable on its own.
 - Derived data is rebuilt by apply, never synced: `node_links` (LinkParser
   runs inside apply), the in-memory page cache (invalidated by apply).
   `page_visits` stays local-only, outside the log entirely.
-- Apply handles ops referencing missing parents deliberately (drop, per
-  the purge rule — the FK would otherwise reject them mid-transaction).
-- Windows receive others' ops from the shared server (SSE or polling —
-  verify early whether "two instances" means two windows of one PHP server
-  or two processes; this decides the transport) and merge into the live
-  editor (§7).
-- Exit criterion: harness green, and two windows typing on the same page
-  converge with no lost edits outside the same-block flush window.
+- Apply handles arbitrary delivery orders: an op referencing a
+  not-yet-created node or parent creates a shell row (filled in when the
+  create arrives), and ops referencing purged ids are dropped.
+- The remote-op → live-editor merge (§7) is exercised by feeding ops from
+  a simulated second client; real cross-machine transport is Phase 1 (§6,
+  "What two instances means").
+- Exit criterion: convergence harness green (it *is* the multi-instance
+  proof), and a page open in the editor correctly live-updates from
+  simulated remote ops with no lost edits outside the same-block flush
+  window.
 
 **Phase 1 — cloud relay (polling)**
 - `apps/web` Laravel app: workspaces, push/pull endpoints, projections,
