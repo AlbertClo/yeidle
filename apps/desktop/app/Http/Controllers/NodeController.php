@@ -6,6 +6,8 @@ use App\Models\Node;
 use App\Services\LinkParser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class NodeController extends Controller
 {
@@ -92,6 +94,71 @@ class NodeController extends Controller
         $this->linkParser->syncLinks($node);
 
         return response()->json($node);
+    }
+
+    /**
+     * Apply a set of node changes atomically: upserts in the given order
+     * (parents before children), then deletes. All-or-nothing — any failure
+     * rolls back the whole batch.
+     */
+    public function batch(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'upserts' => ['array'],
+            'upserts.*.id' => ['required', 'string', 'uuid'],
+            'upserts.*.parent_id' => ['nullable', 'string', 'uuid'],
+            'upserts.*.position' => ['required', 'string'],
+            'upserts.*.content' => ['nullable', 'string'],
+            'upserts.*.tiptap_content' => ['nullable'],
+            'upserts.*.is_checked' => ['nullable', 'boolean'],
+            'deletes' => ['array'],
+            'deletes.*' => ['required', 'string', 'uuid'],
+        ]);
+
+        DB::transaction(function () use ($data) {
+            foreach ($data['upserts'] ?? [] as $item) {
+                // A parent may be created earlier in this same batch, so
+                // check existence here rather than with an exists rule
+                if (! empty($item['parent_id'])
+                    && ! Node::withTrashed()->whereKey($item['parent_id'])->exists()) {
+                    throw ValidationException::withMessages([
+                        'parent_id' => "Parent node {$item['parent_id']} does not exist.",
+                    ]);
+                }
+
+                $attributes = [
+                    'parent_id' => $item['parent_id'] ?? null,
+                    'position' => $item['position'],
+                    'content' => $item['content'] ?? '',
+                    'tiptap_content' => $item['tiptap_content'] ?? null,
+                    'is_checked' => $item['is_checked'] ?? null,
+                ];
+
+                $node = Node::withTrashed()->find($item['id']);
+
+                if ($node) {
+                    if ($node->trashed()) {
+                        $node->restore();
+                    }
+
+                    $node->update($attributes);
+                } else {
+                    $node = Node::create(['id' => $item['id'], ...$attributes]);
+                }
+
+                $this->linkParser->syncLinks($node);
+            }
+
+            foreach ($data['deletes'] ?? [] as $id) {
+                $node = Node::withTrashed()->find($id);
+
+                if ($node && ! $node->trashed()) {
+                    $this->deleteRecursive($node);
+                }
+            }
+        });
+
+        return response()->json(null, 200);
     }
 
     public function destroy(string $node): JsonResponse

@@ -6,6 +6,7 @@ use App\Http\Controllers\PageController;
 use App\Http\Controllers\SearchController;
 use Illuminate\Support\Facades\Route;
 
+Route::post('nodes/batch', [NodeController::class, 'batch']);
 Route::apiResource('nodes', NodeController::class)->only(['store', 'update', 'destroy']);
 
 Route::get('pages', [PageController::class, 'index']);

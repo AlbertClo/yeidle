@@ -214,116 +214,84 @@ function nodePayload(node: Node): Record<string, unknown> {
     };
 }
 
-// Sends the diff between lastNodeMap and the given tree, sequentially so
-// requests can't race: creates/updates in pre-order (parents before
-// children), deletes last. Snapshots are only committed on success, so
-// failed requests are retried by the next run. Returns whether every
-// request succeeded.
+// Sends the diff between lastNodeMap and the given tree as a single
+// transactional batch: upserts in pre-order (parents before children),
+// deletes last. The server applies all-or-nothing, so snapshots are only
+// committed when the whole batch succeeds and a failed batch is retried
+// intact by the next run.
 async function doSync(nodes: Node[]): Promise<boolean> {
     const currentNodes = flattenNodes(nodes);
     const currentIds = new Set(currentNodes.map((n) => n.id));
-    let allOk = true;
+    const upserts: Record<string, unknown>[] = [];
+    const snapshots = new Map<string, NodeSnapshot>();
     let hasLinkChanges = false;
 
     for (const node of currentNodes) {
         const prev = lastNodeMap.get(node.id);
         const snap = snapshotNode(node);
 
-        if (!prev) {
-            const res = await request('/api/nodes', 'POST', nodePayload(node));
+        if (prev) {
+            const changed =
+                snap.parent_id !== prev.parent_id ||
+                snap.position !== prev.position ||
+                snap.content !== prev.content ||
+                snap.is_checked !== prev.is_checked ||
+                snap.tiptap_content !== prev.tiptap_content;
 
-            if (!res?.ok) {
-                allOk = false;
+            if (!changed) {
                 continue;
             }
 
-            lastNodeMap.set(node.id, snap);
-            hasLinkChanges = true;
-            continue;
-        }
-
-        const changes: Record<string, unknown> = {};
-
-        if (snap.parent_id !== prev.parent_id) {
-            changes.parent_id = node.parent_id;
-        }
-
-        if (snap.position !== prev.position) {
-            changes.position = node.position;
-        }
-
-        if (snap.content !== prev.content) {
-            changes.content = node.content;
-        }
-
-        if (snap.is_checked !== prev.is_checked) {
-            changes.is_checked = node.is_checked;
-        }
-
-        if (snap.tiptap_content !== prev.tiptap_content) {
-            changes.tiptap_content = node.tiptap_content;
+            if (snap.tiptap_content !== prev.tiptap_content) {
+                hasLinkChanges = true;
+            }
+        } else {
             hasLinkChanges = true;
         }
 
-        if (Object.keys(changes).length === 0) {
-            continue;
-        }
-
-        let res = await request(`/api/nodes/${node.id}`, 'PUT', changes);
-
-        if (res?.status === 404) {
-            // Node vanished server-side — recreate it with full data
-            res = await request('/api/nodes', 'POST', nodePayload(node));
-        }
-
-        if (!res?.ok) {
-            allOk = false;
-            continue;
-        }
-
-        lastNodeMap.set(node.id, snap);
+        upserts.push(nodePayload(node));
+        snapshots.set(node.id, snap);
     }
 
-    // Deletes: the server cascades, so only request the top-most node of
-    // each contiguously-deleted subtree
+    // Deletes: the server cascades, so only send the top-most node of each
+    // deleted subtree (a deleted node whose old parent survives is its own
+    // top)
     const deletedIds = [...lastNodeMap.keys()].filter(
         (id) => !currentIds.has(id),
     );
     const deletedSet = new Set(deletedIds);
-    const groups = new Map<string, string[]>();
+    const deletes = deletedIds.filter((id) => {
+        const parent = lastNodeMap.get(id)?.parent_id;
 
-    for (const id of deletedIds) {
-        let root = id;
-        let parent = lastNodeMap.get(root)?.parent_id;
+        return !parent || !deletedSet.has(parent);
+    });
 
-        while (parent && deletedSet.has(parent)) {
-            root = parent;
-            parent = lastNodeMap.get(root)?.parent_id;
-        }
-
-        const group = groups.get(root) ?? [];
-        group.push(id);
-        groups.set(root, group);
+    if (upserts.length === 0 && deletedIds.length === 0) {
+        return true;
     }
 
-    for (const [root, ids] of groups) {
-        const res = await request(`/api/nodes/${root}`, 'DELETE');
+    const res = await request('/api/nodes/batch', 'POST', {
+        upserts,
+        deletes,
+    });
 
-        if (!res?.ok) {
-            allOk = false;
-            continue;
-        }
+    if (!res?.ok) {
+        return false;
+    }
 
-        for (const id of ids) {
-            lastNodeMap.delete(id);
-        }
+    for (const [id, snap] of snapshots) {
+        lastNodeMap.set(id, snap);
+    }
+
+    for (const id of deletedIds) {
+        lastNodeMap.delete(id);
     }
 
     if (hasLinkChanges) {
         refreshBacklinks();
     }
 
-    return allOk;
+    return true;
 }
 
 function scheduleRetry() {
