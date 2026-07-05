@@ -231,6 +231,18 @@ async function doSync(nodes: Node[]): Promise<boolean> {
             hasLinkChanges = true;
         }
 
+        // The content and position columns are NOT NULL; the server coerces
+        // defensively, but a null here means an editor bug worth surfacing
+        if ('content' in fields && typeof fields.content !== 'string') {
+            console.warn('sync: minting non-string content', node);
+            fields.content = fields.content ?? '';
+        }
+
+        if ('position' in fields && typeof fields.position !== 'string') {
+            console.warn('sync: minting non-string position', node);
+            fields.position = fields.position ?? 'a0';
+        }
+
         outbox.push(mintNodeSet(node.id, props.page.id, fields));
         lastNodeMap.set(node.id, snap);
     }

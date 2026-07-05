@@ -68,6 +68,17 @@ class OpApplier
                     $this->ensureNode($value);
                 }
 
+                // Canonical coercion for NOT NULL columns: a null in an op
+                // must resolve identically on every replica, and a poisoned
+                // op must never wedge the log with constraint failures
+                if ($field === 'content') {
+                    $value = $value ?? '';
+                }
+
+                if ($field === 'position') {
+                    $value = $value ?? 'a0';
+                }
+
                 $node->{$field} = $value;
                 $clocks[$field] = $hlc;
 

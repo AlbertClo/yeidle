@@ -20,13 +20,14 @@ class NodeController extends Controller
         $validated = $request->validate([
             'id' => ['nullable', 'string', 'uuid'],
             'parent_id' => ['nullable', 'exists:nodes,id'],
-            'position' => ['required', 'string'],
+            'position' => ['nullable', 'string'],
             'content' => ['nullable', 'string'],
             'tiptap_content' => ['nullable'],
             'is_checked' => ['nullable', 'boolean'],
         ]);
 
         $validated['content'] = $validated['content'] ?? '';
+        $validated['position'] = $validated['position'] ?? 'a0';
 
         // Upsert by id so creates are idempotent (safe to retry) and a
         // client-side undo after delete restores the trashed row

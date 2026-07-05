@@ -187,6 +187,20 @@ class OpApplierTest extends TestCase
         $this->assertFalse(Node::find($b)->isReachable());
     }
 
+    public function test_null_content_and_position_are_coerced_not_fatal(): void
+    {
+        $id = fake()->uuid();
+
+        $this->applier->apply($this->set($id, ['content' => 'real'], 100));
+        // A buggy or malicious op must not wedge the log with NOT NULL
+        // constraint failures
+        $this->applier->apply($this->set($id, ['content' => null, 'position' => null], 200));
+
+        $node = Node::find($id);
+        $this->assertSame('', $node->content);
+        $this->assertSame('a0', $node->position);
+    }
+
     public function test_empty_fields_set_acts_as_pure_revive(): void
     {
         $id = fake()->uuid();
