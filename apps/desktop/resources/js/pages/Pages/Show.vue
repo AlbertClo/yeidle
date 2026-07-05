@@ -20,15 +20,28 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { getCachedPage, setCachedPage } from '@/stores/pageCache';
-import { mintNodeDelete, mintNodeSet, pushOps  } from '@/sync/ops';
-import type {Op} from '@/sync/ops';
+import {
+    getCachedPage,
+    invalidateCachedPage,
+    setCachedPage,
+} from '@/stores/pageCache';
+import {
+    getClientId,
+    mintNodeDelete,
+    mintNodeSet,
+    observeHlc,
+    pullOps,
+    pushOps,
+} from '@/sync/ops';
+import type { Op } from '@/sync/ops';
+import { applyOpsToTree, findInTree } from '@/sync/tree';
 import type { BreadcrumbItem } from '@/types';
 import type { Node } from '@/types/node';
 
 const props = defineProps<{
     page: Node;
     backlinks: { id: string; page_id: string; page_title: string }[];
+    syncCursor?: number;
 }>();
 
 const isEditingTitle = ref(false);
@@ -369,6 +382,128 @@ function handleNodesUpdate(nodes: Node[]) {
     syncDebounced(nodes);
 }
 
+// --- Remote ops: pull loop + live editor merge (sync design §7) ---
+
+let pullCursor = props.syncCursor ?? 0;
+let pullTimer: ReturnType<typeof setInterval> | null = null;
+let pulling = false;
+const editorAutoFocus = ref(true);
+// Content updates that couldn't apply because the cursor was inside the
+// target node; retried each tick until the node is free
+const pendingContentIds = new Set<string>();
+
+function retryPendingContent() {
+    for (const id of [...pendingContentIds]) {
+        const node = findInTree(pageNodes.value, id);
+
+        if (!node || pageEditorRef.value?.applyRemoteContent(node)) {
+            pendingContentIds.delete(id);
+        }
+    }
+}
+
+async function pollRemoteOps() {
+    // Only merge remote state while the local pipeline is empty — the pull
+    // rebuilds lastNodeMap wholesale, which is only valid when nothing
+    // local is pending or in flight
+    if (
+        pulling ||
+        syncing ||
+        hasPendingSync ||
+        syncTimer !== null ||
+        outbox.length > 0
+    ) {
+        return;
+    }
+
+    pulling = true;
+
+    try {
+        retryPendingContent();
+
+        const result = await pullOps(pullCursor);
+
+        if (!result) {
+            return;
+        }
+
+        const remote = result.ops.filter(
+            (op) => op.client_id !== getClientId(),
+        );
+
+        for (const op of remote) {
+            observeHlc(op.hlc);
+
+            const pageId = op.payload.page_id as string | undefined;
+
+            if (pageId && pageId !== props.page.id) {
+                invalidateCachedPage(pageId);
+            }
+        }
+
+        const currentPage = remote.filter(
+            (op) => op.payload.page_id === props.page.id,
+        );
+
+        if (currentPage.length === 0) {
+            pullCursor = result.latest_seq;
+
+            return;
+        }
+
+        // Patch a copy of the latest emitted tree (the cache tracks every
+        // editor update; pageNodes only tracks mounts) so a deferral
+        // leaves no half-applied state behind
+        const base = getCachedPage(props.page.id)?.children ?? pageNodes.value;
+        const patched = JSON.parse(JSON.stringify(base)) as Node[];
+        const { change, contentChanged } = applyOpsToTree(
+            patched,
+            props.page.id,
+            currentPage,
+        );
+
+        // A structural change remounts the editor — never yank it out from
+        // under an active cursor; retry next tick (typically after blur or
+        // typing pause, once the local flush guard clears)
+        if (
+            change === 'structural' &&
+            (isEditingTitle.value ||
+                pageEditorRef.value?.selectionBlockId() != null)
+        ) {
+            return;
+        }
+
+        if (change !== 'none') {
+            pageNodes.value = patched;
+            lastNodeMap.clear();
+            initNodeMap(patched);
+            setCachedPage(props.page.id, titleContent.value, patched);
+
+            if (change === 'structural') {
+                editorAutoFocus.value = false;
+                editorKey.value++;
+            } else {
+                for (const id of contentChanged) {
+                    const node = findInTree(patched, id);
+
+                    if (
+                        node &&
+                        !pageEditorRef.value?.applyRemoteContent(node)
+                    ) {
+                        pendingContentIds.add(id);
+                    }
+                }
+            }
+
+            refreshBacklinks();
+        }
+
+        pullCursor = result.latest_seq;
+    } finally {
+        pulling = false;
+    }
+}
+
 function focusFirstBacklink() {
     nextTick(() => {
         const firstLink = document.querySelector(
@@ -440,11 +575,18 @@ onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('keydown', handleGlobalKeydown);
     refreshBacklinks();
+    pullTimer = setInterval(pollRemoteOps, 1500);
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleBeforeUnload);
     document.removeEventListener('keydown', handleGlobalKeydown);
+
+    if (pullTimer) {
+        clearInterval(pullTimer);
+        pullTimer = null;
+    }
+
     flushSync();
 });
 </script>
@@ -500,6 +642,7 @@ onBeforeUnmount(() => {
                         :key="editorKey"
                         :nodes="pageNodes"
                         :page-id="page.id"
+                        :auto-focus="editorAutoFocus"
                         @update="handleNodesUpdate"
                         @focus-title="startEditingTitle()"
                         @focus-backlinks="focusFirstBacklink"

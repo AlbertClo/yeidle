@@ -14,3 +14,8 @@ export function setCachedPage(pageId: string, title: string, children: Node[]) {
 export function getCachedPage(pageId: string): CachedPage | undefined {
     return cache.get(pageId);
 }
+
+/** Drop a page whose content changed elsewhere (remote sync ops). */
+export function invalidateCachedPage(pageId: string): void {
+    cache.delete(pageId);
+}

@@ -52,6 +52,30 @@ export function mintNodeDelete(id: string, pageId: string): Op {
     };
 }
 
+export type PulledOp = Op & { local_seq: number };
+
+/**
+ * Fetch ops after the given cursor from the local log. Returns null on
+ * transport failure so callers can just retry next tick.
+ */
+export async function pullOps(
+    since: number,
+): Promise<{ ops: PulledOp[]; latest_seq: number } | null> {
+    try {
+        const res = await fetch(`/api/sync/pull?since=${since}`, {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (!res.ok) {
+            return null;
+        }
+
+        return await res.json();
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Push ops to the sync endpoint. Idempotent server-side by op_id, so
  * re-pushing after a failure is always safe. Returns whether the push

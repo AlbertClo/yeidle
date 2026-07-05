@@ -75,7 +75,7 @@ class SyncService
 
         return [
             'ops' => $ops,
-            'latest_seq' => $ops === [] ? $since : end($ops)['local_seq'],
+            'latest_seq' => max((int) (Op::max('id') ?? 0), $since),
         ];
     }
 }

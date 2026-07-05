@@ -20,6 +20,7 @@ import Paragraph from '@tiptap/extension-paragraph';
 import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
 import { Fragment } from '@tiptap/pm/model';
+import type { Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -86,6 +87,9 @@ function initPositionMap(nodes: Node[], parentId: string | null) {
 const props = defineProps<{
     nodes: Node[];
     pageId: string;
+    // Sync-triggered remounts pass false so the rebuilt editor doesn't
+    // steal focus
+    autoFocus?: boolean;
 }>();
 
 initPositionMap(props.nodes, props.pageId);
@@ -134,7 +138,145 @@ function focusStart() {
     e.commands.focus('start');
 }
 
-defineExpose({ focusStart });
+// --- Remote sync support (sync design §7) ---
+
+function findListItem(blockId: string): { pos: number; node: PmNode } | null {
+    const e = editor.value;
+
+    if (!e) {
+        return null;
+    }
+
+    let found: { pos: number; node: PmNode } | null = null;
+    e.state.doc.descendants((node, pos) => {
+        if (found) {
+            return false;
+        }
+
+        if (node.type.name === 'listItem' && node.attrs.blockId === blockId) {
+            found = { pos, node };
+
+            return false;
+        }
+    });
+
+    return found;
+}
+
+/** blockId of the list item containing the current selection, if any. */
+function selectionBlockId(): string | null {
+    const e = editor.value;
+
+    if (!e || !e.isFocused) {
+        return null;
+    }
+
+    const $from = e.state.selection.$from;
+
+    for (let depth = $from.depth; depth > 0; depth--) {
+        const node = $from.node(depth);
+
+        if (node.type.name === 'listItem') {
+            return (node.attrs.blockId as string) ?? null;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Targeted update of one list item's content blocks and checkbox state from
+ * remote node data — a surgical transaction that preserves cursor, IME
+ * state, and undo history everywhere else. Returns false when it can't
+ * apply safely (item missing, selection inside it, schema mismatch); the
+ * caller falls back to a structural refresh or deferral.
+ */
+function applyRemoteContent(nodeData: Node): boolean {
+    const e = editor.value;
+
+    if (!e) {
+        return false;
+    }
+
+    const found = findListItem(nodeData.id);
+
+    if (!found) {
+        return false;
+    }
+
+    const { pos, node } = found;
+    const { from, to } = e.state.selection;
+
+    // Never rewrite under the user's cursor — defer to the caller
+    if (e.isFocused && from >= pos && to <= pos + node.nodeSize) {
+        return false;
+    }
+
+    try {
+        const itemJson = nodeToListItem({ ...nodeData, children: [] });
+        const blocks = (itemJson.content as Record<string, unknown>[]).filter(
+            (b) => b.type !== 'bulletList',
+        );
+        const newNodes = blocks.map((b) => e.state.schema.nodeFromJSON(b));
+
+        // Content blocks are the contiguous non-bulletList children at the
+        // start of the item
+        let contentSize = 0;
+        node.forEach((child) => {
+            if (child.type.name !== 'bulletList') {
+                contentSize += child.nodeSize;
+            }
+        });
+
+        const tr = e.state.tr.replaceWith(
+            pos + 1,
+            pos + 1 + contentSize,
+            newNodes,
+        );
+
+        const checked = nodeData.is_checked ?? null;
+
+        if (node.attrs.checked !== checked) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, checked });
+        }
+
+        tr.setMeta('remoteSync', true);
+        tr.setMeta('addToHistory', false);
+        e.view.dispatch(tr);
+
+        return true;
+    } catch (err) {
+        console.warn('sync: targeted remote update failed', err);
+
+        return false;
+    }
+}
+
+/** Restore focus to a block after a structural refresh remount. */
+function focusBlock(blockId: string) {
+    const e = editor.value;
+
+    if (!e) {
+        return;
+    }
+
+    const found = findListItem(blockId);
+
+    if (!found) {
+        return;
+    }
+
+    e.view.focus();
+    e.view.dispatch(
+        e.state.tr
+            .setSelection(
+                TextSelection.near(e.state.doc.resolve(found.pos + 1), 1),
+            )
+            .scrollIntoView(),
+    );
+}
+
+defineExpose({ focusStart, applyRemoteContent, selectionBlockId, focusBlock });
 
 // Custom document schema: doc must contain a bulletList
 const CustomDocument = Document.extend({
@@ -2201,7 +2343,9 @@ const editor = useEditor({
     },
     onCreate: ({ editor }) => {
         // Focus the start of the first node on page load
-        editor.commands.focus('start');
+        if (props.autoFocus !== false) {
+            editor.commands.focus('start');
+        }
     },
     onFocus: () => {
         userHasInteracted = true;
@@ -2216,6 +2360,12 @@ const editor = useEditor({
         }
 
         if (transaction.getMeta('blockIdAssignment')) {
+            return;
+        }
+
+        // Remote ops applied into the editor must not re-enter the local
+        // diff pipeline
+        if (transaction.getMeta('remoteSync')) {
             return;
         }
 

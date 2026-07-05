@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Node;
+use App\Models\Op;
 use App\Models\PageVisit;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -22,6 +23,11 @@ class PageWebController extends Controller
 
     public function show(Node $node): Response
     {
+        // Pull cursor for the live-sync poll. Read BEFORE loading nodes: an
+        // op landing between the two reads is then re-pulled and re-applied
+        // (idempotent) rather than silently missed.
+        $syncCursor = (int) (Op::max('id') ?? 0);
+
         $node->load(['children' => function ($query) {
             $query->orderBy('position');
         }]);
@@ -37,9 +43,14 @@ class PageWebController extends Controller
                 $page = $link->sourceNode;
                 while ($page->parent_id) {
                     $page = Node::find($page->parent_id);
-                    if (!$page) break;
+                    if (! $page) {
+                        break;
+                    }
                 }
-                if (!$page) return null;
+                if (! $page) {
+                    return null;
+                }
+
                 return [
                     'id' => $link->id,
                     'page_id' => $page->id,
@@ -58,6 +69,7 @@ class PageWebController extends Controller
         return Inertia::render('Pages/Show', [
             'page' => $node,
             'backlinks' => $backlinks,
+            'syncCursor' => $syncCursor,
         ]);
     }
 
