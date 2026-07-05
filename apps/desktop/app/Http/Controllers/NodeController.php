@@ -16,7 +16,7 @@ class NodeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'id' => ['nullable', 'string', 'uuid', 'unique:nodes,id'],
+            'id' => ['nullable', 'string', 'uuid'],
             'parent_id' => ['nullable', 'exists:nodes,id'],
             'position' => ['required', 'string'],
             'content' => ['nullable', 'string'],
@@ -25,6 +25,23 @@ class NodeController extends Controller
         ]);
 
         $validated['content'] = $validated['content'] ?? '';
+
+        // Upsert by id so creates are idempotent (safe to retry) and a
+        // client-side undo after delete restores the trashed row
+        if (! empty($validated['id'])) {
+            $existing = Node::withTrashed()->find($validated['id']);
+
+            if ($existing) {
+                if ($existing->trashed()) {
+                    $existing->restore();
+                }
+
+                $existing->update($validated);
+                $this->linkParser->syncLinks($existing);
+
+                return response()->json($existing->load('children'), 200);
+            }
+        }
 
         // For top-level pages (no parent), find existing page with same title
         if (empty($validated['parent_id']) && $validated['content'] !== '') {
@@ -77,9 +94,14 @@ class NodeController extends Controller
         return response()->json($node);
     }
 
-    public function destroy(Node $node): JsonResponse
+    public function destroy(string $node): JsonResponse
     {
-        $this->deleteRecursive($node);
+        // Idempotent: deleting a missing or already-trashed node succeeds
+        $found = Node::withTrashed()->find($node);
+
+        if ($found && ! $found->trashed()) {
+            $this->deleteRecursive($found);
+        }
 
         return response()->json(null, 204);
     }

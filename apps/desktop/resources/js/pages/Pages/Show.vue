@@ -49,6 +49,9 @@ const pageEditorRef = ref<InstanceType<typeof PageEditor>>();
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let hasPendingSync = false;
 let pendingNodes: Node[] = [];
+let syncing = false;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelay = 1000;
 
 function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
@@ -179,10 +182,47 @@ const JSON_HEADERS = {
     Accept: 'application/json',
 };
 
-function doSync(nodes: Node[]) {
-    hasPendingSync = false;
+async function request(
+    url: string,
+    method: string,
+    body?: Record<string, unknown>,
+): Promise<Response | null> {
+    const payload = body ? JSON.stringify(body) : undefined;
+
+    try {
+        return await fetch(url, {
+            method,
+            headers: JSON_HEADERS,
+            // keepalive lets in-flight requests survive app teardown, but
+            // rejects bodies over ~64KB — skip it for oversized nodes
+            keepalive: !payload || payload.length < 60000,
+            body: payload,
+        });
+    } catch {
+        return null;
+    }
+}
+
+function nodePayload(node: Node): Record<string, unknown> {
+    return {
+        id: node.id,
+        parent_id: node.parent_id,
+        position: node.position,
+        content: node.content,
+        tiptap_content: node.tiptap_content,
+        is_checked: node.is_checked,
+    };
+}
+
+// Sends the diff between lastNodeMap and the given tree, sequentially so
+// requests can't race: creates/updates in pre-order (parents before
+// children), deletes last. Snapshots are only committed on success, so
+// failed requests are retried by the next run. Returns whether every
+// request succeeded.
+async function doSync(nodes: Node[]): Promise<boolean> {
     const currentNodes = flattenNodes(nodes);
     const currentIds = new Set(currentNodes.map((n) => n.id));
+    let allOk = true;
     let hasLinkChanges = false;
 
     for (const node of currentNodes) {
@@ -190,18 +230,13 @@ function doSync(nodes: Node[]) {
         const snap = snapshotNode(node);
 
         if (!prev) {
-            fetch('/api/nodes', {
-                method: 'POST',
-                headers: JSON_HEADERS,
-                body: JSON.stringify({
-                    id: node.id,
-                    parent_id: node.parent_id,
-                    position: node.position,
-                    content: node.content,
-                    tiptap_content: node.tiptap_content,
-                    is_checked: node.is_checked,
-                }),
-            });
+            const res = await request('/api/nodes', 'POST', nodePayload(node));
+
+            if (!res?.ok) {
+                allOk = false;
+                continue;
+            }
+
             lastNodeMap.set(node.id, snap);
             hasLinkChanges = true;
             continue;
@@ -230,28 +265,104 @@ function doSync(nodes: Node[]) {
             hasLinkChanges = true;
         }
 
-        if (Object.keys(changes).length > 0) {
-            fetch(`/api/nodes/${node.id}`, {
-                method: 'PUT',
-                headers: JSON_HEADERS,
-                body: JSON.stringify(changes),
-            });
-            lastNodeMap.set(node.id, snap);
+        if (Object.keys(changes).length === 0) {
+            continue;
         }
+
+        let res = await request(`/api/nodes/${node.id}`, 'PUT', changes);
+
+        if (res?.status === 404) {
+            // Node vanished server-side — recreate it with full data
+            res = await request('/api/nodes', 'POST', nodePayload(node));
+        }
+
+        if (!res?.ok) {
+            allOk = false;
+            continue;
+        }
+
+        lastNodeMap.set(node.id, snap);
     }
 
-    for (const [id] of lastNodeMap) {
-        if (!currentIds.has(id)) {
-            fetch(`/api/nodes/${id}`, {
-                method: 'DELETE',
-                headers: JSON_HEADERS,
-            });
+    // Deletes: the server cascades, so only request the top-most node of
+    // each contiguously-deleted subtree
+    const deletedIds = [...lastNodeMap.keys()].filter(
+        (id) => !currentIds.has(id),
+    );
+    const deletedSet = new Set(deletedIds);
+    const groups = new Map<string, string[]>();
+
+    for (const id of deletedIds) {
+        let root = id;
+        let parent = lastNodeMap.get(root)?.parent_id;
+
+        while (parent && deletedSet.has(parent)) {
+            root = parent;
+            parent = lastNodeMap.get(root)?.parent_id;
+        }
+
+        const group = groups.get(root) ?? [];
+        group.push(id);
+        groups.set(root, group);
+    }
+
+    for (const [root, ids] of groups) {
+        const res = await request(`/api/nodes/${root}`, 'DELETE');
+
+        if (!res?.ok) {
+            allOk = false;
+            continue;
+        }
+
+        for (const id of ids) {
             lastNodeMap.delete(id);
         }
     }
 
     if (hasLinkChanges) {
         refreshBacklinks();
+    }
+
+    return allOk;
+}
+
+function scheduleRetry() {
+    if (retryTimer) {
+        return;
+    }
+
+    retryTimer = setTimeout(() => {
+        retryTimer = null;
+        retryDelay = Math.min(retryDelay * 2, 30000);
+        runSync();
+    }, retryDelay);
+}
+
+// Single sync runner: at most one doSync in flight, re-runs while edits
+// arrived mid-flight, retries with backoff when requests fail
+async function runSync() {
+    if (syncing) {
+        return;
+    }
+
+    syncing = true;
+
+    try {
+        while (hasPendingSync) {
+            hasPendingSync = false;
+            const ok = await doSync(pendingNodes);
+
+            if (!ok) {
+                hasPendingSync = true;
+                scheduleRetry();
+
+                return;
+            }
+
+            retryDelay = 1000;
+        }
+    } finally {
+        syncing = false;
     }
 }
 
@@ -274,7 +385,8 @@ function syncDebounced(nodes: Node[]) {
     }
 
     syncTimer = setTimeout(() => {
-        doSync(nodes);
+        syncTimer = null;
+        runSync();
     }, 300);
 }
 
@@ -290,9 +402,7 @@ function flushSync() {
         syncTimer = null;
     }
 
-    if (hasPendingSync) {
-        doSync(pendingNodes);
-    }
+    runSync();
 }
 
 function handleNodesUpdate(nodes: Node[]) {
