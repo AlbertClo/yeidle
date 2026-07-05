@@ -105,13 +105,29 @@ spreadsheets are the *easy* case here.
 
 ## 4. Identity and ordering
 
-- **`client_id`**: UUIDv7 generated per app installation (stored in the
-  local DB, not in code). Two windows of one app share a client_id; two
-  machines differ. Used for HLC tie-breaking and diagnostics.
+- **`client_id`**: UUIDv7, **one per independent HLC generator** — that is
+  the invariant, not "per installation": no two clocks may share a
+  client_id, or HLC tie-breaking breaks. Concretely: each desktop *window
+  session* mints an ephemeral client_id at open (so monotonicity only has
+  to hold within a session — no cross-restart clock persistence needed);
+  the extension holds a persistent one (its outbox survives restarts, so
+  its clock persists too); and each *server* (local Laravel, cloud later)
+  has its own, because servers originate writes of their own —
+  `LinkParser`'s auto-created wikilink pages mint ops like everyone else.
+  Used for HLC tie-breaking and diagnostics.
+- **Every writer writes ops.** Frontends mint complete ops (op_id, HLC,
+  payload) and push them; the local server accepts op pushes exactly like
+  the cloud server will — same contract, applied through the single
+  op-apply function. The desktop frontend is just the first client of the
+  protocol the extension and cloud sync will use. HLC *generation* is
+  implemented twice (a small shared JS lib for frontends/extension, and
+  PHP for server-originated writes); HLCs are lexicographically comparable
+  strings so *comparison* is plain string ordering everywhere, and both
+  implementations are pinned by a shared test-vector file.
 - **`op_id`**: UUIDv7 per operation. Global idempotency key — the server and
   clients ignore ops they have already applied or generated. This, not
-  client_id, is the echo-suppression mechanism: it works even when two
-  windows share an installation.
+  client_id, is the echo-suppression mechanism (and each window trivially
+  knows its own ops, having minted them).
 - **`server_seq`**: monotonic integer assigned by the cloud server when it
   accepts an op. Defines the canonical log order and the client sync cursor.
   Locally (Phase 0, no cloud), a SQLite AUTOINCREMENT column plays this role.
@@ -368,13 +384,35 @@ architecture over an all-CRDT design.
 Each phase ships something usable on its own.
 
 **Phase 0 — local op log + multi-window convergence** *(desktop only)*
-- `ops` + `sync_state` tables; HLC implementation; `field_clocks` on nodes.
-- Batch endpoint refactored: request becomes a list of ops; applies ops +
-  projection in one transaction (apply logic extracted for reuse).
-- Client diff emits field-level ops instead of full payloads.
-- Instances tail the shared ops table; remote-op → live-editor merge (§7).
-- Exit criterion: two windows typing on the same page converge, no lost
-  edits outside the same-block flush window.
+- **Convergence test harness first**: property tests asserting that any op
+  set, applied in any delivery order, yields an identical projection —
+  including delete-vs-edit revival, ancestor revival, and purge
+  terminality. Injectable clock for HLC tests; shared HLC test-vector file
+  pinning the JS and PHP implementations to each other. This harness is an
+  exit gate for the phase.
+- `ops` + `sync_state` tables; HLC implementations (JS + PHP, §4);
+  `field_clocks` on nodes.
+- **Genesis**: a migration stamps existing rows' `field_clocks` with an
+  epoch HLC (any real edit wins over it); the log starts empty — current
+  data simply *is* the snapshot at seq 0, no synthetic history. Phase 1's
+  first upload is then a snapshot upload, not an op replay.
+- Batch endpoint refactored into the op push contract: frontends mint and
+  push complete ops; the server applies ops + projection in one
+  transaction through the single op-apply function.
+- Client diff emits field-level ops instead of full payloads. Outbox ops
+  not yet pushed may be coalesced (superseded field writes squashed) —
+  optional log hygiene, design leaves room for it.
+- Derived data is rebuilt by apply, never synced: `node_links` (LinkParser
+  runs inside apply), the in-memory page cache (invalidated by apply).
+  `page_visits` stays local-only, outside the log entirely.
+- Apply handles ops referencing missing parents deliberately (drop, per
+  the purge rule — the FK would otherwise reject them mid-transaction).
+- Windows receive others' ops from the shared server (SSE or polling —
+  verify early whether "two instances" means two windows of one PHP server
+  or two processes; this decides the transport) and merge into the live
+  editor (§7).
+- Exit criterion: harness green, and two windows typing on the same page
+  converge with no lost edits outside the same-block flush window.
 
 **Phase 1 — cloud relay (polling)**
 - `apps/web` Laravel app: workspaces, push/pull endpoints, projections,
