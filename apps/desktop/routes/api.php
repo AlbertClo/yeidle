@@ -7,8 +7,6 @@ use App\Http\Controllers\SearchController;
 use Illuminate\Support\Facades\Route;
 
 Route::apiResource('nodes', NodeController::class)->only(['store', 'update', 'destroy']);
-Route::put('nodes/{node}/sync', [NodeController::class, 'sync']);
-Route::put('nodes/{node}/sync-content', [NodeController::class, 'syncContent']);
 
 Route::get('pages', [PageController::class, 'index']);
 Route::get('pages/{node}', [PageController::class, 'show']);

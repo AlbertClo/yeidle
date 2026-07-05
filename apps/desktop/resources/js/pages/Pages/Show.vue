@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
+import { EllipsisVertical, Trash2 } from 'lucide-vue-next';
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { toast } from 'vue-sonner';
-import { EllipsisVertical, Trash2 } from 'lucide-vue-next';
 import PageEditor from '@/components/PageEditor.vue';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { BreadcrumbItem } from '@/types';
-import type { Node, NodeLink } from '@/types/node';
 import { getCachedPage, setCachedPage } from '@/stores/pageCache';
+import type { BreadcrumbItem } from '@/types';
+import type { Node } from '@/types/node';
 
 const props = defineProps<{
     page: Node;
@@ -31,22 +38,24 @@ const editorKey = ref(0);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'Pages', href: '/pages' },
-    { title: titleContent.value || '[untitled]', href: `/pages/${props.page.id}` },
+    {
+        title: titleContent.value || '[untitled]',
+        href: `/pages/${props.page.id}`,
+    },
 ]);
 const titleRef = ref<HTMLInputElement>();
 const pageEditorRef = ref<InstanceType<typeof PageEditor>>();
 
-// Debounce timer for syncing
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
-let lastNodes: Node[] = [];
 let hasPendingSync = false;
-
+let pendingNodes: Node[] = [];
 
 function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
     setTimeout(() => {
         if (titleRef.value) {
             titleRef.value.focus();
+
             if (cursorPos !== undefined) {
                 titleRef.value.setSelectionRange(cursorPos, cursorPos);
             }
@@ -56,6 +65,7 @@ function startEditingTitle(cursorPos?: number) {
 
 function finishEditingTitle() {
     isEditingTitle.value = false;
+
     if (titleContent.value !== props.page.content) {
         syncUpdate(props.page.id, { content: titleContent.value });
     }
@@ -76,7 +86,10 @@ function handleTitleKeydown(e: KeyboardEvent) {
 function syncUpdate(id: string, data: Record<string, unknown>) {
     fetch(`/api/nodes/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+        },
         body: JSON.stringify(data),
     });
 }
@@ -85,11 +98,17 @@ let titleSyncTimer: ReturnType<typeof setTimeout> | null = null;
 const titleError = ref(false);
 
 function syncTitleDebounced() {
-    if (titleSyncTimer) clearTimeout(titleSyncTimer);
+    if (titleSyncTimer) {
+        clearTimeout(titleSyncTimer);
+    }
+
     titleSyncTimer = setTimeout(() => {
         fetch(`/api/nodes/${props.page.id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+            },
             body: JSON.stringify({ content: titleContent.value }),
         }).then((res) => {
             if (res.status === 409) {
@@ -99,77 +118,140 @@ function syncTitleDebounced() {
                 });
             } else {
                 titleError.value = false;
-                setCachedPage(props.page.id, titleContent.value, lastNodes);
+                const children =
+                    getCachedPage(props.page.id)?.children ?? pageNodes.value;
+                setCachedPage(props.page.id, titleContent.value, children);
             }
         });
         titleSyncTimer = null;
     }, 300);
 }
 
-function stripTiptapContent(nodes: Node[]): Record<string, unknown>[] {
-    return nodes.map((n) => ({
-        id: n.id,
-        content: n.content,
+interface NodeSnapshot {
+    parent_id: string | null;
+    position: string;
+    content: string;
+    is_checked: boolean | null;
+    tiptap_content: string;
+}
+
+const lastNodeMap = new Map<string, NodeSnapshot>();
+
+function snapshotNode(n: Node): NodeSnapshot {
+    return {
+        parent_id: n.parent_id,
         position: n.position,
-        is_checked: n.is_checked,
-        url: n.url,
-        children: stripTiptapContent(n.children ?? []),
-    }));
+        content: n.content,
+        is_checked: n.is_checked ?? null,
+        tiptap_content: n.tiptap_content
+            ? JSON.stringify(n.tiptap_content)
+            : '',
+    };
 }
 
-const lastTiptapContentMap = new Map<string, string>();
-
-// Pre-populate the map so the first sync doesn't re-send everything
-function initTiptapContentMap(nodes: Node[]) {
+function initNodeMap(nodes: Node[]) {
     for (const n of nodes) {
-        if (n.tiptap_content) {
-            lastTiptapContentMap.set(n.id, JSON.stringify(n.tiptap_content));
-        }
+        lastNodeMap.set(n.id, snapshotNode(n));
+
         if (n.children) {
-            initTiptapContentMap(n.children);
+            initNodeMap(n.children);
         }
     }
 }
-initTiptapContentMap(pageNodes.value);
+initNodeMap(pageNodes.value);
 
-function collectChangedTiptapContent(nodes: Node[]): { id: string; tiptap_content: unknown }[] {
-    const result: { id: string; tiptap_content: unknown }[] = [];
+function flattenNodes(nodes: Node[]): Node[] {
+    const result: Node[] = [];
+
     for (const n of nodes) {
-        if (n.tiptap_content) {
-            const serialized = JSON.stringify(n.tiptap_content);
-            if (lastTiptapContentMap.get(n.id) !== serialized) {
-                lastTiptapContentMap.set(n.id, serialized);
-                result.push({ id: n.id, tiptap_content: n.tiptap_content });
-            }
-        }
+        result.push(n);
+
         if (n.children) {
-            result.push(...collectChangedTiptapContent(n.children));
+            result.push(...flattenNodes(n.children));
         }
     }
+
     return result;
 }
 
+const JSON_HEADERS = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+};
+
 function doSync(nodes: Node[]) {
     hasPendingSync = false;
+    const currentNodes = flattenNodes(nodes);
+    const currentIds = new Set(currentNodes.map((n) => n.id));
+    let hasLinkChanges = false;
 
-    // Send lightweight tree sync (no tiptap_content)
-    fetch(`/api/nodes/${props.page.id}/sync`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-            content: titleContent.value,
-            children: stripTiptapContent(nodes),
-        }),
-    }).then(() => refreshBacklinks());
+    for (const node of currentNodes) {
+        const prev = lastNodeMap.get(node.id);
+        const snap = snapshotNode(node);
 
-    // Send only changed tiptap_content per-node in a separate call
-    const tiptapUpdates = collectChangedTiptapContent(nodes);
-    if (tiptapUpdates.length > 0) {
-        fetch(`/api/nodes/${props.page.id}/sync-content`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ nodes: tiptapUpdates }),
-        });
+        if (!prev) {
+            fetch('/api/nodes', {
+                method: 'POST',
+                headers: JSON_HEADERS,
+                body: JSON.stringify({
+                    id: node.id,
+                    parent_id: node.parent_id,
+                    position: node.position,
+                    content: node.content,
+                    tiptap_content: node.tiptap_content,
+                    is_checked: node.is_checked,
+                }),
+            });
+            lastNodeMap.set(node.id, snap);
+            hasLinkChanges = true;
+            continue;
+        }
+
+        const changes: Record<string, unknown> = {};
+
+        if (snap.parent_id !== prev.parent_id) {
+            changes.parent_id = node.parent_id;
+        }
+
+        if (snap.position !== prev.position) {
+            changes.position = node.position;
+        }
+
+        if (snap.content !== prev.content) {
+            changes.content = node.content;
+        }
+
+        if (snap.is_checked !== prev.is_checked) {
+            changes.is_checked = node.is_checked;
+        }
+
+        if (snap.tiptap_content !== prev.tiptap_content) {
+            changes.tiptap_content = node.tiptap_content;
+            hasLinkChanges = true;
+        }
+
+        if (Object.keys(changes).length > 0) {
+            fetch(`/api/nodes/${node.id}`, {
+                method: 'PUT',
+                headers: JSON_HEADERS,
+                body: JSON.stringify(changes),
+            });
+            lastNodeMap.set(node.id, snap);
+        }
+    }
+
+    for (const [id] of lastNodeMap) {
+        if (!currentIds.has(id)) {
+            fetch(`/api/nodes/${id}`, {
+                method: 'DELETE',
+                headers: JSON_HEADERS,
+            });
+            lastNodeMap.delete(id);
+        }
+    }
+
+    if (hasLinkChanges) {
+        refreshBacklinks();
     }
 }
 
@@ -183,10 +265,14 @@ function refreshBacklinks() {
         });
 }
 
-function syncFullTree(nodes: Node[]) {
-    lastNodes = nodes;
+function syncDebounced(nodes: Node[]) {
+    pendingNodes = nodes;
     hasPendingSync = true;
-    if (syncTimer) clearTimeout(syncTimer);
+
+    if (syncTimer) {
+        clearTimeout(syncTimer);
+    }
+
     syncTimer = setTimeout(() => {
         doSync(nodes);
     }, 300);
@@ -198,23 +284,27 @@ function flushSync() {
         titleSyncTimer = null;
         syncUpdate(props.page.id, { content: titleContent.value });
     }
+
     if (syncTimer) {
         clearTimeout(syncTimer);
         syncTimer = null;
     }
+
     if (hasPendingSync) {
-        doSync(lastNodes);
+        doSync(pendingNodes);
     }
 }
 
 function handleNodesUpdate(nodes: Node[]) {
     setCachedPage(props.page.id, titleContent.value, nodes);
-    syncFullTree(nodes);
+    syncDebounced(nodes);
 }
 
 function focusFirstBacklink() {
     nextTick(() => {
-        const firstLink = document.querySelector('.backlink-item') as HTMLElement;
+        const firstLink = document.querySelector(
+            '.backlink-item',
+        ) as HTMLElement;
         firstLink?.focus();
     });
 }
@@ -222,6 +312,7 @@ function focusFirstBacklink() {
 function focusNextBacklink(e: Event) {
     const current = e.target as HTMLElement;
     const next = current.nextElementSibling as HTMLElement;
+
     if (next?.classList.contains('backlink-item')) {
         next.focus();
     }
@@ -230,6 +321,7 @@ function focusNextBacklink(e: Event) {
 function focusPrevBacklink(e: Event) {
     const current = e.target as HTMLElement;
     const prev = current.previousElementSibling as HTMLElement;
+
     if (prev?.classList.contains('backlink-item')) {
         prev.focus();
     } else {
@@ -259,9 +351,16 @@ function deletePage() {
 function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !isEditingTitle.value) {
         const target = e.target as HTMLElement;
-        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') return;
+
+        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+            return;
+        }
+
         // Don't intercept if the editor already has focus
-        if (target.closest('.ProseMirror')) return;
+        if (target.closest('.ProseMirror')) {
+            return;
+        }
+
         e.preventDefault();
         const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
         editorEl?.focus();
@@ -294,82 +393,99 @@ onBeforeUnmount(() => {
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                        <DropdownMenuItem class="text-destructive" @click="showDeleteConfirm = true">
+                        <DropdownMenuItem
+                            class="text-destructive"
+                            @click="showDeleteConfirm = true"
+                        >
                             <Trash2 class="mr-2 h-4 w-4" />
                             Delete page
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
-        <div class="mx-auto w-full max-w-2xl p-6">
-            <div class="mb-6">
-                <input
-                    v-if="isEditingTitle"
-                    ref="titleRef"
-                    v-model="titleContent"
-                    class="bg-transparent w-full border-none text-3xl font-bold outline-none"
-                    :class="{ 'text-red-500': titleError }"
-                    @blur="finishEditingTitle"
-                    @input="syncTitleDebounced"
-                    @keydown="handleTitleKeydown"
-                />
-                <h1
-                    v-else
-                    class="cursor-text text-3xl font-bold"
-                    :class="{ 'text-red-500': titleError }"
-                    @click="startEditingTitle"
-                >
-                    {{ titleContent || '[untitled]' }}
-                </h1>
-
-                <p
-                    v-if="page.url"
-                    class="text-muted-foreground mt-1 text-sm"
-                >
-                    <a
-                        :href="page.url"
-                        target="_blank"
-                        class="hover:underline"
-                    >{{ page.url }}</a>
-                </p>
-            </div>
-
-            <div class="mb-4">
-                <PageEditor
-                    ref="pageEditorRef"
-                    :key="editorKey"
-                    :nodes="pageNodes"
-                    @update="handleNodesUpdate"
-                    @focus-title="startEditingTitle()"
-                    @focus-backlinks="focusFirstBacklink"
-                />
-            </div>
-
-            <div
-                v-if="pageBacklinks.length > 0"
-                class="border-border mt-8 border-t pt-6"
-            >
-                <h2 class="text-muted-foreground mb-3 text-xs font-semibold uppercase tracking-wider">
-                    Backlinks
-                </h2>
-                <div class="flex flex-col gap-2">
-                    <Link
-                        v-for="link in pageBacklinks"
-                        :key="link.id"
-                        :href="`/pages/${link.page_id}`"
-                        class="backlink-item hover:bg-accent focus:bg-accent rounded-lg px-3 py-2 text-sm outline-none"
-                        @keydown.enter.prevent="router.visit(`/pages/${link.page_id}`)"
-                        @keydown.space.prevent="router.visit(`/pages/${link.page_id}`)"
-                        @keydown.q.ctrl.prevent="router.visit(`/pages/${link.page_id}`)"
-                        @keydown.q.meta.prevent="router.visit(`/pages/${link.page_id}`)"
-                        @keydown.down.prevent="focusNextBacklink($event)"
-                        @keydown.up.prevent="focusPrevBacklink($event)"
+            <div class="mx-auto w-full max-w-2xl p-6">
+                <div class="mb-6">
+                    <input
+                        v-if="isEditingTitle"
+                        ref="titleRef"
+                        v-model="titleContent"
+                        class="w-full border-none bg-transparent text-3xl font-bold outline-none"
+                        :class="{ 'text-red-500': titleError }"
+                        @blur="finishEditingTitle"
+                        @input="syncTitleDebounced"
+                        @keydown="handleTitleKeydown"
+                    />
+                    <h1
+                        v-else
+                        class="cursor-text text-3xl font-bold"
+                        :class="{ 'text-red-500': titleError }"
+                        @click="startEditingTitle"
                     >
-                        <span class="opacity-40">[[</span><span class="font-medium underline underline-offset-2" style="color: var(--link)">{{ link.page_title }}</span><span class="opacity-40">]]</span>
-                    </Link>
+                        {{ titleContent || '[untitled]' }}
+                    </h1>
+
+                    <p v-if="page.url" class="text-muted-foreground mt-1 text-sm">
+                        <a
+                            :href="page.url"
+                            target="_blank"
+                            class="hover:underline"
+                            >{{ page.url }}</a
+                        >
+                    </p>
+                </div>
+
+                <div class="mb-4">
+                    <PageEditor
+                        ref="pageEditorRef"
+                        :key="editorKey"
+                        :nodes="pageNodes"
+                        :page-id="page.id"
+                        @update="handleNodesUpdate"
+                        @focus-title="startEditingTitle()"
+                        @focus-backlinks="focusFirstBacklink"
+                    />
+                </div>
+
+                <div
+                    v-if="pageBacklinks.length > 0"
+                    class="mt-8 border-t border-border pt-6"
+                >
+                    <h2
+                        class="mb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                    >
+                        Backlinks
+                    </h2>
+                    <div class="flex flex-col gap-2">
+                        <Link
+                            v-for="link in pageBacklinks"
+                            :key="link.id"
+                            :href="`/pages/${link.page_id}`"
+                            class="backlink-item rounded-lg px-3 py-2 text-sm outline-none hover:bg-accent focus:bg-accent"
+                            @keydown.enter.prevent="
+                                router.visit(`/pages/${link.page_id}`)
+                            "
+                            @keydown.space.prevent="
+                                router.visit(`/pages/${link.page_id}`)
+                            "
+                            @keydown.q.ctrl.prevent="
+                                router.visit(`/pages/${link.page_id}`)
+                            "
+                            @keydown.q.meta.prevent="
+                                router.visit(`/pages/${link.page_id}`)
+                            "
+                            @keydown.down.prevent="focusNextBacklink($event)"
+                            @keydown.up.prevent="focusPrevBacklink($event)"
+                        >
+                            <span class="opacity-40">[[</span
+                            ><span
+                                class="font-medium underline underline-offset-2"
+                                style="color: var(--link)"
+                                >{{ link.page_title }}</span
+                            ><span class="opacity-40">]]</span>
+                        </Link>
+                    </div>
                 </div>
             </div>
-        </div>
         </div>
     </AppLayout>
 
@@ -378,12 +494,18 @@ onBeforeUnmount(() => {
             <DialogHeader>
                 <DialogTitle>Delete page</DialogTitle>
                 <DialogDescription>
-                    Are you sure you want to delete "{{ titleContent || '[untitled]' }}"? This cannot be undone.
+                    Are you sure you want to delete "{{
+                        titleContent || '[untitled]'
+                    }}"? This cannot be undone.
                 </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-                <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
-                <Button variant="destructive" @click="deletePage">Delete</Button>
+                <Button variant="outline" @click="showDeleteConfirm = false"
+                    >Cancel</Button
+                >
+                <Button variant="destructive" @click="deletePage"
+                    >Delete</Button
+                >
             </DialogFooter>
         </DialogContent>
     </Dialog>

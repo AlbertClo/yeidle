@@ -1,7 +1,7 @@
 export type Node = {
     id: string;
     parent_id: string | null;
-    position: number;
+    position: string;
     content: string;
     tiptap_content: Record<string, unknown> | null;
     url: string | null;

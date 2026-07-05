@@ -22,9 +22,9 @@ import Text from '@tiptap/extension-text';
 import { Fragment } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
-import { GapCursor } from 'prosemirror-gapcursor';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
+import { generateNKeysBetween } from 'fractional-indexing';
 import {
     Download,
     ExternalLink,
@@ -33,6 +33,7 @@ import {
     RotateCcw,
     Trash2,
 } from 'lucide-vue-next';
+import { GapCursor } from 'prosemirror-gapcursor';
 import { uuidv7 } from 'uuidv7';
 import { ref, computed, nextTick } from 'vue';
 import { onBeforeUnmount } from 'vue';
@@ -64,9 +65,30 @@ function openExternal(url: string) {
 }
 import type { Node } from '@/types/node';
 
+const positionMap = new Map<string, string>();
+const childOrderMap = new Map<string | null, string[]>();
+
+function initPositionMap(nodes: Node[], parentId: string | null) {
+    const childIds: string[] = [];
+
+    for (const n of nodes) {
+        positionMap.set(n.id, n.position);
+        childIds.push(n.id);
+
+        if (n.children) {
+            initPositionMap(n.children, n.id);
+        }
+    }
+
+    childOrderMap.set(parentId, childIds);
+}
+
 const props = defineProps<{
     nodes: Node[];
+    pageId: string;
 }>();
+
+initPositionMap(props.nodes, props.pageId);
 
 const emit = defineEmits<{
     update: [nodes: Node[]];
@@ -76,16 +98,23 @@ const emit = defineEmits<{
 
 function focusStart() {
     const e = editor.value;
-    if (!e) return;
+
+    if (!e) {
+        return;
+    }
 
     const doc = e.state.doc;
     let firstItemPos = -1;
     let firstItemNode: any = null;
     doc.descendants((node, pos) => {
-        if (firstItemPos >= 0) return false;
+        if (firstItemPos >= 0) {
+            return false;
+        }
+
         if (node.type.name === 'listItem') {
             firstItemPos = pos;
             firstItemNode = node;
+
             return false;
         }
     });
@@ -94,8 +123,11 @@ function focusStart() {
         const gapPos = firstItemPos + 1;
         e.view.focus();
         e.view.dispatch(
-            e.state.tr.setSelection(new GapCursor(doc.resolve(gapPos))).scrollIntoView(),
+            e.state.tr
+                .setSelection(new GapCursor(doc.resolve(gapPos)))
+                .scrollIntoView(),
         );
+
         return;
     }
 
@@ -199,32 +231,60 @@ function isInCodeBlock(editor: {
     return editor.state.selection.$head.parent.type.name === 'codeBlock';
 }
 
-function isListItemEmpty(node: { childCount: number; child: (i: number) => { type: { name: string }; content: { size: number }; isTextblock: boolean } }) {
+function isListItemEmpty(node: {
+    childCount: number;
+    child: (i: number) => {
+        type: { name: string };
+        content: { size: number };
+        isTextblock: boolean;
+    };
+}) {
     for (let i = 0; i < node.childCount; i++) {
         const child = node.child(i);
+
         if (child.type.name !== 'bulletList') {
-            if (child.content.size > 0 || !child.isTextblock) return false;
+            if (child.content.size > 0 || !child.isTextblock) {
+                return false;
+            }
         }
     }
+
     return true;
 }
 
-function handleRangeDeleteAcrossListItems(editor: { state: any; view: any }): boolean {
+function handleRangeDeleteAcrossListItems(editor: {
+    state: any;
+    view: any;
+}): boolean {
     const { from, to } = editor.state.selection;
     const $from = editor.state.doc.resolve(from);
     const $to = editor.state.doc.resolve(to);
 
     let fromItemDepth = -1;
+
     for (let d = $from.depth; d >= 0; d--) {
-        if ($from.node(d).type.name === 'listItem') { fromItemDepth = d; break; }
-    }
-    let toItemDepth = -1;
-    for (let d = $to.depth; d >= 0; d--) {
-        if ($to.node(d).type.name === 'listItem') { toItemDepth = d; break; }
+        if ($from.node(d).type.name === 'listItem') {
+            fromItemDepth = d;
+            break;
+        }
     }
 
-    if (fromItemDepth < 0 || toItemDepth < 0) return false;
-    if ($from.before(fromItemDepth) === $to.before(toItemDepth)) return false;
+    let toItemDepth = -1;
+
+    for (let d = $to.depth; d >= 0; d--) {
+        if ($to.node(d).type.name === 'listItem') {
+            toItemDepth = d;
+            break;
+        }
+    }
+
+    if (fromItemDepth < 0 || toItemDepth < 0) {
+        return false;
+    }
+
+    if ($from.before(fromItemDepth) === $to.before(toItemDepth)) {
+        return false;
+    }
 
     const keepBlockId = $from.node(fromItemDepth).attrs.blockId;
 
@@ -232,7 +292,11 @@ function handleRangeDeleteAcrossListItems(editor: { state: any; view: any }): bo
     // the delete, they're artifacts that need cleanup
     const hadContent = new Set<string>();
     editor.state.doc.descendants((node: any) => {
-        if (node.type.name === 'listItem' && node.attrs.blockId && !isListItemEmpty(node)) {
+        if (
+            node.type.name === 'listItem' &&
+            node.attrs.blockId &&
+            !isListItemEmpty(node)
+        ) {
             hadContent.add(node.attrs.blockId);
         }
     });
@@ -246,21 +310,44 @@ function handleRangeDeleteAcrossListItems(editor: { state: any; view: any }): bo
         let emptyPos = -1;
         let emptyNode: any = null;
         tr.doc.descendants((node: any, pos: number) => {
-            if (emptyNode) return false;
-            if (node.type.name === 'listItem' && hadContent.has(node.attrs.blockId) && isListItemEmpty(node)) {
+            if (emptyNode) {
+                return false;
+            }
+
+            if (
+                node.type.name === 'listItem' &&
+                hadContent.has(node.attrs.blockId) &&
+                isListItemEmpty(node)
+            ) {
                 emptyPos = pos;
                 emptyNode = node;
+
                 return false;
             }
         });
-        if (!emptyNode) break;
 
-        const nestedList = emptyNode.lastChild?.type.name === 'bulletList' ? emptyNode.lastChild : null;
+        if (!emptyNode) {
+            break;
+        }
+
+        const nestedList =
+            emptyNode.lastChild?.type.name === 'bulletList'
+                ? emptyNode.lastChild
+                : null;
+
         if (nestedList) {
-            tr.replaceWith(emptyPos, emptyPos + emptyNode.nodeSize, nestedList.content);
+            tr.replaceWith(
+                emptyPos,
+                emptyPos + emptyNode.nodeSize,
+                nestedList.content,
+            );
         } else {
             const $p = tr.doc.resolve(emptyPos);
-            if ($p.parent.type.name === 'bulletList' && $p.parent.childCount === 1) {
+
+            if (
+                $p.parent.type.name === 'bulletList' &&
+                $p.parent.childCount === 1
+            ) {
                 tr.delete($p.before($p.depth), $p.after($p.depth));
             } else {
                 tr.delete(emptyPos, emptyPos + emptyNode.nodeSize);
@@ -271,22 +358,26 @@ function handleRangeDeleteAcrossListItems(editor: { state: any; view: any }): bo
     // Restore blockId on the merged listItem
     const cursorPos = tr.mapping.map(from);
     const $cursor = tr.doc.resolve(cursorPos);
+
     for (let d = $cursor.depth; d >= 0; d--) {
         if ($cursor.node(d).type.name === 'listItem') {
             const itemPos = $cursor.before(d);
             const item = $cursor.node(d);
+
             if (item.attrs.blockId !== keepBlockId) {
                 tr.setNodeMarkup(itemPos, undefined, {
                     ...item.attrs,
                     blockId: keepBlockId,
                 });
             }
+
             break;
         }
     }
 
     tr.setSelection(TextSelection.near(tr.doc.resolve(cursorPos)));
     editor.view.dispatch(tr);
+
     return true;
 }
 
@@ -498,7 +589,11 @@ const AlwaysSplitListItem = Extension.create({
                             }
 
                             const currentItem = $head.node(d);
-                            const nestedList = currentItem.lastChild?.type.name === 'bulletList' ? currentItem.lastChild : null;
+                            const nestedList =
+                                currentItem.lastChild?.type.name ===
+                                'bulletList'
+                                    ? currentItem.lastChild
+                                    : null;
 
                             let tr = editor.state.tr;
 
@@ -517,27 +612,46 @@ const AlwaysSplitListItem = Extension.create({
                                 if (indexInParent === 0) {
                                     // Insert child items at the position of the current item
                                     // (which is at currentItemStart), so they appear before siblings
-                                    tr = tr.insert(currentItemStart + offset, nestedList.content);
+                                    tr = tr.insert(
+                                        currentItemStart + offset,
+                                        nestedList.content,
+                                    );
                                 } else {
                                     // Find the target listItem that contains targetEnd
                                     let targetListItemEnd = 0;
-                                    const $target = editor.state.doc.resolve(targetEnd);
-                                    for (let td = $target.depth; td >= 0; td--) {
-                                        if ($target.node(td).type.name === 'listItem') {
+                                    const $target =
+                                        editor.state.doc.resolve(targetEnd);
+
+                                    for (
+                                        let td = $target.depth;
+                                        td >= 0;
+                                        td--
+                                    ) {
+                                        if (
+                                            $target.node(td).type.name ===
+                                            'listItem'
+                                        ) {
                                             targetListItemEnd = $target.end(td);
                                             break;
                                         }
                                     }
-                                    tr = tr.insert(targetListItemEnd + offset, nestedList);
+
+                                    tr = tr.insert(
+                                        targetListItemEnd + offset,
+                                        nestedList,
+                                    );
                                 }
                             }
 
                             const nestedOffset = nestedList
-                                ? (indexInParent === 0 ? nestedList.content.size : nestedList.nodeSize)
+                                ? indexInParent === 0
+                                    ? nestedList.content.size
+                                    : nestedList.nodeSize
                                 : 0;
 
                             // Determine delete range
-                            let delFrom = currentItemStart + offset + nestedOffset;
+                            let delFrom =
+                                currentItemStart + offset + nestedOffset;
                             let delTo = currentItemEnd + offset + nestedOffset;
                             const parentList = $head.node(d - 1);
 
@@ -545,8 +659,16 @@ const AlwaysSplitListItem = Extension.create({
                                 parentList.type.name === 'bulletList' &&
                                 parentList.childCount === 1
                             ) {
-                                delFrom = $head.start(d - 1) - 1 + offset + nestedOffset;
-                                delTo = $head.end(d - 1) + 1 + offset + nestedOffset;
+                                delFrom =
+                                    $head.start(d - 1) -
+                                    1 +
+                                    offset +
+                                    nestedOffset;
+                                delTo =
+                                    $head.end(d - 1) +
+                                    1 +
+                                    offset +
+                                    nestedOffset;
                             }
 
                             tr = tr.delete(delFrom, delTo);
@@ -602,7 +724,11 @@ const AlwaysSplitListItem = Extension.create({
                                     const cursorPos = $head.pos;
 
                                     // Check if the first child has its own nested list (grandchildren)
-                                    const firstChildNestedList = firstChildItem.lastChild?.type.name === 'bulletList' ? firstChildItem.lastChild : null;
+                                    const firstChildNestedList =
+                                        firstChildItem.lastChild?.type.name ===
+                                        'bulletList'
+                                            ? firstChildItem.lastChild
+                                            : null;
 
                                     // Find the first child listItem's position
                                     const listItemStart = $head.start(d) - 1;
@@ -634,13 +760,21 @@ const AlwaysSplitListItem = Extension.create({
                                     // If the first child had grandchildren, insert them into the parent's nested list
                                     if (firstChildNestedList) {
                                         // Insert grandchildren's items into the parent's nested list, before the remaining siblings
-                                        const grandchildrenInsertPos = nestedListPos + offset + 1; // inside the bulletList, at the start
-                                        tr = tr.insert(grandchildrenInsertPos, firstChildNestedList.content);
-                                        offset += firstChildNestedList.content.size;
+                                        const grandchildrenInsertPos =
+                                            nestedListPos + offset + 1; // inside the bulletList, at the start
+                                        tr = tr.insert(
+                                            grandchildrenInsertPos,
+                                            firstChildNestedList.content,
+                                        );
+                                        offset +=
+                                            firstChildNestedList.content.size;
                                     }
 
                                     // Delete the child listItem (or the whole bulletList if it's the only child)
-                                    if (lastChild.childCount === 1 && !firstChildNestedList) {
+                                    if (
+                                        lastChild.childCount === 1 &&
+                                        !firstChildNestedList
+                                    ) {
                                         tr = tr.delete(
                                             nestedListPos + offset,
                                             nestedListPos +
@@ -707,6 +841,7 @@ const AlwaysSplitListItem = Extension.create({
                 const isEmptyBlock = $enterHead.parent.content.size === 0;
 
                 let isLastBlockInItem = false;
+
                 if (isEmptyBlock) {
                     for (let d = $enterHead.depth; d >= 0; d--) {
                         if ($enterHead.node(d).type.name === 'listItem') {
@@ -857,19 +992,51 @@ function tiptapToNodes(
     return listToNodes(bulletList, parentId);
 }
 
+function assignPositions(
+    items: Record<string, unknown>[],
+    parentId: string | null,
+): string[] {
+    const blockIds = items.map(
+        (item) =>
+            ((item.attrs as Record<string, unknown>)?.blockId as string) ?? '',
+    );
+    const oldOrder = childOrderMap.get(parentId) ?? [];
+
+    const orderChanged =
+        blockIds.length !== oldOrder.length ||
+        blockIds.some((id, i) => id !== oldOrder[i]);
+
+    if (!orderChanged) {
+        return blockIds.map((id) => positionMap.get(id) ?? 'a0');
+    }
+
+    const positions = generateNKeysBetween(null, null, blockIds.length);
+    blockIds.forEach((id, i) => {
+        if (id) {
+            positionMap.set(id, positions[i]);
+        }
+    });
+    childOrderMap.set(parentId, blockIds);
+
+    return positions;
+}
+
 function listToNodes(
     bulletList: Record<string, unknown>,
     parentId: string | null,
 ): Node[] {
     const items = (bulletList.content as Record<string, unknown>[]) ?? [];
+    const positions = assignPositions(items, parentId);
 
-    return items.map((item, index) => listItemToNode(item, parentId, index));
+    return items.map((item, index) =>
+        listItemToNode(item, parentId, positions[index]),
+    );
 }
 
 function listItemToNode(
     item: Record<string, unknown>,
     parentId: string | null,
-    position: number,
+    position: string,
 ): Node {
     const attrs = (item.attrs as Record<string, unknown>) ?? {};
     const content = (item.content as Record<string, unknown>[]) ?? [];
@@ -1418,18 +1585,25 @@ const editor = useEditor({
                             const sel = newState.selection;
                             const isGapCursor =
                                 sel.empty && !sel.$head.parent.isTextblock;
+
                             if (isGapCursor && !oldState.selection.eq(sel)) {
                                 if (lastArrowDirection !== 0) {
                                     lastArrowDirection = 0;
                                 }
+
                                 return newState.tr.scrollIntoView();
                             }
 
-                            if (lastArrowDirection === 0) return null;
+                            if (lastArrowDirection === 0) {
+                                return null;
+                            }
+
                             const dir = lastArrowDirection;
                             lastArrowDirection = 0;
 
-                            if (oldState.selection.eq(sel)) return null;
+                            if (oldState.selection.eq(sel)) {
+                                return null;
+                            }
 
                             // Convert NodeSelection on fileNode to GapCursor
                             if (
@@ -1441,6 +1615,7 @@ const editor = useEditor({
                                     new GapCursor(newState.doc.resolve(pos)),
                                 );
                                 tr.scrollIntoView();
+
                                 return tr;
                             }
 
@@ -1448,39 +1623,98 @@ const editor = useEditor({
                             // if the boundary content is a fileNode
                             if (sel instanceof TextSelection) {
                                 let curDepth = -1;
+
                                 for (let d = sel.$head.depth; d >= 0; d--) {
-                                    if (sel.$head.node(d).type.name === 'listItem') { curDepth = d; break; }
+                                    if (
+                                        sel.$head.node(d).type.name ===
+                                        'listItem'
+                                    ) {
+                                        curDepth = d;
+                                        break;
+                                    }
                                 }
+
                                 let oldDepth = -1;
-                                for (let d = oldState.selection.$head.depth; d >= 0; d--) {
-                                    if (oldState.selection.$head.node(d).type.name === 'listItem') { oldDepth = d; break; }
+
+                                for (
+                                    let d = oldState.selection.$head.depth;
+                                    d >= 0;
+                                    d--
+                                ) {
+                                    if (
+                                        oldState.selection.$head.node(d).type
+                                            .name === 'listItem'
+                                    ) {
+                                        oldDepth = d;
+                                        break;
+                                    }
                                 }
-                                if (curDepth < 0 || oldDepth < 0) return null;
-                                if (sel.$head.before(curDepth) === oldState.selection.$head.before(oldDepth)) return null;
+
+                                if (curDepth < 0 || oldDepth < 0) {
+                                    return null;
+                                }
+
+                                if (
+                                    sel.$head.before(curDepth) ===
+                                    oldState.selection.$head.before(oldDepth)
+                                ) {
+                                    return null;
+                                }
 
                                 const listItem = sel.$head.node(curDepth);
                                 const listItemStart = sel.$head.start(curDepth);
 
                                 if (dir === 1) {
-                                    if (listItem.firstChild?.type.name === 'fileNode') {
+                                    if (
+                                        listItem.firstChild?.type.name ===
+                                        'fileNode'
+                                    ) {
                                         const tr = newState.tr.setSelection(
-                                            new GapCursor(newState.doc.resolve(listItemStart)),
+                                            new GapCursor(
+                                                newState.doc.resolve(
+                                                    listItemStart,
+                                                ),
+                                            ),
                                         );
                                         tr.scrollIntoView();
+
                                         return tr;
                                     }
                                 } else {
                                     let lastContentOffset = 0;
-                                    for (let i = 0; i < listItem.childCount; i++) {
+
+                                    for (
+                                        let i = 0;
+                                        i < listItem.childCount;
+                                        i++
+                                    ) {
                                         const child = listItem.child(i);
-                                        if (child.type.name === 'bulletList') break;
+
+                                        if (child.type.name === 'bulletList') {
+                                            break;
+                                        }
+
                                         lastContentOffset += child.nodeSize;
-                                        if (i === listItem.childCount - 1 || listItem.child(i + 1).type.name === 'bulletList') {
-                                            if (child.type.name === 'fileNode') {
-                                                const tr = newState.tr.setSelection(
-                                                    new GapCursor(newState.doc.resolve(listItemStart + lastContentOffset)),
-                                                );
+
+                                        if (
+                                            i === listItem.childCount - 1 ||
+                                            listItem.child(i + 1).type.name ===
+                                                'bulletList'
+                                        ) {
+                                            if (
+                                                child.type.name === 'fileNode'
+                                            ) {
+                                                const tr =
+                                                    newState.tr.setSelection(
+                                                        new GapCursor(
+                                                            newState.doc.resolve(
+                                                                listItemStart +
+                                                                    lastContentOffset,
+                                                            ),
+                                                        ),
+                                                    );
                                                 tr.scrollIntoView();
+
                                                 return tr;
                                             }
                                         }
@@ -1570,11 +1804,15 @@ const editor = useEditor({
                             view.dispatch(tr);
                         } else {
                             // Split: replace current listItem with before, insert new listItem with after
-                            const paragraphType = view.state.schema.nodes.paragraph;
+                            const paragraphType =
+                                view.state.schema.nodes.paragraph;
                             const firstAfter = afterContent.firstChild;
-                            const needsParagraph = firstAfter && !firstAfter.isTextblock;
+                            const needsParagraph =
+                                firstAfter && !firstAfter.isTextblock;
                             const newContent = needsParagraph
-                                ? Fragment.from(paragraphType.create()).append(afterContent)
+                                ? Fragment.from(paragraphType.create()).append(
+                                      afterContent,
+                                  )
                                 : afterContent;
                             const newItem =
                                 view.state.schema.nodes.listItem.create(
@@ -1598,6 +1836,7 @@ const editor = useEditor({
                             tr.scrollIntoView();
                             view.dispatch(tr);
                         }
+
                         return true;
                     }
                 }
@@ -1610,12 +1849,14 @@ const editor = useEditor({
             ) {
                 const $gap = view.state.selection.$head;
                 const targetNode = $gap.nodeAfter;
+
                 if (targetNode && !targetNode.isTextblock) {
                     const tr = view.state.tr.setSelection(
                         NodeSelection.create(view.state.doc, $gap.pos),
                     );
                     tr.scrollIntoView();
                     view.dispatch(tr);
+
                     return true;
                 }
             }
@@ -1627,12 +1868,17 @@ const editor = useEditor({
             ) {
                 const $gap = view.state.selection.$head;
                 const targetNode = $gap.nodeBefore;
+
                 if (targetNode && !targetNode.isTextblock) {
                     const tr = view.state.tr.setSelection(
-                        NodeSelection.create(view.state.doc, $gap.pos - targetNode.nodeSize),
+                        NodeSelection.create(
+                            view.state.doc,
+                            $gap.pos - targetNode.nodeSize,
+                        ),
                     );
                     tr.scrollIntoView();
                     view.dispatch(tr);
+
                     return true;
                 }
             }
@@ -1975,7 +2221,7 @@ const editor = useEditor({
         }
 
         const json = editor.getJSON();
-        const nodes = tiptapToNodes(json, null);
+        const nodes = tiptapToNodes(json, props.pageId);
         emit('update', nodes);
     },
 });

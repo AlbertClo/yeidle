@@ -38,7 +38,7 @@ class LinkParser
                 if (! $targetPage) {
                     $targetPage = Node::create([
                         'content' => $link['target'],
-                        'position' => 0,
+                        'position' => 'a0',
                     ]);
                 }
 
@@ -73,6 +73,7 @@ class LinkParser
                     $mentions = array_merge($mentions, $this->extractMentions($item));
                 }
             }
+
             return $mentions;
         }
 

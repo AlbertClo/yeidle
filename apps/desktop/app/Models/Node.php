@@ -26,7 +26,6 @@ class Node extends Model
     {
         return [
             'is_checked' => 'boolean',
-            'position' => 'integer',
             'tiptap_content' => 'array',
         ];
     }
