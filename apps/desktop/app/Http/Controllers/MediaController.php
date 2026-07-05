@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Media;
+use App\Support\Shell;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -80,26 +81,38 @@ class MediaController extends Controller
         $meta = json_decode(Storage::disk('local')->get($metaPath), true);
         $disk = Storage::disk('local');
 
-        // Assemble chunks into final file
-        $hashName = Str::random(40).'.'.pathinfo($meta['filename'], PATHINFO_EXTENSION);
-        $finalPath = $disk->path("media/{$hashName}");
-
-        // Ensure media directory exists
+        // Assemble chunks, hashing the content as it streams
         $disk->makeDirectory('media');
+        $tmpPath = $disk->path("uploads/{$uploadId}/assembled");
+        $context = hash_init('sha256');
 
-        $out = fopen($finalPath, 'wb');
+        $out = fopen($tmpPath, 'wb');
         for ($i = 0; $i < $meta['total_chunks']; $i++) {
             $chunkPath = $disk->path("uploads/{$uploadId}/chunk_{$i}");
             $in = fopen($chunkPath, 'rb');
-            stream_copy_to_stream($in, $out);
+            while (! feof($in)) {
+                $buffer = fread($in, 1024 * 1024);
+                hash_update($context, $buffer);
+                fwrite($out, $buffer);
+            }
             fclose($in);
         }
         fclose($out);
+        $hash = hash_final($context);
+
+        // Content-addressed storage: the blob is named by its hash, so
+        // re-uploading identical content reuses the existing file
+        $finalPath = $disk->path("media/{$hash}");
+        if (file_exists($finalPath)) {
+            unlink($tmpPath);
+        } else {
+            rename($tmpPath, $finalPath);
+        }
 
         // Create media record
         $media = Media::create([
             'original_name' => $meta['filename'],
-            'filename' => $hashName,
+            'filename' => $hash,
             'mime_type' => $meta['mime_type'],
             'size' => $meta['size'],
         ]);
@@ -125,8 +138,19 @@ class MediaController extends Controller
 
     public function open(Media $media): JsonResponse
     {
-        $path = Storage::disk('local')->path("media/{$media->filename}");
-        \App\Support\Shell::open($path);
+        $disk = Storage::disk('local');
+        $blob = $disk->path("media/{$media->filename}");
+
+        // Blobs are extension-less content hashes; hardlink to the original
+        // filename so the OS can pick the right application
+        $disk->makeDirectory('media-open');
+        $target = $disk->path("media-open/{$media->id}-".basename($media->original_name));
+
+        if (! file_exists($target) && ! @link($blob, $target)) {
+            copy($blob, $target);
+        }
+
+        Shell::open($target);
 
         return response()->json(null, 200);
     }
@@ -134,7 +158,7 @@ class MediaController extends Controller
     public function openFolder(Media $media): JsonResponse
     {
         $dir = Storage::disk('local')->path('media');
-        \App\Support\Shell::open($dir);
+        Shell::open($dir);
 
         return response()->json(null, 200);
     }
