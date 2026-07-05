@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { getCachedPage, setCachedPage } from '@/stores/pageCache';
+import { mintNodeDelete, mintNodeSet, pushOps  } from '@/sync/ops';
+import type {Op} from '@/sync/ops';
 import type { BreadcrumbItem } from '@/types';
 import type { Node } from '@/types/node';
 
@@ -177,115 +179,92 @@ function flattenNodes(nodes: Node[]): Node[] {
     return result;
 }
 
-const JSON_HEADERS = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-};
+// Ops minted but not yet accepted by the local server. Re-pushing after a
+// failure is safe: the server is idempotent by op_id.
+const outbox: Op[] = [];
 
-async function request(
-    url: string,
-    method: string,
-    body?: Record<string, unknown>,
-): Promise<Response | null> {
-    const payload = body ? JSON.stringify(body) : undefined;
-
-    try {
-        return await fetch(url, {
-            method,
-            headers: JSON_HEADERS,
-            // keepalive lets in-flight requests survive app teardown, but
-            // rejects bodies over ~64KB — skip it for oversized nodes
-            keepalive: !payload || payload.length < 60000,
-            body: payload,
-        });
-    } catch {
-        return null;
-    }
-}
-
-function nodePayload(node: Node): Record<string, unknown> {
-    return {
-        id: node.id,
-        parent_id: node.parent_id,
-        position: node.position,
-        content: node.content,
-        tiptap_content: node.tiptap_content,
-        is_checked: node.is_checked,
-    };
-}
-
-// Sends the diff between lastNodeMap and the given tree as a single
-// transactional batch: upserts in pre-order (parents before children),
-// deletes last. The server applies all-or-nothing, so snapshots are only
-// committed when the whole batch succeeds and a failed batch is retried
-// intact by the next run.
+// Diffs the editor tree against lastNodeMap, mints field-level ops for the
+// changes (sync design §5: only the fields that changed, so concurrent
+// edits to different fields of one node merge), and pushes the outbox.
+// Snapshots commit at mint time — the outbox owns delivery from there.
 async function doSync(nodes: Node[]): Promise<boolean> {
     const currentNodes = flattenNodes(nodes);
     const currentIds = new Set(currentNodes.map((n) => n.id));
-    const upserts: Record<string, unknown>[] = [];
-    const snapshots = new Map<string, NodeSnapshot>();
     let hasLinkChanges = false;
 
     for (const node of currentNodes) {
         const prev = lastNodeMap.get(node.id);
         const snap = snapshotNode(node);
+        const fields: Record<string, unknown> = {};
 
         if (prev) {
-            const changed =
-                snap.parent_id !== prev.parent_id ||
-                snap.position !== prev.position ||
-                snap.content !== prev.content ||
-                snap.is_checked !== prev.is_checked ||
-                snap.tiptap_content !== prev.tiptap_content;
+            if (snap.parent_id !== prev.parent_id) {
+                fields.parent_id = node.parent_id;
+            }
 
-            if (!changed) {
-                continue;
+            if (snap.position !== prev.position) {
+                fields.position = node.position;
+            }
+
+            if (snap.content !== prev.content) {
+                fields.content = node.content;
+            }
+
+            if (snap.is_checked !== prev.is_checked) {
+                fields.is_checked = node.is_checked;
             }
 
             if (snap.tiptap_content !== prev.tiptap_content) {
+                fields.tiptap_content = node.tiptap_content;
                 hasLinkChanges = true;
             }
+
+            if (Object.keys(fields).length === 0) {
+                continue;
+            }
         } else {
+            fields.parent_id = node.parent_id;
+            fields.position = node.position;
+            fields.content = node.content;
+            fields.tiptap_content = node.tiptap_content;
+            fields.is_checked = node.is_checked;
             hasLinkChanges = true;
         }
 
-        upserts.push(nodePayload(node));
-        snapshots.set(node.id, snap);
+        outbox.push(mintNodeSet(node.id, props.page.id, fields));
+        lastNodeMap.set(node.id, snap);
     }
 
-    // Deletes: the server cascades, so only send the top-most node of each
-    // deleted subtree (a deleted node whose old parent survives is its own
-    // top)
+    // Deletion marks only the top-most node of each deleted subtree; the
+    // projection derives descendant visibility from the parent chain
     const deletedIds = [...lastNodeMap.keys()].filter(
         (id) => !currentIds.has(id),
     );
     const deletedSet = new Set(deletedIds);
-    const deletes = deletedIds.filter((id) => {
+
+    for (const id of deletedIds) {
         const parent = lastNodeMap.get(id)?.parent_id;
 
-        return !parent || !deletedSet.has(parent);
-    });
+        if (!parent || !deletedSet.has(parent)) {
+            outbox.push(mintNodeDelete(id, props.page.id));
+        }
 
-    if (upserts.length === 0 && deletedIds.length === 0) {
+        lastNodeMap.delete(id);
+    }
+
+    const pushed = outbox.length;
+
+    if (pushed === 0) {
         return true;
     }
 
-    const res = await request('/api/nodes/batch', 'POST', {
-        upserts,
-        deletes,
-    });
+    const ok = await pushOps(outbox.slice());
 
-    if (!res?.ok) {
+    if (!ok) {
         return false;
     }
 
-    for (const [id, snap] of snapshots) {
-        lastNodeMap.set(id, snap);
-    }
-
-    for (const id of deletedIds) {
-        lastNodeMap.delete(id);
-    }
+    outbox.splice(0, pushed);
 
     if (hasLinkChanges) {
         refreshBacklinks();

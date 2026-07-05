@@ -21,6 +21,12 @@ class Node extends Model
         'is_checked',
     ];
 
+    // Sync bookkeeping — not part of the API surface
+    protected $hidden = [
+        'field_clocks',
+        'purged',
+    ];
+
     protected function casts(): array
     {
         return [
