@@ -63,7 +63,7 @@ class LinkParser
      * Extract mention nodes from tiptap_content JSON.
      * Returns array of ['id' => pageId, 'label' => label]
      */
-    private function extractMentions(array $content): array
+    public function extractMentions(array $content): array
     {
         // tiptap_content can be a sequential array (multiple blocks) or a single object
         if (array_is_list($content)) {

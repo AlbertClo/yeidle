@@ -4,7 +4,11 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SyncController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('sync/push', [SyncController::class, 'push']);
+Route::get('sync/pull', [SyncController::class, 'pull']);
 
 Route::post('nodes/batch', [NodeController::class, 'batch']);
 Route::apiResource('nodes', NodeController::class)->only(['store', 'update', 'destroy']);

@@ -419,9 +419,16 @@ Each phase ships something usable on its own.
 - Client diff emits field-level ops instead of full payloads. Outbox ops
   not yet pushed may be coalesced (superseded field writes squashed) —
   optional log hygiene, design leaves room for it.
-- Derived data is rebuilt by apply, never synced: `node_links` (LinkParser
-  runs inside apply), the in-memory page cache (invalidated by apply).
-  `page_visits` stays local-only, outside the log entirely.
+- Derived data is rebuilt by apply, never synced: `node_links` (rebuilt
+  from the merged tiptap content whenever it changes), the in-memory page
+  cache (invalidated by apply). `page_visits` stays local-only, outside the
+  log entirely. *(Amended during implementation:)* links derive from
+  **UUID-based mentions only** — the legacy title-based `[[wikilink]]`
+  fallback resolves titles against local state and would mint different
+  page ids on different replicas, so it stays confined to the legacy
+  endpoints and retires with them. Mention targets whose create op hasn't
+  arrived yet get shell rows, keeping the projection identical under any
+  delivery order.
 - Apply handles arbitrary delivery orders: an op referencing a
   not-yet-created node or parent creates a shell row (filled in when the
   create arrives), and ops referencing purged ids are dropped.

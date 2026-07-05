@@ -3,6 +3,7 @@
 namespace Tests\Feature\Sync;
 
 use App\Models\Node;
+use App\Models\NodeLink;
 use App\Sync\HlcGenerator;
 use App\Sync\OpApplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,7 +33,17 @@ class ConvergenceTest extends TestCase
 
     private function projectionDump(): array
     {
-        return Node::withTrashed()
+        $links = NodeLink::orderBy('source_node_id')
+            ->orderBy('target_node_id')
+            ->get()
+            ->map(fn ($l) => [
+                'source' => $l->source_node_id,
+                'target' => $l->target_node_id,
+                'display_name' => $l->display_name,
+            ])
+            ->all();
+
+        $nodes = Node::withTrashed()
             ->orderBy('id')
             ->get()
             ->map(fn (Node $n) => [
@@ -48,10 +59,13 @@ class ConvergenceTest extends TestCase
                 'reachable' => $n->isReachable(),
             ])
             ->all();
+
+        return ['nodes' => $nodes, 'links' => $links];
     }
 
     private function resetProjection(): void
     {
+        DB::statement('DELETE FROM node_links');
         DB::statement('DELETE FROM nodes');
     }
 
@@ -165,6 +179,17 @@ class ConvergenceTest extends TestCase
                                 'parent_id' => mt_rand(0, 3) === 0 ? null : $ids[mt_rand(0, count($ids) - 1)],
                             };
                         }
+                    }
+                    if (mt_rand(0, 2) === 0) {
+                        // Mention another node so the node_links projection
+                        // is exercised under permutation too
+                        $target = $ids[mt_rand(0, count($ids) - 1)];
+                        $set['tiptap_content'] = [
+                            'type' => 'paragraph',
+                            'content' => [
+                                ['type' => 'mention', 'attrs' => ['id' => $target, 'label' => 'ref']],
+                            ],
+                        ];
                     }
                     $ops[] = $this->op('node.set', ['id' => $id, 'fields' => $set], $millis, $client);
                 } elseif ($roll <= 95) {

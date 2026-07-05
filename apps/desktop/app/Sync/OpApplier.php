@@ -3,6 +3,8 @@
 namespace App\Sync;
 
 use App\Models\Node;
+use App\Models\NodeLink;
+use App\Services\LinkParser;
 use Carbon\Carbon;
 
 /**
@@ -27,6 +29,10 @@ class OpApplier
 {
     private const NODE_FIELDS = ['parent_id', 'position', 'content', 'tiptap_content', 'is_checked'];
 
+    public function __construct(
+        private LinkParser $linkParser = new LinkParser,
+    ) {}
+
     public function apply(array $op): void
     {
         match ($op['type']) {
@@ -47,6 +53,7 @@ class OpApplier
 
         $clocks = $node->field_clocks ?? [];
         $hlc = $op['hlc'];
+        $tiptapChanged = false;
 
         foreach ($op['payload']['fields'] as $field => $value) {
             if (! in_array($field, self::NODE_FIELDS, true)) {
@@ -63,6 +70,10 @@ class OpApplier
 
                 $node->{$field} = $value;
                 $clocks[$field] = $hlc;
+
+                if ($field === 'tiptap_content') {
+                    $tiptapChanged = true;
+                }
             }
         }
 
@@ -79,6 +90,44 @@ class OpApplier
         ksort($clocks);
         $node->field_clocks = $clocks;
         $node->save();
+
+        if ($tiptapChanged) {
+            $this->rebuildLinks($node);
+        }
+    }
+
+    /**
+     * node_links is a derived projection (design doc §12): rebuilt from the
+     * node's merged tiptap_content whenever it changes, from UUID-based
+     * mentions only. Targets that haven't been created yet (arbitrary
+     * delivery order) get shell rows so the link row can exist — determinism
+     * over prettiness. The legacy title-based [[wikilink]] fallback is
+     * NOT run here: resolving titles against local state would mint
+     * different page ids on different replicas.
+     */
+    private function rebuildLinks(Node $node): void
+    {
+        $node->outgoingLinks()->forceDelete();
+
+        if (! $node->tiptap_content) {
+            return;
+        }
+
+        $links = [];
+        foreach ($this->linkParser->extractMentions($node->tiptap_content) as $mention) {
+            $links[$mention['id']] = $mention['label'] ?? null;
+        }
+
+        ksort($links);
+
+        foreach ($links as $targetId => $label) {
+            $this->ensureNode($targetId);
+            NodeLink::create([
+                'source_node_id' => $node->id,
+                'target_node_id' => $targetId,
+                'display_name' => $label,
+            ]);
+        }
     }
 
     private function applyNodeDelete(array $op): void
@@ -130,6 +179,9 @@ class OpApplier
         $node->field_clocks = null;
         $node->deleted_at = $purgedAt;
         $node->save();
+
+        // Scrubbed content has no mentions; drop the outgoing projection
+        $node->outgoingLinks()->forceDelete();
     }
 
     private function ensureNode(string $id): Node
