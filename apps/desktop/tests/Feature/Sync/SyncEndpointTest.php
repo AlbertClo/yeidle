@@ -64,6 +64,24 @@ class SyncEndpointTest extends TestCase
         $this->assertNull(Node::find($id));
     }
 
+    public function test_payload_is_logged_verbatim_including_page_id(): void
+    {
+        $id = fake()->uuid();
+        $pageId = fake()->uuid();
+        $op = $this->makeOp('node.set', [
+            'v' => 1,
+            'id' => $id,
+            'page_id' => $pageId,
+            'fields' => ['content' => 'x'],
+        ], 100);
+
+        $this->postJson('/api/sync/push', ['client_id' => 'w', 'ops' => [$op]])->assertOk();
+
+        $pulled = $this->getJson('/api/sync/pull?since=0')->json('ops.0.payload');
+        $this->assertSame($pageId, $pulled['page_id']);
+        $this->assertSame(1, $pulled['v']);
+    }
+
     public function test_pull_returns_ops_after_cursor(): void
     {
         $a = $this->makeOp('node.set', ['id' => fake()->uuid(), 'fields' => ['content' => 'a']], 100);

@@ -14,7 +14,7 @@ class SyncController extends Controller
 
     public function push(Request $request): JsonResponse
     {
-        $data = $request->validate([
+        $request->validate([
             'client_id' => ['required', 'string'],
             'ops' => ['required', 'array'],
             'ops.*.op_id' => ['required', 'string', 'uuid'],
@@ -26,7 +26,10 @@ class SyncController extends Controller
             'ops.*.payload.fields' => ['array'],
         ]);
 
-        $accepted = $this->sync->push($data['ops']);
+        // Store the raw input, not the validated subset: validated data
+        // only keeps keys with explicit rules, which would silently strip
+        // payload fields like page_id from the log
+        $accepted = $this->sync->push($request->input('ops'));
 
         return response()->json(['accepted' => $accepted]);
     }
