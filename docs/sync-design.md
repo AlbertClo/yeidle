@@ -149,8 +149,8 @@ ops
 Op types, initial set:
 
 ```
-node.set     { id, fields: { parent_id?, position?, content?, tiptap_content?, is_checked? } }
-node.delete  { id }                        -- soft delete, cascades to descendants
+node.set     { id, page_id, fields: { parent_id?, position?, content?, tiptap_content?, is_checked? } }
+node.delete  { id, page_id }               -- soft delete, cascades to descendants
 media.create { id, hash, original_name, mime_type, size }
 ```
 
@@ -187,6 +187,12 @@ Notes:
   reference is gone — content-addressed dedup means a blob may outlive any
   one purged node. Honest limit: a device that never syncs again keeps its
   local copy; purge reaches every device that ever reconnects.
+- `page_id` is the id of the top-level page containing the node (a page's
+  own ops carry their own id). The client knows it for free at
+  op-generation time; deriving it later would require a tree walk per op.
+  Uses: the remote-op apply path (§7) can tell whether an op affects the
+  currently open page without walking the tree, and Phase 2 presence and
+  page-scoped subscriptions key on it.
 - Payloads carry a `v` version field from day one so formats can evolve.
 - Phase 3 adds `text.update { page_id, yjs_update: base64 }` (see §10).
 - Phase 4 adds `sheet.set_cells { id, cells: { "B7": {...}, ... } }` (see §11).
@@ -439,6 +445,20 @@ Each phase ships something usable on its own.
   the op-apply function** — editor batches, title saves, extension pushes,
   and server-side writes like `LinkParser`'s auto-created wikilink pages
   must all mint ops, or those writes never sync.
-- **Multi-user collaboration semantics** (invites, permissions, per-page
-  sharing): deliberately unscoped; the `workspace_id` seam is where it
-  attaches.
+- **Multi-user sharing, permissions, and orgs**: detailed design deferred,
+  but the granularity is **decided: permissions apply to a whole database**
+  (user-facing term for what this doc calls a workspace) — sharing =
+  membership, and users can create and connect to multiple databases. This
+  deliberately rules out per-page ACLs, which would raise questions a
+  backlinked graph can't answer cleanly (backlinks into pages the viewer
+  can't see, wikilink auto-creation crossing permission boundaries, search
+  leakage), and it means the sync model needs no filtered pull: members
+  sync a database's whole log. Each database = its own op log, cursor, and
+  membership; ownership by users now, orgs later (GitHub-style
+  org → databases → members). From Phase 1 the cloud stamps accepted ops
+  with the authenticated `user_id` (server-assigned, unforgeable; for
+  audit and presence). Open sub-question for Phase 1: local layout —
+  one SQLite file per database (Obsidian-vault-style isolation; current
+  lean) vs. a `workspace_id` column through every table. Roles, invites,
+  and public links are additive machinery and constrain nothing in
+  Phases 0–2.
