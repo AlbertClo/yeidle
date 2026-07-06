@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\Route;
 Route::post('sync/push', [SyncController::class, 'push']);
 Route::get('sync/pull', [SyncController::class, 'pull']);
 
-Route::post('nodes/batch', [NodeController::class, 'batch']);
-Route::apiResource('nodes', NodeController::class)->only(['store', 'update', 'destroy']);
+// Intent-level façade: mints ops server-side (see NodeController)
+Route::post('nodes', [NodeController::class, 'store']);
 
 Route::get('pages', [PageController::class, 'index']);
 // Before pages/{node} so "title-exists" isn't captured as a node id
