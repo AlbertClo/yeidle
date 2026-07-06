@@ -141,6 +141,20 @@ test('bootstrap returns the projection with clocks and a consistent cursor', fun
     expect($bootstrap->json('latest_seq'))->toBe($this->getJson('/api/sync/pull?since=0')->json('latest_seq'));
 });
 
+test('status reports the workspace cursor cheaply', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $empty = $this->getJson('/api/sync/status');
+    $empty->assertSuccessful();
+    expect($empty->json('latest_seq'))->toBe(0);
+
+    $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [
+        setOp(fake()->uuid(), ['content' => 'x'], 100),
+    ]])->assertSuccessful();
+
+    expect($this->getJson('/api/sync/status')->json('latest_seq'))->toBeGreaterThan(0);
+});
+
 test('media create ops flow through the relay', function () {
     Sanctum::actingAs(User::factory()->create());
 

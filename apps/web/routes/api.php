@@ -12,4 +12,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sync/push', [SyncController::class, 'push']);
     Route::get('/sync/pull', [SyncController::class, 'pull']);
     Route::get('/sync/bootstrap', [SyncController::class, 'bootstrap']);
+    Route::get('/sync/status', [SyncController::class, 'status']);
 });

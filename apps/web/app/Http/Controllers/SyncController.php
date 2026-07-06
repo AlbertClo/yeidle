@@ -57,6 +57,20 @@ class SyncController extends Controller
     }
 
     /**
+     * Cheap probe for pairing: token validity plus the workspace's cursor
+     * position, without shipping any data.
+     */
+    public function status(Request $request): JsonResponse
+    {
+        $workspace = $this->workspaceFor($request);
+
+        return response()->json([
+            'workspace_id' => $workspace->id,
+            'latest_seq' => (int) \App\Models\Op::where('workspace_id', $workspace->id)->max('server_seq'),
+        ]);
+    }
+
+    /**
      * Phase 1: every user gets one personal workspace, created on first
      * use. Multiple workspaces become a route parameter later (§14).
      */
