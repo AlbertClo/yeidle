@@ -27,6 +27,18 @@ createInertiaApp({
 // This will set light / dark mode on page load...
 initializeTheme();
 
+// Cloud sync heartbeat: the local server exchanges ops with the cloud
+// (no-op when unpaired). Pulled ops land in the local log, which the
+// per-page pull loop already merges into open editors.
+setInterval(() => {
+    fetch('/api/sync/cloud-exchange', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+    }).catch(() => {
+        // Offline or server busy — next tick retries
+    });
+}, 5000);
+
 document.addEventListener('keydown', (e) => {
     // Prevent Ctrl+Q from closing the app (Electron default)
     if ((e.ctrlKey || e.metaKey) && e.key === 'q') {

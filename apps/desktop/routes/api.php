@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CloudController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
@@ -9,6 +10,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('sync/push', [SyncController::class, 'push']);
 Route::get('sync/pull', [SyncController::class, 'pull']);
+
+Route::post('cloud/connect', [CloudController::class, 'connect']);
+Route::get('cloud/status', [CloudController::class, 'status']);
+Route::post('sync/cloud-exchange', [CloudController::class, 'exchange']);
 
 // Intent-level façade: mints ops server-side (see NodeController)
 Route::post('nodes', [NodeController::class, 'store']);
