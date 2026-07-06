@@ -1,0 +1,16 @@
+{
+    "comment": "Shared test vectors pinning every HLC implementation (PHP, future JS) to the same encoding and ordering. Do not change without updating all implementations.",
+    "encode": [
+        { "millis": 0, "counter": 0, "clientId": "c1", "expected": "000000000000000-0000-c1" },
+        { "millis": 1751793445123, "counter": 0, "clientId": "019e8193-46b4-7394-8891-0bf49b741cc6", "expected": "001751793445123-0000-019e8193-46b4-7394-8891-0bf49b741cc6" },
+        { "millis": 1751793445123, "counter": 66, "clientId": "c1", "expected": "001751793445123-0042-c1" },
+        { "millis": 1751793445123, "counter": 65535, "clientId": "c1", "expected": "001751793445123-ffff-c1" }
+    ],
+    "ordering": [
+        ["000000000000000-0000-c1", "000000000000001-0000-c1"],
+        ["001751793445123-0000-c1", "001751793445123-0001-c1"],
+        ["001751793445123-0001-az", "001751793445123-0001-b0"],
+        ["001751793445123-ffff-c1", "001751793445124-0000-c1"],
+        ["000999999999999-ffff-zz", "001000000000000-0000-aa"]
+    ]
+}
