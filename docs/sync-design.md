@@ -273,6 +273,12 @@ projection (§8), so bootstrap is: download projection snapshot at
 `server_seq = N`, set cursor to N, then pull normally. This also enables log
 compaction later (drop ops below the oldest snapshot any client needs).
 
+The snapshot artifact can eventually be a **generated SQLite file** built
+from the projections on demand (cacheable per checkpoint): the desktop opens
+it directly, bootstrap of a cell-heavy workspace becomes a file download,
+and the same artifact doubles as the "export your data as a file" feature —
+per-workspace SQLite's best property without operating a file fleet (§8).
+
 ### What "two instances" means
 
 Clarified: two instances = two separate machines, each running its own app
@@ -329,10 +335,27 @@ client. For sync it provides:
   Multi-user/sharing is out of scope until the collaboration phase.
 - Realtime: Laravel Reverb broadcasting `workspace.{id}.ops` events
   (Phase 2).
-- Blob storage: S3-compatible, keyed `blobs/{sha256}` (§9).
+- Blob storage: S3-compatible, keyed `blobs/{workspace_id}/{sha256}` (§9).
+  The workspace prefix keeps isolation and GC accounting clean (dedup
+  within a workspace, no cross-tenant existence leaks). Production target:
+  **Cloudflare R2** — S3-API-compatible with zero egress fees, and blob
+  sync traffic is mostly egress (every device downloads every blob once).
+  Local dev: MinIO in Sail (same API; LocalStack rejected as
+  AWS-emulation dead weight when the target isn't AWS). Upload/download via
+  **presigned URLs** so blob bytes never proxy through Laravel. No CDN
+  until a web client renders media inline — desktop clients fetch each
+  immutable blob once and cache forever.
 
-Postgres in production (concurrent writers, real durability); the op-log
-design is engine-agnostic.
+**Decided: one shared Postgres, `workspace_id` on every row** — not
+per-workspace SQLite files server-side. Rationale: one schema, one
+migration run, one backup story, standard Laravel shape; the per-file
+model's isolation comes at the cost of running a hybrid (central DB for
+users/auth plus a file fleet with per-file migrations and backups).
+Isolation is enforced by the single write path (op-apply) plus policies.
+Not a one-way door: the op log is the source of truth, so a workspace's
+SQLite file can be rehydrated at any time (see snapshot bootstrap, §6).
+Sheets don't change this calculus — they multiply row counts, which
+favors Postgres if anything.
 
 ## 9. Media sync
 
@@ -380,17 +403,39 @@ prerequisite infrastructure for it anyway.
 A future `sheet` node type — a node whose content is a cell grid instead of
 rich text:
 
-- Storage: `sheet.set_cells` ops, cell-level granularity
-  (`{ "B7": { raw: "=SUM(B1:B6)", ... } }`), merged per cell by HLC LWW —
-  the Google Sheets model. Formula *evaluation* stays client-side and
-  derived (never synced); only raw cell contents are data.
-- Projection: a `sheet_cells` table (or JSON blob per sheet initially)
-  parallel to `tiptap_content`.
-- Rendering: a dedicated node view in the editor, or a page-level view —
-  UI decision for later; the sync layer is ready either way.
+- **The sheet is a node** (`kind: sheet`): lives in the page tree, links,
+  embeds, and deletes like anything else; sheet-level settings ride on it.
+- **Rows and columns are entities with stable ids and fractional-index
+  positions** — a `sheet_axes` table `(id, sheet_id, axis: row|col,
+  position, size, clock)`. This dissolves the classic collaboration
+  nightmare (inserting a row shifts every positional reference): "B7" is
+  merely the *rendered* name of `(row_id, col_id)`, and a row insert is one
+  fractional-position write that merges exactly like reordering nodes —
+  the third use of the same machinery.
+- **Cells are rows, not a JSON blob**: `sheet_cells (sheet_id, row_id,
+  col_id, raw, format, clock)` — sparse, each cell carrying its own HLC,
+  so per-cell LWW is just a row's clock column. (A blob-per-sheet was
+  rejected: it needs a thousands-key field_clocks map and rewrites the
+  whole blob per keystroke.)
+- **Formulas reference stable ids internally**, render as A1 notation.
+  Computed values are derived, evaluated client-side, never synced — only
+  `raw` is data.
+- Ops: `sheet.set_cells { sheet_id, cells: [{row_id, col_id, raw}] }` and
+  `sheet.axis_set { sheet_id, axis, id, position }` — convergent under the
+  existing harness with no new merge concepts.
+- **SQL over sheets is a derived view, not the storage**: materialize
+  `sheet_cells` into a temp table/view on demand (SQLite locally; DuckDB
+  if analytics ever matter), query, discard. Physical table-per-sheet was
+  rejected: runtime DDL, typed columns vs. ragged cells, and no LWW for
+  `ALTER TABLE`. Relatedly, a *typed data table* (Notion-database-style:
+  schema-as-data + generic records) is a distinct future node type — keep
+  it separate from the free-form sheet.
 - Concurrent edits to the *same cell* = last writer wins, which matches
   user expectations from Sheets. Presence (cell cursors, Phase 2's
   infrastructure) covers the rest of the collaborative feel.
+- Phase 4 prerequisites from earlier deferrals: outbox coalescing becomes
+  genuinely important (a drag-fill must not mint 500 ops), and per-page
+  pull granularity starts paying for itself.
 
 No CRDTs needed. The op log + per-item LWW built in Phases 0–1 serves this
 without modification — which is the strongest argument for that
