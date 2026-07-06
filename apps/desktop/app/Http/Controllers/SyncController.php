@@ -20,7 +20,7 @@ class SyncController extends Controller
             'ops.*.op_id' => ['required', 'string', 'uuid'],
             'ops.*.client_id' => ['required', 'string'],
             'ops.*.hlc' => ['required', 'string', 'regex:/^\d{15}-[0-9a-f]{4}-.+$/'],
-            'ops.*.type' => ['required', 'string', 'in:node.set,node.delete,node.purge'],
+            'ops.*.type' => ['required', 'string', 'in:node.set,node.delete,node.purge,media.create'],
             'ops.*.payload' => ['required', 'array'],
             'ops.*.payload.id' => ['required', 'string', 'uuid'],
             'ops.*.payload.fields' => ['array'],

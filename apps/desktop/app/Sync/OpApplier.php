@@ -2,6 +2,7 @@
 
 namespace App\Sync;
 
+use App\Models\Media;
 use App\Models\Node;
 use App\Models\NodeLink;
 use App\Services\LinkParser;
@@ -39,6 +40,7 @@ class OpApplier
             'node.set' => $this->applyNodeSet($op),
             'node.delete' => $this->applyNodeDelete($op),
             'node.purge' => $this->applyNodePurge($op),
+            'media.create' => $this->applyMediaCreate($op),
             default => throw new \InvalidArgumentException("Unknown op type: {$op['type']}"),
         };
     }
@@ -193,6 +195,35 @@ class OpApplier
 
         // Scrubbed content has no mentions; drop the outgoing projection
         $node->outgoingLinks()->forceDelete();
+    }
+
+    /**
+     * Media metadata is immutable and its ids are unique per upload, so
+     * create-if-absent is convergent. The blob itself travels out-of-band,
+     * keyed by the content hash (sync design §9).
+     */
+    private function applyMediaCreate(array $op): void
+    {
+        $payload = $op['payload'];
+
+        // A malformed op must never wedge the log — drop it deterministically
+        foreach (['id', 'hash', 'original_name', 'mime_type', 'size'] as $key) {
+            if (! isset($payload[$key])) {
+                return;
+            }
+        }
+
+        if (Media::whereKey($payload['id'])->exists()) {
+            return;
+        }
+
+        $media = new Media;
+        $media->id = $payload['id'];
+        $media->filename = $payload['hash'];
+        $media->original_name = $payload['original_name'];
+        $media->mime_type = $payload['mime_type'];
+        $media->size = (int) $payload['size'];
+        $media->save();
     }
 
     private function ensureNode(string $id): Node

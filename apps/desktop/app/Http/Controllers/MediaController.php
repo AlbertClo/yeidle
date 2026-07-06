@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Media;
 use App\Support\Shell;
+use App\Sync\HlcGenerator;
+use App\Sync\SyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -12,6 +14,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MediaController extends Controller
 {
+    public function __construct(
+        private SyncService $sync,
+    ) {}
+
     public function initUpload(Request $request): JsonResponse
     {
         $request->validate([
@@ -109,18 +115,30 @@ class MediaController extends Controller
             rename($tmpPath, $finalPath);
         }
 
-        // Create media record
-        $media = Media::create([
-            'original_name' => $meta['filename'],
-            'filename' => $hash,
-            'mime_type' => $meta['mime_type'],
-            'size' => $meta['size'],
-        ]);
+        // The metadata row syncs through the log (sync design §9); the blob
+        // itself is content-addressed and travels out-of-band
+        $mediaId = (string) Str::uuid7();
+        $clock = new HlcGenerator('srv-'.Str::uuid7());
+
+        $this->sync->push([[
+            'op_id' => (string) Str::uuid7(),
+            'client_id' => $clock->clientId,
+            'hlc' => $clock->now(),
+            'type' => 'media.create',
+            'payload' => [
+                'v' => 1,
+                'id' => $mediaId,
+                'hash' => $hash,
+                'original_name' => $meta['filename'],
+                'mime_type' => $meta['mime_type'],
+                'size' => $meta['size'],
+            ],
+        ]]);
 
         // Clean up chunks
         $disk->deleteDirectory("uploads/{$uploadId}");
 
-        return response()->json($media, 201);
+        return response()->json(Media::findOrFail($mediaId), 201);
     }
 
     public function show(Media $media): StreamedResponse
