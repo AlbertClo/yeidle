@@ -14,6 +14,8 @@ Route::post('nodes/batch', [NodeController::class, 'batch']);
 Route::apiResource('nodes', NodeController::class)->only(['store', 'update', 'destroy']);
 
 Route::get('pages', [PageController::class, 'index']);
+// Before pages/{node} so "title-exists" isn't captured as a node id
+Route::get('pages/title-exists', [PageController::class, 'titleExists']);
 Route::get('pages/{node}', [PageController::class, 'show']);
 Route::get('pages/{node}/backlinks', [PageController::class, 'backlinks']);
 

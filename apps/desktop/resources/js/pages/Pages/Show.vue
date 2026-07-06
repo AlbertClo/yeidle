@@ -83,10 +83,7 @@ function startEditingTitle(cursorPos?: number) {
 
 function finishEditingTitle() {
     isEditingTitle.value = false;
-
-    if (titleContent.value !== props.page.content) {
-        syncUpdate(props.page.id, { content: titleContent.value });
-    }
+    saveTitle();
 }
 
 function handleTitleKeydown(e: KeyboardEvent) {
@@ -101,19 +98,55 @@ function handleTitleKeydown(e: KeyboardEvent) {
 
 // --- Sync layer ---
 
-function syncUpdate(id: string, data: Record<string, unknown>) {
-    fetch(`/api/nodes/${id}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-        },
-        body: JSON.stringify(data),
-    });
+let titleSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let lastSavedTitle = props.page.content;
+const titleError = ref(false);
+
+// Advisory only (sync design: duplicate titles are a soft constraint —
+// the log always merges, so the client warns instead of the server
+// rejecting)
+async function titleIsDuplicate(title: string): Promise<boolean> {
+    try {
+        const params = new URLSearchParams({
+            title,
+            except: props.page.id,
+        });
+        const res = await fetch(`/api/pages/title-exists?${params}`, {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (!res.ok) {
+            return false;
+        }
+
+        return (await res.json()).exists === true;
+    } catch {
+        return false;
+    }
 }
 
-let titleSyncTimer: ReturnType<typeof setTimeout> | null = null;
-const titleError = ref(false);
+async function saveTitle() {
+    const title = titleContent.value;
+
+    if (title === lastSavedTitle) {
+        return;
+    }
+
+    if (title !== '' && (await titleIsDuplicate(title))) {
+        titleError.value = true;
+        toast.error('A page with this name already exists.');
+
+        return;
+    }
+
+    titleError.value = false;
+    lastSavedTitle = title;
+    outbox.push(mintNodeSet(props.page.id, props.page.id, { content: title }));
+    runSync();
+
+    const children = getCachedPage(props.page.id)?.children ?? pageNodes.value;
+    setCachedPage(props.page.id, title, children);
+}
 
 function syncTitleDebounced() {
     if (titleSyncTimer) {
@@ -121,27 +154,8 @@ function syncTitleDebounced() {
     }
 
     titleSyncTimer = setTimeout(() => {
-        fetch(`/api/nodes/${props.page.id}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-            },
-            body: JSON.stringify({ content: titleContent.value }),
-        }).then((res) => {
-            if (res.status === 409) {
-                titleError.value = true;
-                res.json().then((data) => {
-                    toast.error(data.message);
-                });
-            } else {
-                titleError.value = false;
-                const children =
-                    getCachedPage(props.page.id)?.children ?? pageNodes.value;
-                setCachedPage(props.page.id, titleContent.value, children);
-            }
-        });
         titleSyncTimer = null;
+        saveTitle();
     }, 300);
 }
 
@@ -277,6 +291,18 @@ async function doSync(nodes: Node[]): Promise<boolean> {
         lastNodeMap.delete(id);
     }
 
+    const ok = await flushOutbox();
+
+    if (ok && hasLinkChanges) {
+        refreshBacklinks();
+    }
+
+    return ok;
+}
+
+// Push everything queued; ops stay queued on failure and re-pushing is
+// safe (server dedupes by op_id)
+async function flushOutbox(): Promise<boolean> {
     const pushed = outbox.length;
 
     if (pushed === 0) {
@@ -290,10 +316,6 @@ async function doSync(nodes: Node[]): Promise<boolean> {
     }
 
     outbox.splice(0, pushed);
-
-    if (hasLinkChanges) {
-        refreshBacklinks();
-    }
 
     return true;
 }
@@ -310,8 +332,10 @@ function scheduleRetry() {
     }, retryDelay);
 }
 
-// Single sync runner: at most one doSync in flight, re-runs while edits
-// arrived mid-flight, retries with backoff when requests fail
+// Single sync runner: at most one flush in flight, re-runs while edits
+// arrived mid-flight, retries with backoff when requests fail. Drains both
+// the editor diff (hasPendingSync) and directly-queued ops (title save,
+// page delete) — ops mint once, so a failed push just leaves them queued.
 async function runSync() {
     if (syncing) {
         return;
@@ -320,12 +344,17 @@ async function runSync() {
     syncing = true;
 
     try {
-        while (hasPendingSync) {
-            hasPendingSync = false;
-            const ok = await doSync(pendingNodes);
+        while (hasPendingSync || outbox.length > 0) {
+            let ok: boolean;
+
+            if (hasPendingSync) {
+                hasPendingSync = false;
+                ok = await doSync(pendingNodes);
+            } else {
+                ok = await flushOutbox();
+            }
 
             if (!ok) {
-                hasPendingSync = true;
                 scheduleRetry();
 
                 return;
@@ -366,7 +395,7 @@ function flushSync() {
     if (titleSyncTimer) {
         clearTimeout(titleSyncTimer);
         titleSyncTimer = null;
-        syncUpdate(props.page.id, { content: titleContent.value });
+        saveTitle();
     }
 
     if (syncTimer) {
@@ -441,8 +470,29 @@ async function pollRemoteOps() {
             }
         }
 
+        // Ops targeting the page node itself: remote title changes update
+        // the header directly; the tree merge below only handles children
+        for (const op of remote) {
+            if (
+                op.type === 'node.set' &&
+                op.payload.id === props.page.id &&
+                !isEditingTitle.value
+            ) {
+                const fields = op.payload.fields as
+                    | Record<string, unknown>
+                    | undefined;
+
+                if (fields && 'content' in fields) {
+                    titleContent.value = (fields.content as string) ?? '';
+                    lastSavedTitle = titleContent.value;
+                }
+            }
+        }
+
         const currentPage = remote.filter(
-            (op) => op.payload.page_id === props.page.id,
+            (op) =>
+                op.payload.page_id === props.page.id &&
+                op.payload.id !== props.page.id,
         );
 
         if (currentPage.length === 0) {
@@ -541,15 +591,21 @@ function handleBeforeUnload() {
 
 const showDeleteConfirm = ref(false);
 
-function deletePage() {
-    fetch(`/api/nodes/${props.page.id}`, {
-        method: 'DELETE',
-        headers: { Accept: 'application/json' },
-    }).then(() => {
-        showDeleteConfirm.value = false;
-        toast.success(`Deleted "${titleContent.value || '[untitled]'}"`);
-        router.visit('/pages');
-    });
+async function deletePage() {
+    const ok = await pushOps([
+        mintNodeDelete(props.page.id, props.page.id),
+    ]);
+    showDeleteConfirm.value = false;
+
+    if (!ok) {
+        toast.error('Could not delete the page — is the app online?');
+
+        return;
+    }
+
+    invalidateCachedPage(props.page.id);
+    toast.success(`Deleted "${titleContent.value || '[untitled]'}"`);
+    router.visit('/pages');
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
