@@ -33,12 +33,26 @@ class CloudController extends Controller
     public function status(): JsonResponse
     {
         $state = SyncState::current();
+        $configured = $state !== null && $state->cloud_url !== null;
+
+        $health = match (true) {
+            ! $configured => 'unconfigured',
+            $state->last_sync_error !== null => 'error',
+            $state->cloud_seed_pending => 'seeding',
+            $state->last_sync_success_at !== null => 'healthy',
+            default => 'never_synced',
+        };
 
         return response()->json([
-            'configured' => $state !== null && $state->cloud_url !== null,
+            'configured' => $configured,
+            'health' => $health,
             'cloud_url' => $state?->cloud_url,
+            'cloud_seed_pending' => (bool) ($state?->cloud_seed_pending ?? false),
             'last_server_seq' => (int) ($state?->last_server_seq ?? 0),
             'outbox' => Op::whereNull('server_seq')->count(),
+            'last_sync_attempt_at' => $state?->last_sync_attempt_at?->toIso8601String(),
+            'last_sync_success_at' => $state?->last_sync_success_at?->toIso8601String(),
+            'last_sync_error' => $state?->last_sync_error,
         ]);
     }
 

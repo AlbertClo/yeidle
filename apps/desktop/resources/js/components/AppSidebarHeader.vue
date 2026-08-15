@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
+import CloudSyncStatus from '@/components/CloudSyncStatus.vue';
 import PageSearch from '@/components/PageSearch.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { BreadcrumbItem } from '@/types';
@@ -26,5 +27,6 @@ withDefaults(
             </template>
         </div>
         <PageSearch :current-page-id="currentPageId" />
+        <CloudSyncStatus />
     </header>
 </template>

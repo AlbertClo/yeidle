@@ -15,6 +15,15 @@ class SyncState extends Model
 
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return [
+            'cloud_seed_pending' => 'boolean',
+            'last_sync_attempt_at' => 'datetime',
+            'last_sync_success_at' => 'datetime',
+        ];
+    }
+
     public static function current(): ?self
     {
         return self::query()->first();
