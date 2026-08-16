@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { requestCloudExchange } from '@/sync/cloud';
-import { refreshRealtimeSync } from '@/sync/realtime';
+import { realtimeHealth, refreshRealtimeSync } from '@/sync/realtime';
 
 type SyncHealth =
     | 'unconfigured'
@@ -43,6 +43,58 @@ const cloudUrl = ref('http://localhost:8200');
 const cloudToken = ref('');
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 let statusRequest: Promise<void> | null = null;
+
+const realtimeAppearance = computed(() => {
+    switch (realtimeHealth.state) {
+        case 'connected':
+            return {
+                label: 'Live',
+                topLabel: 'Synced',
+                detail: 'Realtime delivery is connected.',
+                color: 'text-emerald-600 dark:text-emerald-400',
+                icon: Cloud,
+                spinning: false,
+            };
+        case 'connecting':
+            return {
+                label: 'Connecting…',
+                topLabel: 'Connecting',
+                detail: 'Realtime is connecting; five-second polling remains active.',
+                color: 'text-amber-600 dark:text-amber-400',
+                icon: RefreshCw,
+                spinning: true,
+            };
+        case 'error':
+        case 'failed':
+            return {
+                label: 'Error · polling',
+                topLabel: 'Polling',
+                detail: 'Realtime delivery failed; changes still sync through polling.',
+                color: 'text-amber-600 dark:text-amber-400',
+                icon: CircleAlert,
+                spinning: false,
+            };
+        case 'unavailable':
+        case 'disconnected':
+            return {
+                label: 'Polling fallback',
+                topLabel: 'Polling',
+                detail: 'Realtime is unavailable; changes still sync every five seconds.',
+                color: 'text-amber-600 dark:text-amber-400',
+                icon: Cloud,
+                spinning: false,
+            };
+        default:
+            return {
+                label: 'Polling only',
+                topLabel: 'Polling',
+                detail: 'Realtime is not configured; changes sync every five seconds.',
+                color: 'text-muted-foreground',
+                icon: Cloud,
+                spinning: false,
+            };
+    }
+});
 
 const appearance = computed(() => {
     if (statusUnavailable.value) {
@@ -105,6 +157,15 @@ const appearance = computed(() => {
             detail: 'Local changes are waiting to reach the cloud.',
             icon: Cloud,
             color: 'text-amber-600 dark:text-amber-400',
+        };
+    }
+
+    if (status.value.configured && realtimeHealth.state !== 'connected') {
+        return {
+            label: realtimeAppearance.value.topLabel,
+            detail: realtimeAppearance.value.detail,
+            icon: realtimeAppearance.value.icon,
+            color: realtimeAppearance.value.color,
         };
     }
 
@@ -269,7 +330,9 @@ onBeforeUnmount(() => {
                                 syncing ||
                                 connecting ||
                                 status === null ||
-                                status?.health === 'seeding',
+                                status?.health === 'seeding' ||
+                                (status?.configured &&
+                                    realtimeAppearance.spinning),
                         },
                     ]"
                 />
@@ -374,6 +437,15 @@ onBeforeUnmount(() => {
                     <span class="text-muted-foreground">Pending changes</span>
                     <span class="ml-auto">{{ status.outbox }}</span>
                 </div>
+                <div v-if="status.configured" class="flex gap-3">
+                    <span class="text-muted-foreground">Realtime</span>
+                    <span
+                        class="ml-auto text-right"
+                        :class="realtimeAppearance.color"
+                    >
+                        {{ realtimeAppearance.label }}
+                    </span>
+                </div>
                 <div class="flex gap-3">
                     <span class="text-muted-foreground">Last success</span>
                     <span class="ml-auto text-right">
@@ -391,6 +463,12 @@ onBeforeUnmount(() => {
                     class="rounded-md bg-destructive/10 p-2 leading-relaxed text-destructive"
                 >
                     {{ status.last_sync_error }}
+                </div>
+                <div
+                    v-if="status.configured && realtimeHealth.error"
+                    class="rounded-md bg-amber-500/10 p-2 leading-relaxed text-amber-700 dark:text-amber-300"
+                >
+                    {{ realtimeHealth.error }}
                 </div>
             </div>
 
