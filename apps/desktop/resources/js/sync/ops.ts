@@ -1,5 +1,6 @@
 import { uuidv7 } from 'uuidv7';
 
+import { requestCloudExchange } from './cloud';
 import { HlcClock } from './hlc';
 
 /**
@@ -101,7 +102,15 @@ export async function pushOps(ops: Op[]): Promise<boolean> {
             body,
         });
 
-        return res.ok;
+        if (!res.ok) {
+            return false;
+        }
+
+        // Local persistence is complete. Start cloud delivery immediately,
+        // but never make an offline cloud delay or fail the local save.
+        void requestCloudExchange();
+
+        return true;
     } catch {
         return false;
     }

@@ -4,6 +4,7 @@ import type { DefineComponent } from 'vue';
 import { createApp, h } from 'vue';
 import '../css/app.css';
 import { initializeTheme } from '@/composables/useAppearance';
+import { requestCloudExchange } from '@/sync/cloud';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -31,12 +32,7 @@ initializeTheme();
 // (no-op when unpaired). Pulled ops land in the local log, which the
 // per-page pull loop already merges into open editors.
 setInterval(() => {
-    fetch('/api/sync/cloud-exchange', {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-    }).catch(() => {
-        // Offline or server busy — next tick retries
-    });
+    void requestCloudExchange();
 }, 5000);
 
 document.addEventListener('keydown', (e) => {
@@ -44,11 +40,13 @@ document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
         e.preventDefault();
     }
+
     // Alt+Left/Right for browser history navigation
     if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
         window.history.back();
     }
+
     if (e.altKey && e.key === 'ArrowRight') {
         e.preventDefault();
         window.history.forward();

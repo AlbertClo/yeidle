@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { requestCloudExchange } from '@/sync/cloud';
 
 type SyncHealth =
     | 'unconfigured'
@@ -165,13 +166,8 @@ async function syncNow(): Promise<void> {
     syncing.value = true;
 
     try {
-        const response = await fetch('/api/sync/cloud-exchange', {
-            method: 'POST',
-            headers: { Accept: 'application/json' },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Sync request failed (${response.status})`);
+        if (!(await requestCloudExchange())) {
+            throw new Error('Sync request failed.');
         }
     } catch {
         statusUnavailable.value = true;
