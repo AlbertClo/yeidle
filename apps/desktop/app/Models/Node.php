@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,6 +20,11 @@ class Node extends Model
         'content',
         'tiptap_content',
         'is_checked',
+        'modified_hlc',
+    ];
+
+    protected $attributes = [
+        'modified_hlc' => '',
     ];
 
     // Sync bookkeeping — not part of the API surface
@@ -60,6 +66,11 @@ class Node extends Model
     public function scopePages($query)
     {
         return $query->whereNull('parent_id');
+    }
+
+    public function scopeOrderedByModification(Builder $query): Builder
+    {
+        return $query->orderByDesc('modified_hlc')->orderByDesc('id');
     }
 
     public function isPage(): bool

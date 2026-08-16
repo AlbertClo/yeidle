@@ -88,6 +88,7 @@ class OpApplier
 
         ksort($clocks);
         $node->field_clocks = $clocks;
+        $node->modified_hlc = $clocks === [] ? HlcGenerator::EPOCH : max($clocks);
         $node->save();
 
         if ($tiptapChanged) {
@@ -110,6 +111,7 @@ class OpApplier
             $clocks['deleted'] = $op['hlc'];
             ksort($clocks);
             $node->field_clocks = $clocks;
+            $node->modified_hlc = max($clocks);
             $node->save();
         }
     }
@@ -127,8 +129,13 @@ class OpApplier
         if ($node->purged) {
             if ($node->deleted_at && $purgedAt->lt($node->deleted_at)) {
                 $node->deleted_at = $purgedAt;
-                $node->save();
             }
+
+            if ($node->modified_hlc === '' || $op['hlc'] < $node->modified_hlc) {
+                $node->modified_hlc = $op['hlc'];
+            }
+
+            $node->save();
 
             return;
         }
@@ -141,6 +148,7 @@ class OpApplier
         $node->is_checked = null;
         $node->field_clocks = null;
         $node->deleted_at = $purgedAt;
+        $node->modified_hlc = $op['hlc'];
         $node->save();
 
         $node->outgoingLinks()->delete();

@@ -13,7 +13,7 @@ class PageWebController extends Controller
     public function index(): Response
     {
         $pages = Node::pages()
-            ->orderBy('updated_at', 'desc')
+            ->orderedByModification()
             ->get();
 
         return Inertia::render('Pages/Index', [

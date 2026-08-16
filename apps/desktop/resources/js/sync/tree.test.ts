@@ -20,6 +20,7 @@ function node(
         content,
         tiptap_content: null,
         is_checked: null,
+        modified_hlc: '',
         created_at: '',
         updated_at: '',
         children: [],

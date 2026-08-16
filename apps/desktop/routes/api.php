@@ -13,6 +13,9 @@ Route::get('sync/pull', [SyncController::class, 'pull']);
 
 Route::post('cloud/connect', [CloudController::class, 'connect']);
 Route::get('cloud/status', [CloudController::class, 'status']);
+Route::get('cloud/realtime-config', [CloudController::class, 'realtimeConfig']);
+Route::post('cloud/broadcasting-auth', [CloudController::class, 'authorizeRealtime']);
+Route::post('cloud/realtime-ops', [CloudController::class, 'ingestRealtimeOps']);
 Route::post('sync/cloud-exchange', [CloudController::class, 'exchange']);
 
 // Intent-level façade: mints ops server-side (see NodeController)

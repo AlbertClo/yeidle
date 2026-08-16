@@ -26,6 +26,40 @@ services:
             - redis
             - typesense
             - mailpit
+    queue:
+        image: 'sail-8.5/app'
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            redis:
+                condition: service_healthy
+            pgsql:
+                condition: service_healthy
+        command: php artisan queue:work redis --queue=broadcasts,default --tries=3 --timeout=60
+    reverb:
+        image: 'sail-8.5/app'
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        ports:
+            - '${REVERB_PUBLIC_PORT:-8080}:8080'
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            redis:
+                condition: service_healthy
+        command: php artisan reverb:start --host=0.0.0.0 --port=8080
     pgsql:
         image: 'postgres:18-alpine'
         ports:

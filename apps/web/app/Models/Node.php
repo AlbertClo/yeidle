@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property bool|null $is_checked
  * @property array<string, string>|null $field_clocks
  * @property bool $purged
+ * @property string $modified_hlc
  */
 class Node extends Model
 {
@@ -29,6 +30,10 @@ class Node extends Model
     protected $keyType = 'string';
 
     protected $guarded = [];
+
+    protected $attributes = [
+        'modified_hlc' => '',
+    ];
 
     protected $hidden = ['field_clocks', 'purged'];
 

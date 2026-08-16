@@ -1,10 +1,14 @@
 <?php
 
+use App\Events\WorkspaceOpsCommitted;
 use App\Models\Node;
 use App\Models\Op;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Sync\HlcGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
@@ -50,8 +54,40 @@ test('push assigns server sequence, stamps the user, and applies', function () {
     expect(Node::find($id)->content)->toBe('from device a');
 });
 
+test('push broadcasts newly committed ops in pull wire format', function () {
+    $user = User::factory()->create();
+    $workspace = Workspace::factory()->for($user)->create();
+    Sanctum::actingAs($user);
+    Event::fake([WorkspaceOpsCommitted::class]);
+
+    $operation = setOp(fake()->uuid(), ['content' => 'broadcast me'], 100);
+
+    $response = $this->postJson('/api/sync/push', [
+        'client_id' => 'installation-a',
+        'ops' => [$operation],
+    ])->assertSuccessful();
+
+    Event::assertDispatched(WorkspaceOpsCommitted::class, function (WorkspaceOpsCommitted $event) use ($operation, $response, $workspace): bool {
+        return $event->workspaceId === $workspace->id
+            && $event->originClientId === 'installation-a'
+            && $event->previousSeq === 0
+            && $event->latestSeq === $response->json('accepted.0.server_seq')
+            && $event->ops === [[
+                'server_seq' => $response->json('accepted.0.server_seq'),
+                'op_id' => $operation['op_id'],
+                'client_id' => $operation['client_id'],
+                'hlc' => $operation['hlc'],
+                'type' => $operation['type'],
+                'payload' => $operation['payload'],
+            ]];
+    });
+});
+
 test('push is idempotent by op id', function () {
-    Sanctum::actingAs(User::factory()->create());
+    $user = User::factory()->create();
+    Workspace::factory()->for($user)->create();
+    Sanctum::actingAs($user);
+    Event::fake([WorkspaceOpsCommitted::class]);
 
     $op = setOp(fake()->uuid(), ['content' => 'once'], 100);
 
@@ -61,6 +97,61 @@ test('push is idempotent by op id', function () {
     $second->assertOk();
     expect($second->json('accepted.0.server_seq'))->toBe($first->json('accepted.0.server_seq'));
     expect(Op::count())->toBe(1);
+    Event::assertDispatchedTimes(WorkspaceOpsCommitted::class, 1);
+});
+
+test('oversized broadcasts send a sequence hint without operation contents', function () {
+    $user = User::factory()->create();
+    Workspace::factory()->for($user)->create();
+    Sanctum::actingAs($user);
+    Event::fake([WorkspaceOpsCommitted::class]);
+    config()->set('reverb.broadcast_max_payload_size', 1);
+
+    $this->postJson('/api/sync/push', [
+        'client_id' => 'installation-a',
+        'ops' => [setOp(fake()->uuid(), ['content' => 'pull this instead'], 100)],
+    ])->assertSuccessful();
+
+    Event::assertDispatched(
+        WorkspaceOpsCommitted::class,
+        fn (WorkspaceOpsCommitted $event): bool => $event->ops === null
+            && $event->previousSeq === 0
+            && $event->latestSeq > 0,
+    );
+});
+
+test('workspace broadcast cursors chain across globally non-contiguous sequences', function () {
+    $alice = User::factory()->create();
+    $bob = User::factory()->create();
+    Workspace::factory()->for($alice)->create();
+    Workspace::factory()->for($bob)->create();
+    Event::fake([WorkspaceOpsCommitted::class]);
+
+    Sanctum::actingAs($alice);
+    $first = $this->postJson('/api/sync/push', [
+        'client_id' => 'alice-a',
+        'ops' => [setOp(fake()->uuid(), ['content' => 'alice first'], 100)],
+    ])->json('accepted.0.server_seq');
+
+    Sanctum::actingAs($bob);
+    $this->postJson('/api/sync/push', [
+        'client_id' => 'bob-a',
+        'ops' => [setOp(fake()->uuid(), ['content' => 'bob'], 101)],
+    ])->assertSuccessful();
+
+    Sanctum::actingAs($alice);
+    $latest = $this->postJson('/api/sync/push', [
+        'client_id' => 'alice-b',
+        'ops' => [setOp(fake()->uuid(), ['content' => 'alice second'], 102)],
+    ])->json('accepted.0.server_seq');
+
+    expect($latest)->toBeGreaterThan($first + 1);
+    Event::assertDispatched(
+        WorkspaceOpsCommitted::class,
+        fn (WorkspaceOpsCommitted $event): bool => $event->originClientId === 'alice-b'
+            && $event->previousSeq === $first
+            && $event->latestSeq === $latest,
+    );
 });
 
 test('pull returns ops after the cursor in order', function () {
@@ -137,6 +228,7 @@ test('bootstrap returns the projection with clocks and a consistent cursor', fun
     $node = collect($bootstrap->json('nodes'))->firstWhere('id', $id);
     expect($node)->not->toBeNull();
     expect($node['field_clocks'])->toHaveKey('deleted');
+    expect($node['modified_hlc'])->toBe($node['field_clocks']['deleted']);
     expect($node['deleted_at'])->not->toBeNull();
     expect($bootstrap->json('latest_seq'))->toBe($this->getJson('/api/sync/pull?since=0')->json('latest_seq'));
 });
@@ -153,6 +245,72 @@ test('status reports the workspace cursor cheaply', function () {
     ]])->assertSuccessful();
 
     expect($this->getJson('/api/sync/status')->json('latest_seq'))->toBeGreaterThan(0);
+});
+
+test('status exposes public realtime settings without the app secret', function () {
+    Sanctum::actingAs(User::factory()->create());
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('reverb.public', [
+        'app_key' => 'public-key',
+        'host' => 'ws.example.test',
+        'port' => 443,
+        'scheme' => 'https',
+    ]);
+
+    $response = $this->getJson('/api/sync/status')->assertSuccessful();
+
+    $response->assertJsonPath('realtime.enabled', true)
+        ->assertJsonPath('realtime.app_key', 'public-key')
+        ->assertJsonPath('realtime.host', 'ws.example.test')
+        ->assertJsonMissingPath('realtime.app_secret');
+});
+
+function configureReverbForChannelAuth(): void
+{
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb', [
+        'driver' => 'reverb',
+        'key' => 'public-key',
+        'secret' => 'private-secret',
+        'app_id' => 'test-app',
+        'options' => [],
+    ]);
+    Broadcast::purge('reverb');
+    require base_path('routes/channels.php');
+}
+
+test('workspace owners may authorize their private broadcast channel', function () {
+    $owner = User::factory()->create();
+    $workspace = Workspace::factory()->for($owner)->create();
+    configureReverbForChannelAuth();
+    Sanctum::actingAs($owner);
+
+    $this->postJson('/api/broadcasting/auth', [
+        'socket_id' => '123.456',
+        'channel_name' => "private-workspaces.{$workspace->id}.sync",
+    ])->assertSuccessful()->assertJsonStructure(['auth']);
+});
+
+test('other users may not authorize a workspace private broadcast channel', function () {
+    $workspace = Workspace::factory()->create();
+    configureReverbForChannelAuth();
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson('/api/broadcasting/auth', [
+        'socket_id' => '123.456',
+        'channel_name' => "private-workspaces.{$workspace->id}.sync",
+    ])->assertForbidden();
+});
+
+test('workspace broadcast authorization requires authentication', function () {
+    $workspace = Workspace::factory()->create();
+    configureReverbForChannelAuth();
+    $payload = [
+        'socket_id' => '123.456',
+        'channel_name' => "private-workspaces.{$workspace->id}.sync",
+    ];
+
+    $this->postJson('/api/broadcasting/auth', $payload)->assertUnauthorized();
 });
 
 test('media create ops flow through the relay', function () {

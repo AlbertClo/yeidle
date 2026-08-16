@@ -9,9 +9,16 @@ defineProps<{
     pages: Node[];
 }>();
 
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Pages', href: '/pages' },
-];
+const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pages', href: '/pages' }];
+
+function modifiedDate(page: Node): string {
+    const millis = Number.parseInt(page.modified_hlc.slice(0, 15), 10);
+    const date = Number.isFinite(millis)
+        ? new Date(millis)
+        : new Date(page.updated_at);
+
+    return date.toLocaleDateString();
+}
 </script>
 
 <template>
@@ -25,7 +32,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 
             <div
                 v-if="pages.length === 0"
-                class="text-muted-foreground py-12 text-center"
+                class="py-12 text-center text-muted-foreground"
             >
                 <FileText class="mx-auto mb-3 h-12 w-12 opacity-50" />
                 <p>No pages yet. Use the search bar (Alt+E) to create one.</p>
@@ -36,16 +43,14 @@ const breadcrumbs: BreadcrumbItem[] = [
                     v-for="page in pages"
                     :key="page.id"
                     :href="`/pages/${page.id}`"
-                    class="hover:bg-accent flex items-center gap-3 rounded-lg px-3 py-2"
+                    class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent"
                 >
-                    <FileText class="text-muted-foreground h-4 w-4 shrink-0" />
+                    <FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span class="flex-1 truncate">
                         {{ page.content || '[untitled]' }}
                     </span>
-                    <span class="text-muted-foreground text-xs">
-                        {{
-                            new Date(page.updated_at).toLocaleDateString()
-                        }}
+                    <span class="text-xs text-muted-foreground">
+                        {{ modifiedDate(page) }}
                     </span>
                 </Link>
             </div>

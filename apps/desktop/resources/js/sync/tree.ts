@@ -81,6 +81,7 @@ function applyNodeSet(roots: Node[], pageId: string, op: Op): TreeChange {
             tiptap_content:
                 (fields.tiptap_content as Node['tiptap_content']) ?? null,
             is_checked: (fields.is_checked as boolean | null) ?? null,
+            modified_hlc: op.hlc,
             created_at: '',
             updated_at: '',
             children: [],
@@ -92,6 +93,8 @@ function applyNodeSet(roots: Node[], pageId: string, op: Op): TreeChange {
 
     let change: TreeChange = 'none';
     const { node } = found;
+
+    node.modified_hlc = op.hlc;
 
     for (const field of CONTENT_FIELDS) {
         if (field in fields) {

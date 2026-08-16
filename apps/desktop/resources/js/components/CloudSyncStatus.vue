@@ -13,6 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { requestCloudExchange } from '@/sync/cloud';
+import { refreshRealtimeSync } from '@/sync/realtime';
 
 type SyncHealth =
     | 'unconfigured'
@@ -218,6 +219,8 @@ async function connectCloud(): Promise<void> {
         if (result?.error) {
             connectError.value = result.error;
         }
+
+        await refreshRealtimeSync();
     } catch (error) {
         connectError.value =
             error instanceof Error

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Op;
 use App\Models\Workspace;
 use App\Sync\SyncService;
 use Illuminate\Http\JsonResponse;
@@ -32,6 +33,7 @@ class SyncController extends Controller
         $accepted = $this->sync->push(
             $this->workspaceFor($request),
             $request->user(),
+            $request->string('client_id')->toString(),
             $request->input('ops'),
         );
 
@@ -66,8 +68,41 @@ class SyncController extends Controller
 
         return response()->json([
             'workspace_id' => $workspace->id,
-            'latest_seq' => (int) \App\Models\Op::where('workspace_id', $workspace->id)->max('server_seq'),
+            'latest_seq' => (int) Op::where('workspace_id', $workspace->id)->max('server_seq'),
+            'realtime' => $this->realtimeConfig(),
         ]);
+    }
+
+    /**
+     * Public connection settings only. The app secret remains server-side.
+     *
+     * @return array{
+     *     enabled: bool,
+     *     app_key: ?string,
+     *     host: ?string,
+     *     port: ?int,
+     *     scheme: ?string
+     * }
+     */
+    private function realtimeConfig(): array
+    {
+        $key = config('reverb.public.app_key');
+        $host = config('reverb.public.host');
+        $port = config('reverb.public.port');
+        $scheme = config('reverb.public.scheme');
+        $enabled = config('broadcasting.default') === 'reverb'
+            && is_string($key) && $key !== ''
+            && is_string($host) && $host !== ''
+            && is_numeric($port)
+            && in_array($scheme, ['http', 'https'], true);
+
+        return [
+            'enabled' => $enabled,
+            'app_key' => $enabled ? $key : null,
+            'host' => $enabled ? $host : null,
+            'port' => $enabled ? (int) $port : null,
+            'scheme' => $enabled ? $scheme : null,
+        ];
     }
 
     /**

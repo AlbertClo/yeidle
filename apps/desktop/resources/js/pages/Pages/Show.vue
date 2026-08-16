@@ -34,6 +34,7 @@ import {
     pushOps,
 } from '@/sync/ops';
 import type { Op } from '@/sync/ops';
+import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/realtimeOps';
 import { applyOpsToTree, findInTree } from '@/sync/tree';
 import type { BreadcrumbItem } from '@/types';
 import type { Node } from '@/types/node';
@@ -411,6 +412,10 @@ function handleNodesUpdate(nodes: Node[]) {
     syncDebounced(nodes);
 }
 
+function handleLocalOpsAvailable() {
+    void pollRemoteOps();
+}
+
 // --- Remote ops: pull loop + live editor merge (sync design §7) ---
 
 let pullCursor = props.syncCursor ?? 0;
@@ -592,9 +597,7 @@ function handleBeforeUnload() {
 const showDeleteConfirm = ref(false);
 
 async function deletePage() {
-    const ok = await pushOps([
-        mintNodeDelete(props.page.id, props.page.id),
-    ]);
+    const ok = await pushOps([mintNodeDelete(props.page.id, props.page.id)]);
     showDeleteConfirm.value = false;
 
     if (!ok) {
@@ -629,6 +632,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
     document.addEventListener('keydown', handleGlobalKeydown);
     refreshBacklinks();
     pullTimer = setInterval(pollRemoteOps, 1500);
@@ -636,6 +640,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.removeEventListener(
+        LOCAL_OPS_AVAILABLE_EVENT,
+        handleLocalOpsAvailable,
+    );
     document.removeEventListener('keydown', handleGlobalKeydown);
 
     if (pullTimer) {

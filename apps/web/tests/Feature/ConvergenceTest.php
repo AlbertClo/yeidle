@@ -52,6 +52,7 @@ function applyAll(string $workspaceId, array $ops): array
             'deleted_at' => $n->deleted_at?->format('Y-m-d H:i:s'),
             'purged' => $n->purged,
             'field_clocks' => $n->field_clocks,
+            'modified_hlc' => $n->modified_hlc,
             'reachable' => $n->isReachable(),
         ])
         ->all();

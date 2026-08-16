@@ -13,7 +13,7 @@ class PageController extends Controller
     public function index(): JsonResponse
     {
         $pages = Node::pages()
-            ->orderBy('updated_at', 'desc')
+            ->orderedByModification()
             ->get();
 
         return response()->json($pages);

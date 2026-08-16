@@ -17,7 +17,7 @@ class SearchController extends Controller
         // Deletion marks only the subtree root (sync design §5), so filter
         // out matches living inside deleted subtrees
         $results = Node::where('content', 'like', '%'.$request->q.'%')
-            ->orderBy('updated_at', 'desc')
+            ->orderedByModification()
             ->limit(120)
             ->get()
             ->filter(fn (Node $node) => $node->isReachable())

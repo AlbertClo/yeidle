@@ -23,6 +23,7 @@ class CloudSyncTest extends TestCase
             'last_server_seq' => $lastSeq,
             'cloud_url' => self::CLOUD,
             'cloud_token' => 'test-token',
+            'cloud_workspace_id' => 'w',
         ]);
     }
 
@@ -585,10 +586,12 @@ class CloudSyncTest extends TestCase
                     // Child listed first: bootstrap must order parents first
                     ['id' => $childId, 'parent_id' => $pageId, 'position' => 'a0', 'content' => 'child',
                         'tiptap_content' => null, 'is_checked' => null,
-                        'field_clocks' => ['content' => '000000000000100-0000-x'], 'purged' => false, 'deleted_at' => null],
+                        'field_clocks' => ['content' => '000000000000100-0000-x'],
+                        'purged' => false, 'deleted_at' => null],
                     ['id' => $pageId, 'parent_id' => null, 'position' => 'a0', 'content' => 'Cloud Page',
                         'tiptap_content' => null, 'is_checked' => null,
-                        'field_clocks' => null, 'purged' => false, 'deleted_at' => null],
+                        'field_clocks' => null, 'modified_hlc' => '000000000000090-0000-x',
+                        'purged' => false, 'deleted_at' => null],
                 ],
                 'media' => [],
             ]),
@@ -604,7 +607,9 @@ class CloudSyncTest extends TestCase
         $response->assertOk();
         $this->assertTrue($response->json('bootstrapped'));
         $this->assertSame('Cloud Page', Node::find($pageId)->content);
+        $this->assertSame('000000000000090-0000-x', Node::find($pageId)->modified_hlc);
         $this->assertSame($pageId, Node::find($childId)->parent_id);
+        $this->assertSame('000000000000100-0000-x', Node::find($childId)->modified_hlc);
         $this->assertSame(12, (int) SyncState::current()->last_server_seq);
     }
 
@@ -624,5 +629,143 @@ class CloudSyncTest extends TestCase
             ->assertStatus(422);
 
         $this->assertNull(SyncState::current());
+    }
+
+    public function test_realtime_config_is_proxied_without_exposing_the_cloud_token(): void
+    {
+        $this->pairedState(12);
+        Http::fake([
+            self::CLOUD.'/api/sync/status' => Http::response([
+                'workspace_id' => 'w',
+                'latest_seq' => 12,
+                'realtime' => [
+                    'enabled' => true,
+                    'app_key' => 'public-key',
+                    'host' => 'ws.cloud.test',
+                    'port' => 443,
+                    'scheme' => 'https',
+                ],
+            ]),
+        ]);
+
+        $this->getJson('/api/cloud/realtime-config')
+            ->assertOk()
+            ->assertJsonPath('enabled', true)
+            ->assertJsonPath('workspace_id', 'w')
+            ->assertJsonPath('app_key', 'public-key')
+            ->assertJsonMissingPath('cloud_token');
+
+        Http::assertSent(fn ($request): bool => $request->hasHeader('Authorization', 'Bearer test-token'));
+    }
+
+    public function test_realtime_authorization_is_limited_to_the_paired_workspace_channel(): void
+    {
+        $this->pairedState();
+        Http::fake([
+            self::CLOUD.'/api/broadcasting/auth' => Http::response(['auth' => 'signed-auth']),
+        ]);
+
+        $this->postJson('/api/cloud/broadcasting-auth', [
+            'socket_id' => '123.456',
+            'channel_name' => 'private-workspaces.w.sync',
+        ])->assertOk()->assertJsonPath('auth', 'signed-auth');
+
+        Http::assertSent(fn ($request): bool => $request->hasHeader('Authorization', 'Bearer test-token')
+            && $request['socket_id'] === '123.456'
+            && $request['channel_name'] === 'private-workspaces.w.sync');
+
+        Http::fake();
+
+        $this->postJson('/api/cloud/broadcasting-auth', [
+            'socket_id' => '123.456',
+            'channel_name' => 'private-workspaces.someone-else.sync',
+        ])->assertForbidden();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_realtime_committed_ops_apply_directly_and_advance_the_cloud_cursor(): void
+    {
+        $this->pairedState(4);
+        $nodeId = fake()->uuid();
+        $operation = $this->remoteOp('node.set', [
+            'v' => 1,
+            'id' => $nodeId,
+            'page_id' => $nodeId,
+            'fields' => ['content' => 'arrived over Reverb'],
+        ], 7, 500);
+
+        $this->postJson('/api/cloud/realtime-ops', [
+            'workspace_id' => 'w',
+            'origin_client_id' => 'other-installation',
+            'previous_seq' => 4,
+            'latest_seq' => 7,
+            'ops' => [$operation],
+        ])->assertOk()
+            ->assertJsonPath('applied', 1)
+            ->assertJsonPath('needs_pull', false)
+            ->assertJsonPath('ignored', false);
+
+        $this->assertSame('arrived over Reverb', Node::find($nodeId)->content);
+        $this->assertSame(7, Op::where('op_id', $operation['op_id'])->sole()->server_seq);
+        $this->assertSame(7, (int) SyncState::current()->last_server_seq);
+        $this->assertNotNull(SyncState::current()->last_sync_success_at);
+    }
+
+    public function test_realtime_sequence_gaps_and_hint_only_events_request_a_pull(): void
+    {
+        $this->pairedState(4);
+        $nodeId = fake()->uuid();
+        $operation = $this->remoteOp('node.set', [
+            'v' => 1,
+            'id' => $nodeId,
+            'page_id' => $nodeId,
+            'fields' => ['content' => 'wait for pull'],
+        ], 7, 500);
+
+        $this->postJson('/api/cloud/realtime-ops', [
+            'workspace_id' => 'w',
+            'origin_client_id' => 'other-installation',
+            'previous_seq' => 5,
+            'latest_seq' => 7,
+            'ops' => [$operation],
+        ])->assertOk()
+            ->assertJsonPath('applied', 0)
+            ->assertJsonPath('needs_pull', true);
+
+        $this->assertNull(Node::find($nodeId));
+        $this->assertSame(4, (int) SyncState::current()->last_server_seq);
+
+        $this->postJson('/api/cloud/realtime-ops', [
+            'workspace_id' => 'w',
+            'origin_client_id' => 'other-installation',
+            'previous_seq' => 4,
+            'latest_seq' => 7,
+            'ops' => null,
+        ])->assertOk()->assertJsonPath('needs_pull', true);
+    }
+
+    public function test_realtime_events_from_this_installation_are_ignored(): void
+    {
+        $state = $this->pairedState(4);
+        $nodeId = fake()->uuid();
+
+        $this->postJson('/api/cloud/realtime-ops', [
+            'workspace_id' => 'w',
+            'origin_client_id' => $state->client_id,
+            'previous_seq' => 4,
+            'latest_seq' => 7,
+            'ops' => [$this->remoteOp('node.set', [
+                'v' => 1,
+                'id' => $nodeId,
+                'page_id' => $nodeId,
+                'fields' => ['content' => 'own event'],
+            ], 7, 500)],
+        ])->assertOk()
+            ->assertJsonPath('ignored', true)
+            ->assertJsonPath('needs_pull', false);
+
+        $this->assertNull(Node::find($nodeId));
+        $this->assertSame(4, (int) $state->refresh()->last_server_seq);
     }
 }

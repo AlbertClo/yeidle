@@ -206,10 +206,224 @@ class CloudSyncService
         ];
     }
 
+    /**
+     * Fetch the cloud's public Reverb connection settings without exposing
+     * the stored Sanctum token to the renderer.
+     *
+     * @return array{
+     *     enabled: bool,
+     *     workspace_id?: string,
+     *     app_key?: string,
+     *     host?: string,
+     *     port?: int,
+     *     scheme?: string
+     * }
+     */
+    public function realtimeConfig(): array
+    {
+        $state = SyncState::current();
+
+        if ($state === null || ! $state->cloud_url || ! $state->cloud_workspace_id) {
+            return ['enabled' => false];
+        }
+
+        $response = $this->http($state)
+            ->get("{$state->cloud_url}/api/sync/status")
+            ->throw();
+        $workspaceId = $response->json('workspace_id');
+        $realtime = $response->json('realtime');
+
+        if ($workspaceId !== $state->cloud_workspace_id || ! is_array($realtime)) {
+            throw new CloudSyncProtocolException(
+                'Cloud realtime protocol error: workspace or connection settings are invalid.'
+            );
+        }
+
+        if (($realtime['enabled'] ?? false) !== true) {
+            return ['enabled' => false];
+        }
+
+        $appKey = $realtime['app_key'] ?? null;
+        $host = $realtime['host'] ?? null;
+        $port = $realtime['port'] ?? null;
+        $scheme = $realtime['scheme'] ?? null;
+
+        if (! is_string($appKey) || $appKey === ''
+            || ! is_string($host) || $host === ''
+            || ! is_int($port) || $port < 1 || $port > 65535
+            || ! in_array($scheme, ['http', 'https'], true)) {
+            throw new CloudSyncProtocolException(
+                'Cloud realtime protocol error: connection settings are invalid.'
+            );
+        }
+
+        return [
+            'enabled' => true,
+            'workspace_id' => $workspaceId,
+            'app_key' => $appKey,
+            'host' => $host,
+            'port' => $port,
+            'scheme' => $scheme,
+        ];
+    }
+
+    /** @return array{auth: string, channel_data?: string, shared_secret?: string} */
+    public function authorizeRealtime(string $socketId, string $channelName): array
+    {
+        $state = SyncState::current();
+
+        if ($state === null || ! $state->cloud_url || ! $state->cloud_workspace_id) {
+            throw new \RuntimeException('Cloud sync is not configured.');
+        }
+
+        $expectedChannel = "private-workspaces.{$state->cloud_workspace_id}.sync";
+
+        if (! hash_equals($expectedChannel, $channelName)) {
+            throw new \RuntimeException('The realtime channel is not allowed.');
+        }
+
+        $response = $this->http($state)
+            ->asForm()
+            ->post("{$state->cloud_url}/api/broadcasting/auth", [
+                'socket_id' => $socketId,
+                'channel_name' => $channelName,
+            ])
+            ->throw();
+        $authorization = $response->json();
+
+        if (! is_array($authorization)
+            || ! is_string($authorization['auth'] ?? null)
+            || $authorization['auth'] === '') {
+            throw new CloudSyncProtocolException(
+                'Cloud realtime protocol error: authorization response is invalid.'
+            );
+        }
+
+        return $authorization;
+    }
+
+    /**
+     * Apply a complete committed WebSocket batch when it follows this
+     * installation's cloud cursor. Missing, stale, or oversized batches
+     * fall back to the normal durable pull path.
+     *
+     * @param  array<int, array>|null  $ops
+     * @return array{applied: int, needs_pull: bool, ignored: bool}
+     */
+    public function ingestCommittedOps(
+        string $workspaceId,
+        string $originClientId,
+        int $previousSeq,
+        int $latestSeq,
+        ?array $ops,
+    ): array {
+        if ($latestSeq <= $previousSeq) {
+            throw new CloudSyncProtocolException(
+                'Cloud realtime protocol error: sequence bounds are invalid.'
+            );
+        }
+
+        if ($ops !== null && ! $this->realtimeOpsAreValid($ops, $previousSeq, $latestSeq)) {
+            throw new CloudSyncProtocolException(
+                'Cloud realtime protocol error: operation sequence is invalid.'
+            );
+        }
+
+        return DB::transaction(function () use (
+            $workspaceId,
+            $originClientId,
+            $previousSeq,
+            $latestSeq,
+            $ops,
+        ) {
+            $state = SyncState::query()->lockForUpdate()->first();
+
+            if ($state === null || $state->cloud_workspace_id !== $workspaceId) {
+                throw new CloudSyncProtocolException(
+                    'Cloud realtime protocol error: workspace does not match this installation.'
+                );
+            }
+
+            if (hash_equals((string) $state->client_id, $originClientId)) {
+                return ['applied' => 0, 'needs_pull' => false, 'ignored' => true];
+            }
+
+            $cursor = (int) $state->last_server_seq;
+
+            if ($cursor >= $latestSeq) {
+                return ['applied' => 0, 'needs_pull' => false, 'ignored' => true];
+            }
+
+            if ($cursor !== $previousSeq || $ops === null) {
+                return ['applied' => 0, 'needs_pull' => true, 'ignored' => false];
+            }
+
+            $applied = 0;
+
+            foreach ($ops as $op) {
+                $existing = Op::where('op_id', $op['op_id'])->first();
+
+                if ($existing) {
+                    if ($existing->server_seq === null) {
+                        $existing->update(['server_seq' => $op['server_seq']]);
+                    } elseif ((int) $existing->server_seq !== $op['server_seq']) {
+                        throw new CloudSyncProtocolException(
+                            'Cloud realtime protocol error: operation sequence conflicts with the local log.'
+                        );
+                    }
+                } else {
+                    Op::create([
+                        'op_id' => $op['op_id'],
+                        'server_seq' => $op['server_seq'],
+                        'client_id' => $op['client_id'],
+                        'hlc' => $op['hlc'],
+                        'type' => $op['type'],
+                        'payload' => $op['payload'],
+                        'created_at' => now(),
+                    ]);
+
+                    $this->applier->apply($op);
+                    $applied++;
+                }
+            }
+
+            $completedAt = now();
+            $state->last_server_seq = $latestSeq;
+            $state->last_sync_attempt_at = $completedAt;
+            $state->last_sync_success_at = $completedAt;
+            $state->last_sync_error = null;
+            $state->save();
+
+            return ['applied' => $applied, 'needs_pull' => false, 'ignored' => false];
+        });
+    }
+
     private function http(SyncState $state): PendingRequest
     {
         return Http::withToken($state->cloud_token)->acceptJson()
             ->connectTimeout(5)->timeout(30);
+    }
+
+    /** @param  array<int, array>  $ops */
+    private function realtimeOpsAreValid(array $ops, int $previousSeq, int $latestSeq): bool
+    {
+        if ($ops === []) {
+            return false;
+        }
+
+        $lastSeq = $previousSeq;
+
+        foreach ($ops as $op) {
+            $serverSeq = $op['server_seq'] ?? null;
+
+            if (! is_int($serverSeq) || $serverSeq <= $lastSeq || $serverSeq > $latestSeq) {
+                return false;
+            }
+
+            $lastSeq = $serverSeq;
+        }
+
+        return $lastSeq === $latestSeq;
     }
 
     /** @return array{count: int, error: ?Throwable} */
@@ -363,10 +577,16 @@ class CloudSyncService
                 }
 
                 if ($ops === []) {
-                    if ($latest > (int) $state->last_server_seq) {
-                        $state->last_server_seq = $latest;
-                        $state->save();
-                    }
+                    DB::transaction(function () use ($state, $latest) {
+                        $lockedState = SyncState::query()->lockForUpdate()->findOrFail($state->id);
+
+                        if ($latest > (int) $lockedState->last_server_seq) {
+                            $lockedState->last_server_seq = $latest;
+                            $lockedState->save();
+                        }
+                    });
+
+                    $state->refresh();
 
                     return ['count' => $total, 'error' => null];
                 }
@@ -374,6 +594,8 @@ class CloudSyncService
                 $pulled = 0;
 
                 DB::transaction(function () use ($ops, $state, &$pulled) {
+                    $lockedState = SyncState::query()->lockForUpdate()->findOrFail($state->id);
+
                     foreach ($ops as $op) {
                         $existing = Op::where('op_id', $op['op_id'])->first();
 
@@ -397,12 +619,16 @@ class CloudSyncService
                             $pulled++;
                         }
 
-                        $state->last_server_seq = $op['server_seq'];
+                        $lockedState->last_server_seq = max(
+                            (int) $lockedState->last_server_seq,
+                            $op['server_seq'],
+                        );
                     }
 
-                    $state->save();
+                    $lockedState->save();
                 });
 
+                $state->refresh();
                 $total += $pulled;
             }
         } catch (Throwable $exception) {
@@ -597,6 +823,7 @@ class CloudSyncService
                         'is_checked' => $n['is_checked'],
                         'field_clocks' => isset($n['field_clocks']) ? json_encode($n['field_clocks']) : null,
                         'purged' => $n['purged'] ?? false,
+                        'modified_hlc' => $this->snapshotModifiedHlc($n),
                         'deleted_at' => $n['deleted_at'],
                         'created_at' => now(),
                         'updated_at' => now(),
@@ -620,5 +847,20 @@ class CloudSyncService
             $state->last_server_seq = (int) ($snapshot['latest_seq'] ?? 0);
             $state->save();
         });
+    }
+
+    /** @param  array<string, mixed>  $node */
+    private function snapshotModifiedHlc(array $node): string
+    {
+        if (is_string($node['modified_hlc'] ?? null)) {
+            return $node['modified_hlc'];
+        }
+
+        $clocks = $node['field_clocks'] ?? [];
+        $hlcs = is_array($clocks)
+            ? array_values(array_filter($clocks, is_string(...)))
+            : [];
+
+        return $hlcs === [] ? HlcGenerator::EPOCH : max($hlcs);
     }
 }

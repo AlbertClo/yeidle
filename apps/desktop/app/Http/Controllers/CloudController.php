@@ -60,4 +60,66 @@ class CloudController extends Controller
     {
         return response()->json($this->cloud->exchange());
     }
+
+    public function realtimeConfig(): JsonResponse
+    {
+        try {
+            return response()->json($this->cloud->realtimeConfig());
+        } catch (\RuntimeException) {
+            return response()->json([
+                'message' => 'Realtime sync configuration is unavailable.',
+            ], 503);
+        }
+    }
+
+    public function authorizeRealtime(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'socket_id' => ['required', 'string', 'regex:/^\d+\.\d+$/'],
+            'channel_name' => ['required', 'string'],
+        ]);
+
+        try {
+            return response()->json($this->cloud->authorizeRealtime(
+                $validated['socket_id'],
+                $validated['channel_name'],
+            ));
+        } catch (\RuntimeException) {
+            return response()->json(['message' => 'Realtime authorization failed.'], 403);
+        }
+    }
+
+    public function ingestRealtimeOps(Request $request): JsonResponse
+    {
+        $request->validate([
+            'workspace_id' => ['required', 'string'],
+            'origin_client_id' => ['required', 'string'],
+            'previous_seq' => ['required', 'integer', 'min:0'],
+            'latest_seq' => ['required', 'integer', 'min:1'],
+            'ops' => ['nullable', 'array', 'max:200'],
+            'ops.*.server_seq' => ['required', 'integer', 'min:1'],
+            'ops.*.op_id' => ['required', 'string', 'uuid'],
+            'ops.*.client_id' => ['required', 'string'],
+            'ops.*.hlc' => ['required', 'string', 'regex:/^\d{15}-[0-9a-f]{4}-.+$/'],
+            'ops.*.type' => ['required', 'string', 'in:node.set,node.delete,node.purge,media.create'],
+            'ops.*.payload' => ['required', 'array'],
+            'ops.*.payload.id' => ['required', 'string', 'uuid'],
+            'ops.*.payload.fields' => ['array'],
+        ]);
+
+        try {
+            return response()->json($this->cloud->ingestCommittedOps(
+                $request->string('workspace_id')->toString(),
+                $request->string('origin_client_id')->toString(),
+                (int) $request->input('previous_seq'),
+                (int) $request->input('latest_seq'),
+                $request->input('ops'),
+            ));
+        } catch (\RuntimeException) {
+            return response()->json([
+                'message' => 'Realtime operations could not be applied.',
+                'needs_pull' => true,
+            ], 422);
+        }
+    }
 }

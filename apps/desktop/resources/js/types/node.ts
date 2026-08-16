@@ -5,6 +5,7 @@ export type Node = {
     content: string;
     tiptap_content: Record<string, unknown> | null;
     is_checked: boolean | null;
+    modified_hlc: string;
     created_at: string;
     updated_at: string;
     children?: Node[];

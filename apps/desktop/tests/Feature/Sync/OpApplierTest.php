@@ -46,6 +46,7 @@ class OpApplierTest extends TestCase
         $node = Node::find($id);
         $this->assertSame('world', $node->content);
         $this->assertSame('a1', $node->position);
+        $this->assertSame(HlcGenerator::encode(200, 0, 'c1'), $node->modified_hlc);
     }
 
     public function test_older_write_loses_per_field(): void
@@ -60,6 +61,7 @@ class OpApplierTest extends TestCase
         // the older op's position write still lands
         $this->assertSame('newer', $node->content);
         $this->assertSame('a5', $node->position);
+        $this->assertSame(HlcGenerator::encode(200, 0, 'c1'), $node->modified_hlc);
     }
 
     public function test_concurrent_move_and_edit_both_survive(): void
@@ -124,6 +126,7 @@ class OpApplierTest extends TestCase
         $this->assertSame('', $node->content);
         $this->assertNull($node->tiptap_content);
         $this->assertTrue($node->trashed());
+        $this->assertSame(HlcGenerator::encode(200, 0, 'c1'), $node->modified_hlc);
     }
 
     public function test_set_arriving_before_create_converges(): void
