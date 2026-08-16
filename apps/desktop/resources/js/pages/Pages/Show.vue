@@ -25,6 +25,7 @@ import {
     invalidateCachedPage,
     setCachedPage,
 } from '@/stores/pageCache';
+import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import {
     getClientId,
     mintNodeDelete,
@@ -62,12 +63,12 @@ const breadcrumbs = computed<BreadcrumbItem[]>(() => [
 const titleRef = ref<HTMLInputElement>();
 const pageEditorRef = ref<InstanceType<typeof PageEditor>>();
 
-let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let hasPendingSync = false;
 let pendingNodes: Node[] = [];
 let syncing = false;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelay = 1000;
+const syncScheduler = createMaxWaitScheduler(() => void runSync(), 300, 1000);
 
 function startEditingTitle(cursorPos?: number) {
     isEditingTitle.value = true;
@@ -84,7 +85,8 @@ function startEditingTitle(cursorPos?: number) {
 
 function finishEditingTitle() {
     isEditingTitle.value = false;
-    saveTitle();
+    titleSyncScheduler.cancel();
+    void saveTitle();
 }
 
 function handleTitleKeydown(e: KeyboardEvent) {
@@ -99,9 +101,13 @@ function handleTitleKeydown(e: KeyboardEvent) {
 
 // --- Sync layer ---
 
-let titleSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedTitle = props.page.content;
 const titleError = ref(false);
+const titleSyncScheduler = createMaxWaitScheduler(
+    () => void saveTitle(),
+    300,
+    1000,
+);
 
 // Advisory only (sync design: duplicate titles are a soft constraint —
 // the log always merges, so the client warns instead of the server
@@ -150,14 +156,7 @@ async function saveTitle() {
 }
 
 function syncTitleDebounced() {
-    if (titleSyncTimer) {
-        clearTimeout(titleSyncTimer);
-    }
-
-    titleSyncTimer = setTimeout(() => {
-        titleSyncTimer = null;
-        saveTitle();
-    }, 300);
+    titleSyncScheduler.schedule();
 }
 
 interface NodeSnapshot {
@@ -381,30 +380,13 @@ function refreshBacklinks() {
 function syncDebounced(nodes: Node[]) {
     pendingNodes = nodes;
     hasPendingSync = true;
-
-    if (syncTimer) {
-        clearTimeout(syncTimer);
-    }
-
-    syncTimer = setTimeout(() => {
-        syncTimer = null;
-        runSync();
-    }, 300);
+    syncScheduler.schedule();
 }
 
 function flushSync() {
-    if (titleSyncTimer) {
-        clearTimeout(titleSyncTimer);
-        titleSyncTimer = null;
-        saveTitle();
-    }
-
-    if (syncTimer) {
-        clearTimeout(syncTimer);
-        syncTimer = null;
-    }
-
-    runSync();
+    titleSyncScheduler.flush();
+    syncScheduler.cancel();
+    void runSync();
 }
 
 function handleNodesUpdate(nodes: Node[]) {
@@ -440,13 +422,7 @@ async function pollRemoteOps() {
     // Only merge remote state while the local pipeline is empty — the pull
     // rebuilds lastNodeMap wholesale, which is only valid when nothing
     // local is pending or in flight
-    if (
-        pulling ||
-        syncing ||
-        hasPendingSync ||
-        syncTimer !== null ||
-        outbox.length > 0
-    ) {
+    if (pulling || syncing || hasPendingSync || outbox.length > 0) {
         return;
     }
 
@@ -594,6 +570,12 @@ function handleBeforeUnload() {
     flushSync();
 }
 
+function handleVisibilityChange() {
+    if (document.visibilityState === 'hidden') {
+        flushSync();
+    }
+}
+
 const showDeleteConfirm = ref(false);
 
 async function deletePage() {
@@ -633,6 +615,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('keydown', handleGlobalKeydown);
     refreshBacklinks();
     pullTimer = setInterval(pollRemoteOps, 1500);
@@ -644,6 +627,7 @@ onBeforeUnmount(() => {
         LOCAL_OPS_AVAILABLE_EVENT,
         handleLocalOpsAvailable,
     );
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     document.removeEventListener('keydown', handleGlobalKeydown);
 
     if (pullTimer) {
