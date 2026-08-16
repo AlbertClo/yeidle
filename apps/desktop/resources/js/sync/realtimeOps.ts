@@ -1,6 +1,7 @@
 import { requestCloudExchange } from './cloud';
+import { notifyLocalOpsAvailable } from './localOps';
 
-export const LOCAL_OPS_AVAILABLE_EVENT = 'yeidle:local-ops-available';
+export { LOCAL_OPS_AVAILABLE_EVENT } from './localOps';
 
 export interface CommittedOpsEvent {
     workspace_id: string;
@@ -16,14 +17,8 @@ interface IngestResult {
     ignored: boolean;
 }
 
-function notifyLocalOpsAvailable(): void {
-    window.dispatchEvent(new Event(LOCAL_OPS_AVAILABLE_EVENT));
-}
-
 async function recoverWithPull(): Promise<void> {
-    if (await requestCloudExchange()) {
-        notifyLocalOpsAvailable();
-    }
+    await requestCloudExchange();
 }
 
 /**
@@ -55,7 +50,7 @@ export async function handleCommittedOps(
         if (result.needs_pull) {
             await recoverWithPull();
         } else if (!result.ignored && result.applied > 0) {
-            notifyLocalOpsAvailable();
+            notifyLocalOpsAvailable(event.ops);
         }
     } catch {
         await recoverWithPull();

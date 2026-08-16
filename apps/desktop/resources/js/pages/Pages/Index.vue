@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { FileText } from 'lucide-vue-next';
+import { onBeforeUnmount, onMounted } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { LOCAL_OPS_AVAILABLE_EVENT, opsAffectPageIndex } from '@/sync/localOps';
+import type { LocalOpsAvailableEvent } from '@/sync/localOps';
+import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import type { BreadcrumbItem } from '@/types';
 import type { Node } from '@/types/node';
 
@@ -10,6 +14,33 @@ defineProps<{
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pages', href: '/pages' }];
+const reloadScheduler = createMaxWaitScheduler(
+    () => {
+        router.reload({ only: ['pages'] });
+    },
+    100,
+    500,
+);
+
+function handleLocalOpsAvailable(event: Event): void {
+    const detail = (event as LocalOpsAvailableEvent).detail;
+
+    if (opsAffectPageIndex(detail?.ops ?? null)) {
+        reloadScheduler.schedule();
+    }
+}
+
+onMounted(() => {
+    window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener(
+        LOCAL_OPS_AVAILABLE_EVENT,
+        handleLocalOpsAvailable,
+    );
+    reloadScheduler.cancel();
+});
 
 function modifiedDate(page: Node): string {
     const millis = Number.parseInt(page.modified_hlc.slice(0, 15), 10);

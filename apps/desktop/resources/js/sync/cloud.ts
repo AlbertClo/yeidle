@@ -1,3 +1,5 @@
+import { notifyLocalOpsAvailable } from './localOps';
+
 let exchangeRequested = false;
 let exchangeRun: Promise<boolean> | null = null;
 
@@ -8,7 +10,23 @@ async function exchangeOnce(): Promise<boolean> {
             headers: { Accept: 'application/json' },
         });
 
-        return response.ok;
+        if (!response.ok) {
+            return false;
+        }
+
+        try {
+            const result = (await response.json()) as { pulled?: unknown };
+
+            if (typeof result.pulled === 'number' && result.pulled > 0) {
+                notifyLocalOpsAvailable(null);
+            }
+        } catch {
+            // The HTTP acknowledgement is sufficient for callers that do not
+            // need renderer wake-ups (and keeps simplified test responses
+            // compatible with this transport helper).
+        }
+
+        return true;
     } catch {
         return false;
     }

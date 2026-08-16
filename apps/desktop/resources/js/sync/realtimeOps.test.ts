@@ -46,6 +46,9 @@ describe('handleCommittedOps', () => {
         await handleCommittedOps(event);
 
         expect(listener).toHaveBeenCalledOnce();
+        expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({
+            ops: event.ops,
+        });
         expect(requestCloudExchangeMock).not.toHaveBeenCalled();
     });
 
@@ -70,6 +73,6 @@ describe('handleCommittedOps', () => {
         await handleCommittedOps(event);
 
         expect(requestCloudExchangeMock).toHaveBeenCalledOnce();
-        expect(listener).toHaveBeenCalledOnce();
+        expect(listener).not.toHaveBeenCalled();
     });
 });
