@@ -48,7 +48,7 @@ async function drainExchangeRequests(): Promise<boolean> {
  * Ask the local server to exchange its outbox with the cloud. Concurrent
  * callers share one runner; requests arriving during an exchange are folded
  * into one follow-up round so ops written mid-flight are not left waiting for
- * the heartbeat.
+ * another local write or realtime reconnect.
  */
 export function requestCloudExchange(): Promise<boolean> {
     exchangeRequested = true;

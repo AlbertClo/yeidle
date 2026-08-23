@@ -4,7 +4,6 @@ import type { DefineComponent } from 'vue';
 import { createApp, h } from 'vue';
 import '../css/app.css';
 import { initializeTheme } from '@/composables/useAppearance';
-import { requestCloudExchange } from '@/sync/cloud';
 import { initializeRealtimeSync } from '@/sync/realtime';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -29,13 +28,6 @@ createInertiaApp({
 // This will set light / dark mode on page load...
 initializeTheme();
 initializeRealtimeSync();
-
-// Cloud sync heartbeat: the local server exchanges ops with the cloud
-// (no-op when unpaired). Pulled ops land in the local log, which the
-// per-page pull loop already merges into open editors.
-setInterval(() => {
-    void requestCloudExchange();
-}, 5000);
 
 document.addEventListener('keydown', (e) => {
     // Prevent Ctrl+Q from closing the app (Electron default)

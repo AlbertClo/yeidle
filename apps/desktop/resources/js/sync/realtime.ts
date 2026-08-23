@@ -202,9 +202,6 @@ async function configureRealtimeSync(): Promise<void> {
         connection.bind('state_change', ({ current }: { current: string }) => {
             updateConnectionState(current);
         });
-        connection.bind('connected', () => {
-            void recoverRealtimeSync();
-        });
         connection.bind('error', (error: unknown) => {
             setRealtimeHealth('error', connectionErrorMessage(error));
         });
@@ -215,6 +212,7 @@ async function configureRealtimeSync(): Promise<void> {
             })
             .subscribed(() => {
                 setRealtimeHealth('connected');
+                void recoverRealtimeSync();
             })
             .error((error: Record<string, unknown>) => {
                 const status = error.status;

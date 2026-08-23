@@ -262,9 +262,9 @@ GET /api/sync/pull?since={last_server_seq}
 - Returns ops with `server_seq > since`, in order. Client applies each via
   the LWW rules, skips ops whose `client_id` is its own (echo) or whose
   `op_id` it already has, then advances `last_server_seq`.
-- Polling first (Phase 1); Laravel Reverb WebSocket push later (Phase 2) —
-  the WebSocket only carries "new ops exist / here are the ops"; the pull
-  endpoint remains the source of truth and the catch-up path after offline.
+- Laravel Reverb carries committed ops to connected clients. The pull
+  endpoint remains the durable catch-up path after bootstrap, reconnect, or
+  a detected sequence gap; there is no timer-based cloud polling fallback.
 
 ### Snapshot bootstrap
 
@@ -485,10 +485,11 @@ Each phase ships something usable on its own.
   simulated remote ops with no lost edits outside the same-block flush
   window.
 
-**Phase 1 — cloud relay (polling)**
+**Phase 1 — cloud relay (HTTP)**
 - `apps/web` Laravel app: workspaces, push/pull endpoints, projections,
   snapshot bootstrap, token auth.
-- Desktop: outbox push, cursor pull (poll ~5s), offline queueing.
+- Desktop: event-driven outbox push, cursor pull for durable catch-up, offline
+  queueing.
 - Media blob upload/download by hash; local cache-miss path.
 - Exit criterion: two machines converge; fresh install bootstraps from
   snapshot; a week offline merges sanely (HLC wins over arrival order).

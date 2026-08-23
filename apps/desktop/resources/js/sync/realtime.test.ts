@@ -118,15 +118,16 @@ describe('realtime health', () => {
         expect(echo.privateChannel).toBe('workspaces.workspace-1.sync');
 
         echo.connection.emit('connected');
-        expect(mocks.recoverRealtimeSync).toHaveBeenCalledOnce();
+        expect(mocks.recoverRealtimeSync).not.toHaveBeenCalled();
         expect(realtimeHealth.state).toBe('connecting');
 
         echo.channel.subscribedCallback?.();
         expect(realtimeHealth.state).toBe('connected');
         expect(realtimeHealth.error).toBeNull();
+        expect(mocks.recoverRealtimeSync).toHaveBeenCalledOnce();
     });
 
-    it('reports polling fallback when the connection is unavailable', async () => {
+    it('reports when realtime delivery is unavailable', async () => {
         vi.stubGlobal(
             'fetch',
             vi.fn().mockResolvedValue({

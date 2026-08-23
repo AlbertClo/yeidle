@@ -144,7 +144,8 @@ class CloudSyncService
     /**
      * One sync round. Push and pull are independent so a stuck outbox never
      * prevents this device from receiving remote changes. Failures are
-     * recorded for the status endpoint and retried by the next heartbeat.
+     * recorded for the status endpoint and retried by the next local write,
+     * realtime reconnect, or sequence-gap recovery.
      *
      * @return array{configured: bool, pushed: int, pulled: int, ok: bool, error: ?string}
      */

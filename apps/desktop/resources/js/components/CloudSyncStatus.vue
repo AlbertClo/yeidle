@@ -5,14 +5,12 @@ import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { requestCloudExchange } from '@/sync/cloud';
 import { realtimeHealth, refreshRealtimeSync } from '@/sync/realtime';
 
 type SyncHealth =
@@ -36,7 +34,6 @@ interface CloudStatus {
 
 const status = ref<CloudStatus | null>(null);
 const statusUnavailable = ref(false);
-const syncing = ref(false);
 const connecting = ref(false);
 const connectError = ref<string | null>(null);
 const cloudUrl = ref('http://localhost:8200');
@@ -59,7 +56,7 @@ const realtimeAppearance = computed(() => {
             return {
                 label: 'Connecting…',
                 topLabel: 'Connecting',
-                detail: 'Realtime is connecting; five-second polling remains active.',
+                detail: 'Remote changes will resume when realtime connects.',
                 color: 'text-amber-600 dark:text-amber-400',
                 icon: RefreshCw,
                 spinning: true,
@@ -67,30 +64,30 @@ const realtimeAppearance = computed(() => {
         case 'error':
         case 'failed':
             return {
-                label: 'Error · polling',
-                topLabel: 'Polling',
-                detail: 'Realtime delivery failed; changes still sync through polling.',
-                color: 'text-amber-600 dark:text-amber-400',
+                label: 'Error',
+                topLabel: 'Sync error',
+                detail: 'Remote changes cannot sync until realtime reconnects.',
+                color: 'text-destructive',
                 icon: CircleAlert,
                 spinning: false,
             };
         case 'unavailable':
         case 'disconnected':
             return {
-                label: 'Polling fallback',
-                topLabel: 'Polling',
-                detail: 'Realtime is unavailable; changes still sync every five seconds.',
+                label: 'Offline',
+                topLabel: 'Realtime offline',
+                detail: 'Remote changes will sync after realtime reconnects.',
                 color: 'text-amber-600 dark:text-amber-400',
-                icon: Cloud,
+                icon: CloudOff,
                 spinning: false,
             };
         default:
             return {
-                label: 'Polling only',
-                topLabel: 'Polling',
-                detail: 'Realtime is not configured; changes sync every five seconds.',
+                label: 'Disabled',
+                topLabel: 'Realtime disabled',
+                detail: 'Realtime delivery is not configured.',
                 color: 'text-muted-foreground',
-                icon: Cloud,
+                icon: CloudOff,
                 spinning: false,
             };
     }
@@ -220,30 +217,6 @@ function loadStatus(): Promise<void> {
     return statusRequest;
 }
 
-async function syncNow(): Promise<void> {
-    if (syncing.value || !status.value?.configured) {
-        return;
-    }
-
-    syncing.value = true;
-
-    try {
-        if (!(await requestCloudExchange())) {
-            throw new Error('Sync request failed.');
-        }
-    } catch {
-        statusUnavailable.value = true;
-    } finally {
-        syncing.value = false;
-
-        if (statusRequest !== null) {
-            await statusRequest;
-        }
-
-        await loadStatus();
-    }
-}
-
 async function connectCloud(): Promise<void> {
     if (connecting.value || !cloudUrl.value.trim() || !cloudToken.value) {
         return;
@@ -327,7 +300,6 @@ onBeforeUnmount(() => {
                         appearance.color,
                         {
                             'animate-spin':
-                                syncing ||
                                 connecting ||
                                 status === null ||
                                 status?.health === 'seeding' ||
@@ -471,14 +443,6 @@ onBeforeUnmount(() => {
                     {{ realtimeHealth.error }}
                 </div>
             </div>
-
-            <template v-if="status?.configured">
-                <DropdownMenuSeparator />
-                <DropdownMenuItem :disabled="syncing" @click="syncNow">
-                    <RefreshCw :class="{ 'animate-spin': syncing }" />
-                    {{ syncing ? 'Syncing…' : 'Sync now' }}
-                </DropdownMenuItem>
-            </template>
         </DropdownMenuContent>
     </DropdownMenu>
 </template>

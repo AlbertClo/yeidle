@@ -68,7 +68,7 @@ describe('requestCloudExchange', () => {
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
-    it('contains transport failures for the heartbeat to retry later', async () => {
+    it('contains transport failures for a later event-driven retry', async () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
         const { requestCloudExchange } = await import('./cloud');
 

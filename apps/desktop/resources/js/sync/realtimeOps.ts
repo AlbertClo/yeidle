@@ -17,10 +17,6 @@ interface IngestResult {
     ignored: boolean;
 }
 
-async function recoverWithPull(): Promise<void> {
-    await requestCloudExchange();
-}
-
 /**
  * Hand a committed Reverb batch to the local PHP process. PHP owns cursor
  * checks, SQLite writes, and projection application; the renderer only wakes
@@ -40,7 +36,7 @@ export async function handleCommittedOps(
         });
 
         if (!response.ok) {
-            await recoverWithPull();
+            await recoverRealtimeSync();
 
             return;
         }
@@ -48,15 +44,15 @@ export async function handleCommittedOps(
         const result = (await response.json()) as IngestResult;
 
         if (result.needs_pull) {
-            await recoverWithPull();
+            await recoverRealtimeSync();
         } else if (!result.ignored && result.applied > 0) {
             notifyLocalOpsAvailable(event.ops);
         }
     } catch {
-        await recoverWithPull();
+        await recoverRealtimeSync();
     }
 }
 
 export async function recoverRealtimeSync(): Promise<void> {
-    await recoverWithPull();
+    await requestCloudExchange();
 }
