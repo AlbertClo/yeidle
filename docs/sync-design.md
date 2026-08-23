@@ -340,7 +340,7 @@ client. For sync it provides:
   within a workspace, no cross-tenant existence leaks). Production target:
   **Cloudflare R2** — S3-API-compatible with zero egress fees, and blob
   sync traffic is mostly egress (every device downloads every blob once).
-  Local dev: MinIO in Sail (same API; LocalStack rejected as
+  Local dev: RustFS in Sail (same API; LocalStack rejected as
   AWS-emulation dead weight when the target isn't AWS). Upload/download via
   **presigned URLs** so blob bytes never proxy through Laravel. No CDN
   until a web client renders media inline — desktop clients fetch each
@@ -362,13 +362,16 @@ favors Postgres if anything.
 Blobs are immutable and content-addressed, so this layer is conflict-free:
 
 - **Upload**: after a local upload completes, the client asks
-  `HEAD /api/blobs/{hash}`; on 404 it uploads (chunked, same pattern as the
-  local upload). The `media.create` op flows through the normal log —
-  metadata syncs like any other data; the blob body travels out-of-band.
+  `HEAD /api/blobs/{hash}`. On 404 it requests a short-lived presigned PUT
+  URL and uploads directly to object storage. A durable local timestamp
+  retries unfinished transfers, and the normal outbox is not published
+  until blob upload succeeds. The `media.create` op still carries only
+  metadata; the blob body travels out-of-band.
 - **Download / cache-miss**: `MediaController::show`/`open` check the local
-  `media/{hash}` file; on miss, fetch `GET /api/blobs/{hash}` from the
-  cloud, write it locally (verify the hash on write), then serve. The local
-  media directory is now exactly the cache the roadmap wants.
+  `media/{hash}` file. On miss, the client obtains a presigned GET URL,
+  downloads to a temporary file, verifies its SHA-256 hash, and atomically
+  moves it into the cache before serving. The local media directory is now
+  exactly the cache the roadmap wants.
 - **GC**: local blobs unreferenced by any `media` row can be evicted;
   cloud-side GC needs tombstone-aware reference counting — deferred.
 

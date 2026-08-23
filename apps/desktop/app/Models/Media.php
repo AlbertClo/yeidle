@@ -14,7 +14,15 @@ class Media extends Model
         'original_name',
         'mime_type',
         'size',
+        'cloud_uploaded_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'cloud_uploaded_at' => 'datetime',
+        ];
+    }
 
     public function isImage(): bool
     {

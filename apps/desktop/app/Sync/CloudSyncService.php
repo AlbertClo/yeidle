@@ -29,6 +29,7 @@ class CloudSyncService
 
     public function __construct(
         private OpApplier $applier,
+        private CloudBlobService $blobs,
     ) {}
 
     /**
@@ -181,9 +182,26 @@ class CloudSyncService
             }
         }
 
-        $push = $this->pushOutbox($state);
+        $blobError = null;
+
+        try {
+            // Blob bodies must exist before their metadata ops become visible
+            // to another client. A failed upload remains durable local work.
+            $this->blobs->uploadPending($state);
+        } catch (Throwable $exception) {
+            $blobError = $exception;
+        }
+
+        $push = $blobError === null
+            ? $this->pushOutbox($state)
+            : ['count' => 0, 'error' => null];
         $pull = $this->pullFromCloud($state);
         $errors = [];
+
+        if ($blobError !== null) {
+            report($blobError);
+            $errors[] = $this->presentError($blobError, 'blob upload');
+        }
 
         if ($push['error'] !== null) {
             report($push['error']);
@@ -670,6 +688,7 @@ class CloudSyncService
 
     private function completePendingSeed(SyncState $state): void
     {
+        $this->blobs->uploadPending($state);
         $this->seedCloud($state);
 
         $state->cloud_seed_pending = false;

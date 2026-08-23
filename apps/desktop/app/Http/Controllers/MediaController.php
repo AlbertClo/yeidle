@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Media;
 use App\Support\Shell;
+use App\Sync\CloudBlobService;
 use App\Sync\HlcGenerator;
 use App\Sync\SyncService;
 use Illuminate\Http\JsonResponse;
@@ -11,11 +12,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class MediaController extends Controller
 {
     public function __construct(
         private SyncService $sync,
+        private CloudBlobService $blobs,
     ) {}
 
     public function initUpload(Request $request): JsonResponse
@@ -143,7 +146,7 @@ class MediaController extends Controller
 
     public function show(Media $media): StreamedResponse
     {
-        $path = Storage::disk('local')->path("media/{$media->filename}");
+        $path = $this->localBlob($media);
 
         return response()->stream(function () use ($path) {
             readfile($path);
@@ -157,7 +160,7 @@ class MediaController extends Controller
     public function open(Media $media): JsonResponse
     {
         $disk = Storage::disk('local');
-        $blob = $disk->path("media/{$media->filename}");
+        $blob = $this->localBlob($media);
 
         // Blobs are extension-less content hashes; hardlink to the original
         // filename so the OS can pick the right application
@@ -179,5 +182,15 @@ class MediaController extends Controller
         Shell::open($dir);
 
         return response()->json(null, 200);
+    }
+
+    private function localBlob(Media $media): string
+    {
+        try {
+            return $this->blobs->localPath($media);
+        } catch (Throwable $exception) {
+            report($exception);
+            abort(503, 'Media is not currently available on this device.');
+        }
     }
 }

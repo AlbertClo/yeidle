@@ -221,6 +221,15 @@ class OpApplier
             }
         }
 
+        if (! is_string($payload['hash'])
+            || preg_match('/^[0-9a-f]{64}$/D', $payload['hash']) !== 1
+            || ! is_string($payload['original_name'])
+            || ! is_string($payload['mime_type'])
+            || filter_var($payload['size'], FILTER_VALIDATE_INT) === false
+            || (int) $payload['size'] < 1) {
+            return;
+        }
+
         if (Media::whereKey($payload['id'])->exists()) {
             return;
         }

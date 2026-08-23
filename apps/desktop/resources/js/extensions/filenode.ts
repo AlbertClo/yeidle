@@ -1,6 +1,8 @@
 import { mergeAttributes, Node } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 
+import { requestCloudExchange } from '../sync/cloud';
+
 export const FileNode = Node.create({
     name: 'fileNode',
     group: 'block',
@@ -190,7 +192,13 @@ export async function uploadFile(file: File): Promise<{
             body: JSON.stringify({ upload_id }),
         });
         if (!completeRes.ok) return null;
-        return await completeRes.json();
+        const media = await completeRes.json();
+
+        // media.create is minted inside the local PHP endpoint rather than
+        // through pushOps(), so explicitly wake durable blob/op delivery.
+        void requestCloudExchange();
+
+        return media;
     } catch {
         return null;
     }

@@ -331,3 +331,20 @@ test('media create ops flow through the relay', function () {
     expect($bootstrap->json('media'))->toHaveCount(1);
     expect($bootstrap->json('media.0.filename'))->toBe(str_repeat('ab', 32));
 });
+
+test('media create ops with non canonical hashes are dropped', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [
+        makeOp('media.create', [
+            'v' => 1,
+            'id' => fake()->uuid(),
+            'hash' => '../../not-a-blob',
+            'original_name' => 'unsafe.bin',
+            'mime_type' => 'application/octet-stream',
+            'size' => 10,
+        ], 100),
+    ]])->assertOk();
+
+    expect($this->getJson('/api/sync/bootstrap')->json('media'))->toBeEmpty();
+});

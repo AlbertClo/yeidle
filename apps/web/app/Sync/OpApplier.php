@@ -164,6 +164,15 @@ class OpApplier
             }
         }
 
+        if (! is_string($payload['hash'])
+            || preg_match('/^[0-9a-f]{64}$/D', $payload['hash']) !== 1
+            || ! is_string($payload['original_name'])
+            || ! is_string($payload['mime_type'])
+            || filter_var($payload['size'], FILTER_VALIDATE_INT) === false
+            || (int) $payload['size'] < 1) {
+            return;
+        }
+
         // An id claimed by any workspace (this one: idempotent replay;
         // another: cross-tenant reference) means drop. Checked up front —
         // catching a constraint violation would poison the enclosing

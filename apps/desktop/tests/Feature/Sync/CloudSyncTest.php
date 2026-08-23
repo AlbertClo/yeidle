@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Sync;
 
+use App\Models\Media;
 use App\Models\Node;
 use App\Models\Op;
 use App\Models\SyncState;
 use App\Sync\HlcGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class CloudSyncTest extends TestCase
@@ -97,6 +99,82 @@ class CloudSyncTest extends TestCase
         $this->assertSame(1, $response->json('pushed'));
         $this->assertSame(41, Op::where('op_id', $opId)->sole()->server_seq);
         $this->assertSame(41, (int) SyncState::current()->last_server_seq);
+    }
+
+    public function test_exchange_uploads_pending_blobs_before_publishing_ops(): void
+    {
+        Storage::fake('local');
+        $this->pairedState();
+        $opId = $this->queueLocalNodeOp();
+        $contents = 'blob before metadata';
+        $hash = hash('sha256', $contents);
+        Media::create([
+            'filename' => $hash,
+            'original_name' => 'attachment.txt',
+            'mime_type' => 'text/plain',
+            'size' => strlen($contents),
+        ]);
+        Storage::disk('local')->put("media/{$hash}", $contents);
+
+        Http::fake(function ($request) use ($hash, $opId) {
+            return match (true) {
+                $request->method() === 'HEAD'
+                    && $request->url() === self::CLOUD."/api/blobs/{$hash}" => Http::response(status: 404),
+                $request->url() === self::CLOUD."/api/blobs/{$hash}/upload-url" => Http::response([
+                    'exists' => false,
+                    'url' => 'https://objects.test/upload',
+                    'headers' => ['Content-Type' => 'text/plain'],
+                ]),
+                $request->url() === 'https://objects.test/upload' => Http::response(status: 200),
+                $request->url() === self::CLOUD.'/api/sync/push' => Http::response([
+                    'accepted' => [['op_id' => $opId, 'server_seq' => 1]],
+                ]),
+                str_starts_with($request->url(), self::CLOUD.'/api/sync/pull') => Http::response(['ops' => [], 'latest_seq' => 1]),
+                default => Http::response(status: 500),
+            };
+        });
+
+        $this->postJson('/api/sync/cloud-exchange')
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('pushed', 1);
+
+        $urls = Http::recorded()->map(fn (array $entry) => $entry[0]->url())->values();
+        $this->assertLessThan(
+            $urls->search(self::CLOUD.'/api/sync/push'),
+            $urls->search('https://objects.test/upload'),
+        );
+    }
+
+    public function test_failed_blob_upload_remains_pending_and_does_not_publish_ops(): void
+    {
+        Storage::fake('local');
+        $this->pairedState();
+        $opId = $this->queueLocalNodeOp();
+        $contents = 'retry me';
+        $hash = hash('sha256', $contents);
+        $media = Media::create([
+            'filename' => $hash,
+            'original_name' => 'retry.txt',
+            'mime_type' => 'text/plain',
+            'size' => strlen($contents),
+        ]);
+        Storage::disk('local')->put("media/{$hash}", $contents);
+
+        Http::fake([
+            self::CLOUD."/api/blobs/{$hash}" => Http::response(status: 500),
+            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 0]),
+        ]);
+
+        $response = $this->postJson('/api/sync/cloud-exchange')
+            ->assertOk()
+            ->assertJsonPath('ok', false)
+            ->assertJsonPath('pushed', 0);
+
+        $this->assertStringContainsString('Cloud blob upload failed (HTTP 500).', $response->json('error'));
+        $this->assertNull($media->fresh()->cloud_uploaded_at);
+        $this->assertNull(Op::where('op_id', $opId)->sole()->server_seq);
+        Http::assertNotSent(fn ($request) => $request->url() === self::CLOUD.'/api/sync/push');
     }
 
     public function test_exchange_applies_pulled_remote_ops_and_advances_cursor(): void

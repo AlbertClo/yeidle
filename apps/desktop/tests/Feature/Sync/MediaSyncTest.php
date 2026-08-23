@@ -4,10 +4,13 @@ namespace Tests\Feature\Sync;
 
 use App\Models\Media;
 use App\Models\Op;
+use App\Models\SyncState;
+use App\Sync\CloudBlobService;
 use App\Sync\HlcGenerator;
 use App\Sync\OpApplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -70,6 +73,20 @@ class MediaSyncTest extends TestCase
         $this->assertSame(0, Media::count());
     }
 
+    public function test_media_op_with_a_non_canonical_hash_is_dropped(): void
+    {
+        (new OpApplier)->apply($this->mediaOp([
+            'v' => 1,
+            'id' => fake()->uuid(),
+            'hash' => '../../not-a-blob',
+            'original_name' => 'unsafe.bin',
+            'mime_type' => 'application/octet-stream',
+            'size' => 10,
+        ]));
+
+        $this->assertSame(0, Media::count());
+    }
+
     public function test_media_create_is_accepted_by_the_push_endpoint(): void
     {
         $op = $this->mediaOp([
@@ -119,5 +136,125 @@ class MediaSyncTest extends TestCase
         $this->assertStringStartsWith('srv-', $op->client_id);
 
         Storage::disk('local')->assertExists("media/{$expectedHash}");
+    }
+
+    public function test_pending_local_blob_uploads_through_a_presigned_url(): void
+    {
+        Storage::fake('local');
+        $state = $this->pairedState();
+        $contents = 'upload me';
+        $hash = hash('sha256', $contents);
+        $media = Media::create([
+            'filename' => $hash,
+            'original_name' => 'upload.txt',
+            'mime_type' => 'text/plain',
+            'size' => strlen($contents),
+        ]);
+        Storage::disk('local')->put("media/{$hash}", $contents);
+
+        Http::fake([
+            "https://cloud.test/api/blobs/{$hash}" => Http::response(status: 404),
+            "https://cloud.test/api/blobs/{$hash}/upload-url" => Http::response([
+                'exists' => false,
+                'url' => 'https://objects.test/upload',
+                'headers' => ['Content-Type' => 'text/plain'],
+            ]),
+            'https://objects.test/upload' => Http::response(status: 200),
+        ]);
+
+        $uploaded = app(CloudBlobService::class)->uploadPending($state);
+
+        $this->assertSame(1, $uploaded);
+        $this->assertNotNull($media->fresh()->cloud_uploaded_at);
+        Http::assertSent(fn ($request) => $request->method() === 'PUT'
+            && $request->url() === 'https://objects.test/upload');
+    }
+
+    public function test_existing_cloud_blob_is_acknowledged_without_uploading_again(): void
+    {
+        Storage::fake('local');
+        $state = $this->pairedState();
+        $contents = 'already there';
+        $hash = hash('sha256', $contents);
+        $media = Media::create([
+            'filename' => $hash,
+            'original_name' => 'existing.txt',
+            'mime_type' => 'text/plain',
+            'size' => strlen($contents),
+        ]);
+        Storage::disk('local')->put("media/{$hash}", $contents);
+
+        Http::fake([
+            "https://cloud.test/api/blobs/{$hash}" => Http::response(status: 204),
+        ]);
+
+        $uploaded = app(CloudBlobService::class)->uploadPending($state);
+
+        $this->assertSame(0, $uploaded);
+        $this->assertNotNull($media->fresh()->cloud_uploaded_at);
+        Http::assertSentCount(1);
+    }
+
+    public function test_media_cache_miss_downloads_and_verifies_the_cloud_blob(): void
+    {
+        Storage::fake('local');
+        $this->pairedState();
+        $contents = 'download me';
+        $hash = hash('sha256', $contents);
+        $media = Media::create([
+            'filename' => $hash,
+            'original_name' => 'download.txt',
+            'mime_type' => 'text/plain',
+            'size' => strlen($contents),
+        ]);
+
+        Http::fake([
+            "https://cloud.test/api/blobs/{$hash}/download-url" => Http::response([
+                'url' => 'https://objects.test/download',
+            ]),
+            'https://objects.test/download' => Http::response($contents),
+        ]);
+
+        $response = $this->get("/api/media/{$media->id}")->assertOk();
+
+        $this->assertSame($contents, $response->streamedContent());
+        Storage::disk('local')->assertExists("media/{$hash}");
+        $this->assertNotNull($media->fresh()->cloud_uploaded_at);
+    }
+
+    public function test_media_cache_miss_rejects_a_blob_with_the_wrong_hash(): void
+    {
+        Storage::fake('local');
+        $this->pairedState();
+        $hash = hash('sha256', 'expected');
+        $media = Media::create([
+            'filename' => $hash,
+            'original_name' => 'corrupt.txt',
+            'mime_type' => 'text/plain',
+            'size' => 8,
+        ]);
+
+        Http::fake([
+            "https://cloud.test/api/blobs/{$hash}/download-url" => Http::response([
+                'url' => 'https://objects.test/corrupt',
+            ]),
+            'https://objects.test/corrupt' => Http::response('wrong'),
+        ]);
+
+        $this->get("/api/media/{$media->id}")->assertStatus(503);
+
+        Storage::disk('local')->assertMissing("media/{$hash}");
+        $this->assertNull($media->fresh()->cloud_uploaded_at);
+    }
+
+    private function pairedState(): SyncState
+    {
+        return SyncState::create([
+            'client_id' => fake()->uuid(),
+            'last_server_seq' => 0,
+            'cloud_url' => 'https://cloud.test',
+            'cloud_token' => 'secret-token',
+            'cloud_workspace_id' => fake()->uuid(),
+        ]);
     }
 }
