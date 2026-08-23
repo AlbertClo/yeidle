@@ -56,7 +56,8 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan dev"
+            "./vendor/bin/sail up -d",
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"./vendor/bin/sail artisan pail --timeout=0\" \"./vendor/bin/sail logs -f queue reverb\" \"./vendor/bin/sail npm run dev\" --names=logs,workers,vite --kill-others"
         ],
         "lint": [
             "pint --parallel"
