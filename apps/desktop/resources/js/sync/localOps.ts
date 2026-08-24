@@ -1,3 +1,5 @@
+import { invalidateInactiveCachedPages } from '../stores/pageCache';
+
 export const LOCAL_OPS_AVAILABLE_EVENT = 'yeidle:local-ops-available';
 
 export type CommittedOp = Record<string, unknown>;
@@ -11,6 +13,8 @@ export interface LocalOpsAvailableDetail {
 export type LocalOpsAvailableEvent = CustomEvent<LocalOpsAvailableDetail>;
 
 export function notifyLocalOpsAvailable(ops: CommittedOp[] | null): void {
+    invalidateInactiveCachedPages(ops);
+
     window.dispatchEvent(
         new CustomEvent<LocalOpsAvailableDetail>(LOCAL_OPS_AVAILABLE_EVENT, {
             detail: { ops },

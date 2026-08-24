@@ -23,6 +23,8 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import {
     getCachedPage,
     invalidateCachedPage,
+    markCachedPageActive,
+    markCachedPageInactive,
     setCachedPage,
 } from '@/stores/pageCache';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
@@ -45,6 +47,8 @@ const props = defineProps<{
     backlinks: { id: string; page_id: string; page_title: string }[];
     syncCursor?: number;
 }>();
+
+markCachedPageActive(props.page.id);
 
 const isEditingTitle = ref(false);
 const cached = getCachedPage(props.page.id);
@@ -636,6 +640,7 @@ onBeforeUnmount(() => {
     }
 
     flushSync();
+    markCachedPageInactive(props.page.id);
 });
 </script>
 
