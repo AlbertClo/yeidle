@@ -195,6 +195,34 @@ class MediaSyncTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_pending_upload_count_only_includes_local_unconfirmed_blobs(): void
+    {
+        Storage::fake('local');
+        $pendingHash = hash('sha256', 'pending');
+        $remoteHash = hash('sha256', 'remote only');
+        $uploadedHash = hash('sha256', 'uploaded');
+
+        foreach ([
+            [$pendingHash, null],
+            [$remoteHash, null],
+            [$uploadedHash, now()],
+        ] as [$hash, $uploadedAt]) {
+            Media::create([
+                'filename' => $hash,
+                'original_name' => "{$hash}.txt",
+                'mime_type' => 'text/plain',
+                'size' => 1,
+                'cloud_uploaded_at' => $uploadedAt,
+            ]);
+        }
+
+        Storage::disk('local')->put("media/{$pendingHash}", 'pending');
+        Storage::disk('local')->put("media/{$uploadedHash}", 'uploaded');
+        Storage::disk('local')->put('media/.temporary-file', 'ignored');
+
+        $this->assertSame(1, app(CloudBlobService::class)->pendingUploadCount());
+    }
+
     public function test_media_cache_miss_downloads_and_verifies_the_cloud_blob(): void
     {
         Storage::fake('local');

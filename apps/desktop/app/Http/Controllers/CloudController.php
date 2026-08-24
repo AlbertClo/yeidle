@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Op;
 use App\Models\SyncState;
+use App\Sync\CloudBlobService;
 use App\Sync\CloudSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,6 +13,7 @@ class CloudController extends Controller
 {
     public function __construct(
         private CloudSyncService $cloud,
+        private CloudBlobService $blobs,
     ) {}
 
     public function connect(Request $request): JsonResponse
@@ -49,7 +51,9 @@ class CloudController extends Controller
             'cloud_url' => $state?->cloud_url,
             'cloud_seed_pending' => (bool) ($state?->cloud_seed_pending ?? false),
             'last_server_seq' => (int) ($state?->last_server_seq ?? 0),
+            'local_log_seq' => (int) (Op::max('id') ?? 0),
             'outbox' => Op::whereNull('server_seq')->count(),
+            'pending_blob_uploads' => $this->blobs->pendingUploadCount(),
             'last_sync_attempt_at' => $state?->last_sync_attempt_at?->toIso8601String(),
             'last_sync_success_at' => $state?->last_sync_success_at?->toIso8601String(),
             'last_sync_error' => $state?->last_sync_error,

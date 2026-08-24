@@ -50,7 +50,9 @@ class Node extends Model
 
     public function children(): HasMany
     {
-        return $this->hasMany(Node::class, 'parent_id')->orderBy('position');
+        return $this->hasMany(Node::class, 'parent_id')
+            ->orderBy('position')
+            ->orderBy('id');
     }
 
     public function outgoingLinks(): HasMany

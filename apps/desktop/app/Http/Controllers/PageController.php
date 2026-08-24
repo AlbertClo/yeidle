@@ -41,9 +41,7 @@ class PageController extends Controller
 
     public function show(Node $node): JsonResponse
     {
-        $node->load(['children' => function ($query) {
-            $query->orderBy('position');
-        }]);
+        $node->load('children');
         $this->loadChildrenRecursive($node);
 
         return response()->json($node);
@@ -52,9 +50,7 @@ class PageController extends Controller
     private function loadChildrenRecursive(Node $node): void
     {
         foreach ($node->children as $child) {
-            $child->load(['children' => function ($query) {
-                $query->orderBy('position');
-            }]);
+            $child->load('children');
             $this->loadChildrenRecursive($child);
         }
     }

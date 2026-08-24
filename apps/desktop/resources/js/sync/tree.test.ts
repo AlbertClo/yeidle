@@ -71,6 +71,23 @@ describe('applyOpsToTree', () => {
         expect(roots.map((n) => n.id)).toEqual(['a', 'x', 'b']);
     });
 
+    it('uses the node id as a deterministic position tie-breaker', () => {
+        const roots = [node('z', PAGE, 'a0', 'arrived first')];
+
+        applyOpsToTree(roots, PAGE, [
+            op('node.set', {
+                id: 'a',
+                fields: {
+                    parent_id: PAGE,
+                    position: 'a0',
+                    content: 'arrived second',
+                },
+            }),
+        ]);
+
+        expect(roots.map((n) => n.id)).toEqual(['a', 'z']);
+    });
+
     it('moves a node between parents', () => {
         const roots = tree();
         const result = applyOpsToTree(roots, PAGE, [

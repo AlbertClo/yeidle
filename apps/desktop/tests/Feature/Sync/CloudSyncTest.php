@@ -434,6 +434,29 @@ class CloudSyncTest extends TestCase
             ->assertJsonPath('health', 'healthy');
     }
 
+    public function test_cloud_status_exposes_cursor_log_and_pending_transfer_diagnostics(): void
+    {
+        Storage::fake('local');
+        $this->pairedState(12);
+        $this->queueLocalNodeOp();
+        $contents = 'pending status blob';
+        $hash = hash('sha256', $contents);
+        Media::create([
+            'filename' => $hash,
+            'original_name' => 'pending.txt',
+            'mime_type' => 'text/plain',
+            'size' => strlen($contents),
+        ]);
+        Storage::disk('local')->put("media/{$hash}", $contents);
+
+        $this->getJson('/api/cloud/status')
+            ->assertOk()
+            ->assertJsonPath('last_server_seq', 12)
+            ->assertJsonPath('local_log_seq', 1)
+            ->assertJsonPath('outbox', 1)
+            ->assertJsonPath('pending_blob_uploads', 1);
+    }
+
     public function test_exchange_drains_multiple_full_batches_and_reports_acknowledged_count(): void
     {
         $this->pairedState();

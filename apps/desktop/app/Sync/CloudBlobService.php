@@ -14,6 +14,31 @@ class CloudBlobService
     private const TRANSFER_TIMEOUT = 600;
 
     /**
+     * Count distinct local blobs that still need cloud confirmation. Remote
+     * metadata without a cached body is not upload work for this device.
+     */
+    public function pendingUploadCount(): int
+    {
+        $hashes = collect(Storage::disk('local')->files('media'))
+            ->map(fn (string $path): string => basename($path))
+            ->filter(fn (string $hash): bool => preg_match('/^[0-9a-f]{64}$/D', $hash) === 1)
+            ->unique()
+            ->values();
+
+        if ($hashes->isEmpty()) {
+            return 0;
+        }
+
+        return $hashes
+            ->chunk(500)
+            ->sum(fn ($chunk): int => Media::query()
+                ->whereNull('cloud_uploaded_at')
+                ->whereIn('filename', $chunk)
+                ->distinct()
+                ->count('filename'));
+    }
+
+    /**
      * Upload local blobs that have not yet been confirmed in cloud storage.
      * The timestamp is durable retry state; duplicate media rows sharing a
      * content hash are acknowledged together.

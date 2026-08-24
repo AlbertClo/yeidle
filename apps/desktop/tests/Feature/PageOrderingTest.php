@@ -25,6 +25,30 @@ class PageOrderingTest extends TestCase
             ->assertJsonPath('3.id', $oldest->id);
     }
 
+    public function test_siblings_are_ordered_by_position_with_a_deterministic_id_tie_breaker(): void
+    {
+        $page = $this->page(
+            '00000000-0000-7000-8000-000000000010',
+            'Page',
+            '000000000000100-0000-a',
+        );
+        $high = $this->node(
+            '00000000-0000-7000-8000-000000000013',
+            $page->id,
+            'a0',
+        );
+        $low = $this->node(
+            '00000000-0000-7000-8000-000000000012',
+            $page->id,
+            'a0',
+        );
+
+        $this->getJson("/api/pages/{$page->id}")
+            ->assertSuccessful()
+            ->assertJsonPath('children.0.id', $low->id)
+            ->assertJsonPath('children.1.id', $high->id);
+    }
+
     private function page(string $id, string $content, string $modifiedHlc): Node
     {
         $page = new Node;
@@ -35,5 +59,18 @@ class PageOrderingTest extends TestCase
         $page->save();
 
         return $page;
+    }
+
+    private function node(string $id, string $parentId, string $position): Node
+    {
+        $node = new Node;
+        $node->id = $id;
+        $node->parent_id = $parentId;
+        $node->content = $id;
+        $node->position = $position;
+        $node->modified_hlc = '000000000000100-0000-a';
+        $node->save();
+
+        return $node;
     }
 }

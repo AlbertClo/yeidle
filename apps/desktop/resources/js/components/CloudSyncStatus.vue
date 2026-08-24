@@ -26,7 +26,9 @@ interface CloudStatus {
     cloud_url: string | null;
     cloud_seed_pending: boolean;
     last_server_seq: number;
+    local_log_seq: number;
     outbox: number;
+    pending_blob_uploads: number;
     last_sync_attempt_at: string | null;
     last_sync_success_at: string | null;
     last_sync_error: string | null;
@@ -143,6 +145,15 @@ const appearance = computed(() => {
         return {
             label: 'Not synced yet',
             detail: 'Waiting for the first successful cloud sync.',
+            icon: Cloud,
+            color: 'text-amber-600 dark:text-amber-400',
+        };
+    }
+
+    if (status.value.pending_blob_uploads > 0) {
+        return {
+            label: `${status.value.pending_blob_uploads} media pending`,
+            detail: 'Local attachments are waiting to reach cloud storage.',
             icon: Cloud,
             color: 'text-amber-600 dark:text-amber-400',
         };
@@ -408,6 +419,24 @@ onBeforeUnmount(() => {
                 <div class="flex gap-3">
                     <span class="text-muted-foreground">Pending changes</span>
                     <span class="ml-auto">{{ status.outbox }}</span>
+                </div>
+                <div class="flex gap-3">
+                    <span class="text-muted-foreground">Pending media</span>
+                    <span class="ml-auto">{{
+                        status.pending_blob_uploads
+                    }}</span>
+                </div>
+                <div class="flex gap-3">
+                    <span class="text-muted-foreground">Cloud cursor</span>
+                    <span class="ml-auto tabular-nums">{{
+                        status.last_server_seq
+                    }}</span>
+                </div>
+                <div class="flex gap-3">
+                    <span class="text-muted-foreground">Local log</span>
+                    <span class="ml-auto tabular-nums">{{
+                        status.local_log_seq
+                    }}</span>
                 </div>
                 <div v-if="status.configured" class="flex gap-3">
                     <span class="text-muted-foreground">Realtime</span>

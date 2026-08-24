@@ -39,7 +39,11 @@ function locate(roots: Node[], id: string): Located | null {
 }
 
 function insertByPosition(siblings: Node[], node: Node): void {
-    const at = siblings.findIndex((s) => s.position > node.position);
+    const at = siblings.findIndex(
+        (s) =>
+            s.position > node.position ||
+            (s.position === node.position && s.id > node.id),
+    );
 
     if (at === -1) {
         siblings.push(node);

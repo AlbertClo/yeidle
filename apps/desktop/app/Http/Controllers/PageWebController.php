@@ -28,9 +28,7 @@ class PageWebController extends Controller
         // (idempotent) rather than silently missed.
         $syncCursor = (int) (Op::max('id') ?? 0);
 
-        $node->load(['children' => function ($query) {
-            $query->orderBy('position');
-        }]);
+        $node->load('children');
 
         // Recursively load all nested children
         $this->loadChildrenRecursive($node);
@@ -76,9 +74,7 @@ class PageWebController extends Controller
     private function loadChildrenRecursive(Node $node): void
     {
         foreach ($node->children as $child) {
-            $child->load(['children' => function ($query) {
-                $query->orderBy('position');
-            }]);
+            $child->load('children');
             $this->loadChildrenRecursive($child);
         }
     }
