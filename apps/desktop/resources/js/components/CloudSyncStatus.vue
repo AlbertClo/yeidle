@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CircleAlert, Cloud, CloudOff, RefreshCw } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -11,37 +11,26 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    cloudSyncStatus as status,
+    cloudSyncStatusUnavailable as statusUnavailable,
+    loadCloudSyncStatus as loadStatus,
+} from '@/stores/cloudSyncStatus';
 import { realtimeHealth, refreshRealtimeSync } from '@/sync/realtime';
 
-type SyncHealth =
-    | 'unconfigured'
-    | 'seeding'
-    | 'never_synced'
-    | 'healthy'
-    | 'error';
-
-interface CloudStatus {
-    configured: boolean;
-    health: SyncHealth;
-    cloud_url: string | null;
-    cloud_seed_pending: boolean;
-    last_server_seq: number;
-    local_log_seq: number;
-    outbox: number;
-    pending_blob_uploads: number;
-    last_sync_attempt_at: string | null;
-    last_sync_success_at: string | null;
-    last_sync_error: string | null;
+interface CloudWorkspace {
+    id: string;
+    name: string;
 }
 
-const status = ref<CloudStatus | null>(null);
-const statusUnavailable = ref(false);
 const connecting = ref(false);
 const connectError = ref<string | null>(null);
 const cloudUrl = ref('http://localhost:8200');
 const cloudToken = ref('');
+const cloudWorkspaces = ref<CloudWorkspace[] | null>(null);
+const selectedCloudWorkspace = ref('');
+const newCloudWorkspaceName = ref('');
 let statusTimer: ReturnType<typeof setInterval> | null = null;
-let statusRequest: Promise<void> | null = null;
 
 const realtimeAppearance = computed(() => {
     switch (realtimeHealth.state) {
@@ -52,7 +41,6 @@ const realtimeAppearance = computed(() => {
                 detail: 'Realtime delivery is connected.',
                 color: 'text-emerald-600 dark:text-emerald-400',
                 icon: Cloud,
-                spinning: false,
             };
         case 'connecting':
             return {
@@ -61,7 +49,6 @@ const realtimeAppearance = computed(() => {
                 detail: 'Remote changes will resume when realtime connects.',
                 color: 'text-amber-600 dark:text-amber-400',
                 icon: RefreshCw,
-                spinning: true,
             };
         case 'error':
         case 'failed':
@@ -71,7 +58,6 @@ const realtimeAppearance = computed(() => {
                 detail: 'Remote changes cannot sync until realtime reconnects.',
                 color: 'text-destructive',
                 icon: CircleAlert,
-                spinning: false,
             };
         case 'unavailable':
         case 'disconnected':
@@ -81,7 +67,6 @@ const realtimeAppearance = computed(() => {
                 detail: 'Remote changes will sync after realtime reconnects.',
                 color: 'text-amber-600 dark:text-amber-400',
                 icon: CloudOff,
-                spinning: false,
             };
         default:
             return {
@@ -90,10 +75,21 @@ const realtimeAppearance = computed(() => {
                 detail: 'Realtime delivery is not configured.',
                 color: 'text-muted-foreground',
                 icon: CloudOff,
-                spinning: false,
             };
     }
 });
+
+const triggerOnline = computed(
+    () =>
+        !statusUnavailable.value &&
+        status.value?.configured === true &&
+        status.value.health === 'healthy' &&
+        realtimeHealth.state === 'connected',
+);
+
+const triggerLabel = computed(() =>
+    triggerOnline.value ? 'Online' : 'Offline',
+);
 
 const appearance = computed(() => {
     if (statusUnavailable.value) {
@@ -199,37 +195,16 @@ function formatTimestamp(value: string | null | undefined): string {
     return timestamp.toLocaleString();
 }
 
-function loadStatus(): Promise<void> {
-    if (statusRequest !== null) {
-        return statusRequest;
-    }
-
-    statusRequest = fetch('/api/cloud/status', {
-        headers: { Accept: 'application/json' },
-    })
-        .then((response) => {
-            if (!response.ok) {
-                throw new Error(`Status request failed (${response.status})`);
-            }
-
-            return response.json() as Promise<CloudStatus>;
-        })
-        .then((data) => {
-            status.value = data;
-            statusUnavailable.value = false;
-        })
-        .catch(() => {
-            statusUnavailable.value = true;
-        })
-        .finally(() => {
-            statusRequest = null;
-        });
-
-    return statusRequest;
-}
-
 async function connectCloud(): Promise<void> {
-    if (connecting.value || !cloudUrl.value.trim() || !cloudToken.value) {
+    if (
+        connecting.value ||
+        !cloudUrl.value.trim() ||
+        !cloudToken.value ||
+        cloudWorkspaces.value === null ||
+        !selectedCloudWorkspace.value ||
+        (selectedCloudWorkspace.value === '__new__' &&
+            !newCloudWorkspaceName.value.trim())
+    ) {
         return;
     }
 
@@ -246,6 +221,14 @@ async function connectCloud(): Promise<void> {
             body: JSON.stringify({
                 url: cloudUrl.value.trim(),
                 token: cloudToken.value,
+                workspace_id:
+                    selectedCloudWorkspace.value === '__new__'
+                        ? null
+                        : selectedCloudWorkspace.value,
+                new_workspace_name:
+                    selectedCloudWorkspace.value === '__new__'
+                        ? newCloudWorkspaceName.value.trim()
+                        : null,
             }),
         });
         const result = (await response.json().catch(() => null)) as {
@@ -273,14 +256,74 @@ async function connectCloud(): Promise<void> {
                 : 'Could not connect to the cloud.';
     } finally {
         connecting.value = false;
-
-        if (statusRequest !== null) {
-            await statusRequest;
-        }
-
         await loadStatus();
     }
 }
+
+async function loadCloudWorkspaces(): Promise<void> {
+    if (connecting.value || !cloudUrl.value.trim() || !cloudToken.value) {
+        return;
+    }
+
+    connecting.value = true;
+    connectError.value = null;
+
+    try {
+        const [cloudResponse, localResponse] = await Promise.all([
+            fetch('/api/cloud/workspaces', {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    url: cloudUrl.value.trim(),
+                    token: cloudToken.value,
+                }),
+            }),
+            fetch('/api/workspaces', {
+                headers: { Accept: 'application/json' },
+            }),
+        ]);
+        const cloudPayload = (await cloudResponse.json().catch(() => null)) as {
+            workspaces?: CloudWorkspace[];
+            message?: string;
+        } | null;
+
+        if (!cloudResponse.ok || !Array.isArray(cloudPayload?.workspaces)) {
+            throw new Error(
+                cloudPayload?.message ?? 'Could not load cloud workspaces.',
+            );
+        }
+
+        cloudWorkspaces.value = cloudPayload.workspaces;
+        selectedCloudWorkspace.value = '';
+
+        if (localResponse.ok) {
+            const localState = (await localResponse.json()) as {
+                active_workspace_id: string;
+                workspaces: CloudWorkspace[];
+            };
+            newCloudWorkspaceName.value =
+                localState.workspaces.find(
+                    (workspace) =>
+                        workspace.id === localState.active_workspace_id,
+                )?.name ?? '';
+        }
+    } catch (error) {
+        connectError.value =
+            error instanceof Error
+                ? error.message
+                : 'Could not load cloud workspaces.';
+    } finally {
+        connecting.value = false;
+    }
+}
+
+watch([cloudUrl, cloudToken], () => {
+    cloudWorkspaces.value = null;
+    selectedCloudWorkspace.value = '';
+});
 
 onMounted(() => {
     loadStatus();
@@ -296,182 +339,229 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <DropdownMenu>
-        <DropdownMenuTrigger as-child>
-            <Button
-                variant="ghost"
-                size="sm"
-                class="max-w-36 gap-2 px-2"
-                :aria-label="`Cloud sync: ${appearance.label}`"
-            >
-                <component
-                    :is="appearance.icon"
-                    class="size-4"
-                    :class="[
-                        appearance.color,
-                        {
-                            'animate-spin':
-                                connecting ||
-                                status === null ||
-                                status?.health === 'seeding' ||
-                                (status?.configured &&
-                                    realtimeAppearance.spinning),
-                        },
-                    ]"
-                />
-                <span class="hidden truncate xl:inline">{{
-                    appearance.label
-                }}</span>
-                <span
-                    v-if="status && status.outbox > 0"
-                    class="min-w-5 rounded-full bg-muted px-1.5 text-center text-[10px] leading-5 text-muted-foreground"
-                >
-                    {{ status.outbox > 99 ? '99+' : status.outbox }}
-                </span>
-            </Button>
-        </DropdownMenuTrigger>
-
-        <DropdownMenuContent align="end" class="w-80">
-            <DropdownMenuLabel class="flex items-start gap-3 py-2">
-                <component
-                    :is="appearance.icon"
-                    class="mt-0.5 size-4"
-                    :class="appearance.color"
-                />
-                <span class="min-w-0">
-                    <span class="block font-medium">{{
-                        appearance.label
-                    }}</span>
-                    <span
-                        class="block text-xs font-normal text-muted-foreground"
-                    >
-                        {{ appearance.detail }}
-                    </span>
-                </span>
-            </DropdownMenuLabel>
-
-            <DropdownMenuSeparator />
-
-            <form
-                v-if="status && !status.configured"
-                class="space-y-3 px-2 py-2"
-                @submit.prevent="connectCloud"
-            >
-                <div class="space-y-1.5">
-                    <Label for="cloud-url">Cloud URL</Label>
-                    <Input
-                        id="cloud-url"
-                        v-model="cloudUrl"
-                        type="url"
-                        inputmode="url"
-                        autocapitalize="none"
-                        autocomplete="url"
-                        spellcheck="false"
-                        placeholder="http://localhost:8200"
-                        :disabled="connecting"
-                    />
-                </div>
-                <div class="space-y-1.5">
-                    <Label for="cloud-token">Sanctum token</Label>
-                    <Input
-                        id="cloud-token"
-                        v-model="cloudToken"
-                        type="password"
-                        autocomplete="off"
-                        placeholder="Paste token"
-                        :disabled="connecting"
-                    />
-                </div>
-                <div
-                    v-if="connectError"
-                    class="rounded-md bg-destructive/10 p-2 text-xs leading-relaxed break-words text-destructive"
-                    role="alert"
-                >
-                    {{ connectError }}
-                </div>
+    <div class="size-9 shrink-0">
+        <DropdownMenu>
+            <DropdownMenuTrigger as-child>
                 <Button
-                    type="submit"
-                    size="sm"
-                    class="w-full"
-                    :disabled="connecting || !cloudUrl.trim() || !cloudToken"
+                    variant="ghost"
+                    size="icon"
+                    :aria-label="`Cloud sync: ${triggerLabel}`"
+                    :title="triggerLabel"
                 >
-                    <RefreshCw v-if="connecting" class="animate-spin" />
-                    {{ connecting ? 'Connecting and seeding…' : 'Connect' }}
+                    <Cloud
+                        class="size-4"
+                        :class="
+                            triggerOnline
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-muted-foreground'
+                        "
+                    />
                 </Button>
-                <p class="text-xs leading-relaxed text-muted-foreground">
-                    First connection uploads existing local data when the cloud
-                    workspace is empty.
-                </p>
-            </form>
+            </DropdownMenuTrigger>
 
-            <DropdownMenuSeparator v-if="status && !status.configured" />
+            <DropdownMenuContent align="end" class="w-80">
+                <DropdownMenuLabel class="flex items-start gap-3 py-2">
+                    <component
+                        :is="appearance.icon"
+                        class="mt-0.5 size-4"
+                        :class="appearance.color"
+                    />
+                    <span class="min-w-0">
+                        <span class="block font-medium">{{
+                            appearance.label
+                        }}</span>
+                        <span
+                            class="block text-xs font-normal text-muted-foreground"
+                        >
+                            {{ appearance.detail }}
+                        </span>
+                    </span>
+                </DropdownMenuLabel>
 
-            <div v-if="status" class="space-y-2 px-2 py-2 text-xs">
-                <div v-if="status.cloud_url" class="flex gap-3">
-                    <span class="shrink-0 text-muted-foreground">Cloud</span>
-                    <span
-                        class="ml-auto truncate text-right"
-                        :title="status.cloud_url"
-                    >
-                        {{ status.cloud_url }}
-                    </span>
-                </div>
-                <div class="flex gap-3">
-                    <span class="text-muted-foreground">Pending changes</span>
-                    <span class="ml-auto">{{ status.outbox }}</span>
-                </div>
-                <div class="flex gap-3">
-                    <span class="text-muted-foreground">Pending media</span>
-                    <span class="ml-auto">{{
-                        status.pending_blob_uploads
-                    }}</span>
-                </div>
-                <div class="flex gap-3">
-                    <span class="text-muted-foreground">Cloud cursor</span>
-                    <span class="ml-auto tabular-nums">{{
-                        status.last_server_seq
-                    }}</span>
-                </div>
-                <div class="flex gap-3">
-                    <span class="text-muted-foreground">Local log</span>
-                    <span class="ml-auto tabular-nums">{{
-                        status.local_log_seq
-                    }}</span>
-                </div>
-                <div v-if="status.configured" class="flex gap-3">
-                    <span class="text-muted-foreground">Realtime</span>
-                    <span
-                        class="ml-auto text-right"
-                        :class="realtimeAppearance.color"
-                    >
-                        {{ realtimeAppearance.label }}
-                    </span>
-                </div>
-                <div class="flex gap-3">
-                    <span class="text-muted-foreground">Last success</span>
-                    <span class="ml-auto text-right">
-                        {{ formatTimestamp(status.last_sync_success_at) }}
-                    </span>
-                </div>
-                <div v-if="status.health === 'error'" class="flex gap-3">
-                    <span class="text-muted-foreground">Last attempt</span>
-                    <span class="ml-auto text-right">
-                        {{ formatTimestamp(status.last_sync_attempt_at) }}
-                    </span>
-                </div>
-                <div
-                    v-if="status.last_sync_error"
-                    class="rounded-md bg-destructive/10 p-2 leading-relaxed text-destructive"
+                <DropdownMenuSeparator />
+
+                <form
+                    v-if="status && !status.configured"
+                    class="space-y-3 px-2 py-2"
+                    @submit.prevent="connectCloud"
                 >
-                    {{ status.last_sync_error }}
+                    <div class="space-y-1.5">
+                        <Label for="cloud-url">Cloud URL</Label>
+                        <Input
+                            id="cloud-url"
+                            v-model="cloudUrl"
+                            type="url"
+                            inputmode="url"
+                            autocapitalize="none"
+                            autocomplete="url"
+                            spellcheck="false"
+                            placeholder="http://localhost:8200"
+                            :disabled="connecting"
+                        />
+                    </div>
+                    <div class="space-y-1.5">
+                        <Label for="cloud-token">Sanctum token</Label>
+                        <Input
+                            id="cloud-token"
+                            v-model="cloudToken"
+                            type="password"
+                            autocomplete="off"
+                            placeholder="Paste token"
+                            :disabled="connecting"
+                        />
+                    </div>
+                    <div v-if="cloudWorkspaces !== null" class="space-y-1.5">
+                        <Label for="cloud-workspace">Cloud workspace</Label>
+                        <select
+                            id="cloud-workspace"
+                            v-model="selectedCloudWorkspace"
+                            class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="connecting"
+                        >
+                            <option disabled value="">
+                                Choose a workspace
+                            </option>
+                            <option
+                                v-for="workspace in cloudWorkspaces"
+                                :key="workspace.id"
+                                :value="workspace.id"
+                            >
+                                {{ workspace.name }}
+                            </option>
+                            <option value="__new__">
+                                Create a new workspace…
+                            </option>
+                        </select>
+                    </div>
+                    <div
+                        v-if="selectedCloudWorkspace === '__new__'"
+                        class="space-y-1.5"
+                    >
+                        <Label for="new-cloud-workspace-name"
+                            >New workspace name</Label
+                        >
+                        <Input
+                            id="new-cloud-workspace-name"
+                            v-model="newCloudWorkspaceName"
+                            maxlength="100"
+                            placeholder="Albert Knowledge"
+                            :disabled="connecting"
+                        />
+                    </div>
+                    <div
+                        v-if="connectError"
+                        class="rounded-md bg-destructive/10 p-2 text-xs leading-relaxed break-words text-destructive"
+                        role="alert"
+                    >
+                        {{ connectError }}
+                    </div>
+                    <Button
+                        v-if="cloudWorkspaces === null"
+                        type="button"
+                        size="sm"
+                        class="w-full"
+                        :disabled="
+                            connecting || !cloudUrl.trim() || !cloudToken
+                        "
+                        @click="loadCloudWorkspaces"
+                    >
+                        <RefreshCw v-if="connecting" class="animate-spin" />
+                        {{ connecting ? 'Loading…' : 'Choose workspace' }}
+                    </Button>
+                    <Button
+                        v-else
+                        type="submit"
+                        size="sm"
+                        class="w-full"
+                        :disabled="
+                            connecting ||
+                            !selectedCloudWorkspace ||
+                            (selectedCloudWorkspace === '__new__' &&
+                                !newCloudWorkspaceName.trim())
+                        "
+                    >
+                        <RefreshCw v-if="connecting" class="animate-spin" />
+                        {{ connecting ? 'Connecting and seeding…' : 'Connect' }}
+                    </Button>
+                    <p class="text-xs leading-relaxed text-muted-foreground">
+                        First connection uploads existing local data when the
+                        cloud workspace is empty.
+                    </p>
+                </form>
+
+                <DropdownMenuSeparator v-if="status && !status.configured" />
+
+                <div v-if="status" class="space-y-2 px-2 py-2 text-xs">
+                    <div v-if="status.cloud_url" class="flex gap-3">
+                        <span class="shrink-0 text-muted-foreground"
+                            >Cloud</span
+                        >
+                        <span
+                            class="ml-auto truncate text-right"
+                            :title="status.cloud_url"
+                        >
+                            {{ status.cloud_url }}
+                        </span>
+                    </div>
+                    <div class="flex gap-3">
+                        <span class="text-muted-foreground"
+                            >Pending changes</span
+                        >
+                        <span class="ml-auto">{{ status.outbox }}</span>
+                    </div>
+                    <div class="flex gap-3">
+                        <span class="text-muted-foreground">Pending media</span>
+                        <span class="ml-auto">{{
+                            status.pending_blob_uploads
+                        }}</span>
+                    </div>
+                    <div class="flex gap-3">
+                        <span class="text-muted-foreground">Cloud cursor</span>
+                        <span class="ml-auto tabular-nums">{{
+                            status.last_server_seq
+                        }}</span>
+                    </div>
+                    <div class="flex gap-3">
+                        <span class="text-muted-foreground">Local log</span>
+                        <span class="ml-auto tabular-nums">{{
+                            status.local_log_seq
+                        }}</span>
+                    </div>
+                    <div v-if="status.configured" class="flex gap-3">
+                        <span class="text-muted-foreground">Realtime</span>
+                        <span
+                            class="ml-auto text-right"
+                            :class="realtimeAppearance.color"
+                        >
+                            {{ realtimeAppearance.label }}
+                        </span>
+                    </div>
+                    <div class="flex gap-3">
+                        <span class="text-muted-foreground">Last success</span>
+                        <span class="ml-auto text-right">
+                            {{ formatTimestamp(status.last_sync_success_at) }}
+                        </span>
+                    </div>
+                    <div v-if="status.health === 'error'" class="flex gap-3">
+                        <span class="text-muted-foreground">Last attempt</span>
+                        <span class="ml-auto text-right">
+                            {{ formatTimestamp(status.last_sync_attempt_at) }}
+                        </span>
+                    </div>
+                    <div
+                        v-if="status.last_sync_error"
+                        class="rounded-md bg-destructive/10 p-2 leading-relaxed text-destructive"
+                    >
+                        {{ status.last_sync_error }}
+                    </div>
+                    <div
+                        v-if="status.configured && realtimeHealth.error"
+                        class="rounded-md bg-amber-500/10 p-2 leading-relaxed text-amber-700 dark:text-amber-300"
+                    >
+                        {{ realtimeHealth.error }}
+                    </div>
                 </div>
-                <div
-                    v-if="status.configured && realtimeHealth.error"
-                    class="rounded-md bg-amber-500/10 p-2 leading-relaxed text-amber-700 dark:text-amber-300"
-                >
-                    {{ realtimeHealth.error }}
-                </div>
-            </div>
-        </DropdownMenuContent>
-    </DropdownMenu>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    </div>
 </template>

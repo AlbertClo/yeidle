@@ -10,22 +10,26 @@ use Illuminate\Support\Facades\Storage;
 
 class BlobController extends Controller
 {
-    public function exists(Request $request, string $hash): Response
+    public function exists(Request $request, Workspace $workspace, string $hash): Response
     {
-        if (! Storage::disk('s3')->exists($this->path($request, $hash))) {
+        $this->authorizeWorkspace($request, $workspace);
+
+        if (! Storage::disk('s3')->exists($this->path($workspace, $hash))) {
             abort(404);
         }
 
         return response()->noContent();
     }
 
-    public function uploadUrl(Request $request, string $hash): JsonResponse
+    public function uploadUrl(Request $request, Workspace $workspace, string $hash): JsonResponse
     {
+        $this->authorizeWorkspace($request, $workspace);
+
         $validated = $request->validate([
             'mime_type' => ['required', 'string', 'max:255'],
             'size' => ['required', 'integer', 'min:1'],
         ]);
-        $path = $this->path($request, $hash);
+        $path = $this->path($workspace, $hash);
 
         if (Storage::disk('s3')->exists($path)) {
             return response()->json(['exists' => true]);
@@ -48,9 +52,10 @@ class BlobController extends Controller
         ]);
     }
 
-    public function downloadUrl(Request $request, string $hash): JsonResponse
+    public function downloadUrl(Request $request, Workspace $workspace, string $hash): JsonResponse
     {
-        $path = $this->path($request, $hash);
+        $this->authorizeWorkspace($request, $workspace);
+        $path = $this->path($workspace, $hash);
 
         if (! Storage::disk('s3')->exists($path)) {
             abort(404);
@@ -64,15 +69,13 @@ class BlobController extends Controller
         ]);
     }
 
-    private function path(Request $request, string $hash): string
+    private function path(Workspace $workspace, string $hash): string
     {
-        return "blobs/{$this->workspaceFor($request)->id}/{$hash}";
+        return "blobs/{$workspace->id}/{$hash}";
     }
 
-    private function workspaceFor(Request $request): Workspace
+    private function authorizeWorkspace(Request $request, Workspace $workspace): void
     {
-        return $request->user()->workspaces()->firstOrCreate([], [
-            'name' => 'Personal',
-        ]);
+        abort_unless($workspace->user_id === $request->user()->id, 404);
     }
 }

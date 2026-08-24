@@ -6,12 +6,18 @@ use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SyncController;
+use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('workspaces', [WorkspaceController::class, 'index']);
+Route::post('workspaces', [WorkspaceController::class, 'store']);
+Route::post('workspaces/{workspaceId}/activate', [WorkspaceController::class, 'activate']);
 
 Route::post('sync/push', [SyncController::class, 'push']);
 Route::get('sync/pull', [SyncController::class, 'pull']);
 
 Route::post('cloud/connect', [CloudController::class, 'connect']);
+Route::post('cloud/workspaces', [CloudController::class, 'workspaces']);
 Route::get('cloud/status', [CloudController::class, 'status']);
 Route::get('cloud/realtime-config', [CloudController::class, 'realtimeConfig']);
 Route::post('cloud/broadcasting-auth', [CloudController::class, 'authorizeRealtime']);
@@ -20,6 +26,7 @@ Route::post('sync/cloud-exchange', [CloudController::class, 'exchange']);
 
 // Intent-level façade: mints ops server-side (see NodeController)
 Route::post('nodes', [NodeController::class, 'store']);
+Route::get('nodes/{node}/reference', [NodeController::class, 'reference']);
 
 Route::get('pages', [PageController::class, 'index']);
 // Before pages/{node} so "title-exists" isn't captured as a node id

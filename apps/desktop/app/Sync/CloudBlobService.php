@@ -56,7 +56,7 @@ class CloudBlobService
             }
 
             $exists = $this->cloud($state)
-                ->head("{$state->cloud_url}/api/blobs/{$media->filename}");
+                ->head($this->blobUrl($state, $media->filename));
 
             if ($exists->successful()) {
                 $this->markUploaded($media->filename);
@@ -69,7 +69,7 @@ class CloudBlobService
             }
 
             $ticket = $this->cloud($state)
-                ->post("{$state->cloud_url}/api/blobs/{$media->filename}/upload-url", [
+                ->post($this->blobUrl($state, $media->filename, '/upload-url'), [
                     'mime_type' => $media->mime_type,
                     'size' => $media->size,
                 ])
@@ -134,7 +134,7 @@ class CloudBlobService
         }
 
         $ticket = $this->cloud($state)
-            ->get("{$state->cloud_url}/api/blobs/{$media->filename}/download-url")
+            ->get($this->blobUrl($state, $media->filename, '/download-url'))
             ->throw();
         $url = $ticket->json('url');
 
@@ -191,5 +191,14 @@ class CloudBlobService
         Media::query()->where('filename', $hash)->update([
             'cloud_uploaded_at' => now(),
         ]);
+    }
+
+    private function blobUrl(SyncState $state, string $hash, string $suffix = ''): string
+    {
+        if (! $state->cloud_url || ! $state->cloud_workspace_id) {
+            throw new \RuntimeException('Cloud sync is not configured.');
+        }
+
+        return "{$state->cloud_url}/api/workspaces/{$state->cloud_workspace_id}/blobs/{$hash}{$suffix}";
     }
 }

@@ -18,6 +18,16 @@ class CloudSyncTest extends TestCase
 
     private const CLOUD = 'https://cloud.test';
 
+    private static function cloudSync(string $endpoint): string
+    {
+        return self::CLOUD."/api/workspaces/w/sync/{$endpoint}";
+    }
+
+    private static function cloudBlob(string $hash, string $suffix = ''): string
+    {
+        return self::CLOUD."/api/workspaces/w/blobs/{$hash}{$suffix}";
+    }
+
     private function pairedState(int $lastSeq = 0): SyncState
     {
         return SyncState::create([
@@ -87,10 +97,10 @@ class CloudSyncTest extends TestCase
         ]]])->assertOk();
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::response([
+            self::cloudSync('push') => Http::response([
                 'accepted' => [['op_id' => $opId, 'server_seq' => 41]],
             ]),
-            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 41]),
+            self::cloudSync('pull').'*' => Http::response(['ops' => [], 'latest_seq' => 41]),
         ]);
 
         $response = $this->postJson('/api/sync/cloud-exchange');
@@ -119,17 +129,17 @@ class CloudSyncTest extends TestCase
         Http::fake(function ($request) use ($hash, $opId) {
             return match (true) {
                 $request->method() === 'HEAD'
-                    && $request->url() === self::CLOUD."/api/blobs/{$hash}" => Http::response(status: 404),
-                $request->url() === self::CLOUD."/api/blobs/{$hash}/upload-url" => Http::response([
+                    && $request->url() === self::cloudBlob($hash) => Http::response(status: 404),
+                $request->url() === self::cloudBlob($hash, '/upload-url') => Http::response([
                     'exists' => false,
                     'url' => 'https://objects.test/upload',
                     'headers' => ['Content-Type' => 'text/plain'],
                 ]),
                 $request->url() === 'https://objects.test/upload' => Http::response(status: 200),
-                $request->url() === self::CLOUD.'/api/sync/push' => Http::response([
+                $request->url() === self::cloudSync('push') => Http::response([
                     'accepted' => [['op_id' => $opId, 'server_seq' => 1]],
                 ]),
-                str_starts_with($request->url(), self::CLOUD.'/api/sync/pull') => Http::response(['ops' => [], 'latest_seq' => 1]),
+                str_starts_with($request->url(), self::cloudSync('pull')) => Http::response(['ops' => [], 'latest_seq' => 1]),
                 default => Http::response(status: 500),
             };
         });
@@ -141,7 +151,7 @@ class CloudSyncTest extends TestCase
 
         $urls = Http::recorded()->map(fn (array $entry) => $entry[0]->url())->values();
         $this->assertLessThan(
-            $urls->search(self::CLOUD.'/api/sync/push'),
+            $urls->search(self::cloudSync('push')),
             $urls->search('https://objects.test/upload'),
         );
     }
@@ -162,8 +172,8 @@ class CloudSyncTest extends TestCase
         Storage::disk('local')->put("media/{$hash}", $contents);
 
         Http::fake([
-            self::CLOUD."/api/blobs/{$hash}" => Http::response(status: 500),
-            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 0]),
+            self::cloudBlob($hash) => Http::response(status: 500),
+            self::cloudSync('pull').'*' => Http::response(['ops' => [], 'latest_seq' => 0]),
         ]);
 
         $response = $this->postJson('/api/sync/cloud-exchange')
@@ -174,7 +184,7 @@ class CloudSyncTest extends TestCase
         $this->assertStringContainsString('Cloud blob upload failed (HTTP 500).', $response->json('error'));
         $this->assertNull($media->fresh()->cloud_uploaded_at);
         $this->assertNull(Op::where('op_id', $opId)->sole()->server_seq);
-        Http::assertNotSent(fn ($request) => $request->url() === self::CLOUD.'/api/sync/push');
+        Http::assertNotSent(fn ($request) => $request->url() === self::cloudSync('push'));
     }
 
     public function test_exchange_applies_pulled_remote_ops_and_advances_cursor(): void
@@ -183,8 +193,8 @@ class CloudSyncTest extends TestCase
         $nodeId = fake()->uuid();
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::response(['accepted' => []]),
-            self::CLOUD.'/api/sync/pull*' => Http::sequence()
+            self::cloudSync('push') => Http::response(['accepted' => []]),
+            self::cloudSync('pull').'*' => Http::sequence()
                 ->push([
                     'ops' => [$this->remoteOp('node.set', [
                         'v' => 1, 'id' => $nodeId, 'page_id' => $nodeId,
@@ -212,8 +222,8 @@ class CloudSyncTest extends TestCase
         $remoteNodeId = fake()->uuid();
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::response(['accepted' => []]),
-            self::CLOUD.'/api/sync/pull*' => Http::sequence()
+            self::cloudSync('push') => Http::response(['accepted' => []]),
+            self::cloudSync('pull').'*' => Http::sequence()
                 ->push([
                     'ops' => [$this->remoteOp('node.set', [
                         'v' => 1,
@@ -236,7 +246,7 @@ class CloudSyncTest extends TestCase
         $this->assertNull(Op::where('op_id', $localOpId)->sole()->server_seq);
         $this->assertSame('remote survives stuck push', Node::find($remoteNodeId)->content);
         $this->assertSame(1, Http::recorded(
-            fn ($request) => str_ends_with($request->url(), '/api/sync/push')
+            fn ($request) => str_ends_with($request->url(), '/sync/push')
         )->count());
 
         $state = SyncState::current();
@@ -252,10 +262,10 @@ class CloudSyncTest extends TestCase
         $secondOpId = $this->queueLocalNodeOp('second');
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::sequence()
+            self::cloudSync('push') => Http::sequence()
                 ->push(['accepted' => [['op_id' => $firstOpId, 'server_seq' => 10]]])
                 ->push(['accepted' => [['op_id' => $secondOpId, 'server_seq' => 11]]]),
-            self::CLOUD.'/api/sync/pull*' => Http::sequence()
+            self::cloudSync('pull').'*' => Http::sequence()
                 ->push(['ops' => [], 'latest_seq' => 10])
                 ->push(['ops' => [], 'latest_seq' => 11]),
         ]);
@@ -290,14 +300,14 @@ class CloudSyncTest extends TestCase
         $secondOpId = $this->queueLocalNodeOp('second');
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::response(['accepted' => [
+            self::cloudSync('push') => Http::response(['accepted' => [
                 ['op_id' => $firstOpId, 'server_seq' => 1],
                 ['op_id' => $firstOpId, 'server_seq' => 2],
                 ['op_id' => fake()->uuid(), 'server_seq' => 3],
                 ['op_id' => $secondOpId, 'server_seq' => '4'],
                 'not-an-acknowledgement',
             ]]),
-            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 1]),
+            self::cloudSync('pull').'*' => Http::response(['ops' => [], 'latest_seq' => 1]),
         ]);
 
         $response = $this->postJson('/api/sync/cloud-exchange');
@@ -316,8 +326,8 @@ class CloudSyncTest extends TestCase
         $this->queueLocalNodeOp();
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::failedConnection('sensitive connection detail'),
-            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 0]),
+            self::cloudSync('push') => Http::failedConnection('sensitive connection detail'),
+            self::cloudSync('pull').'*' => Http::response(['ops' => [], 'latest_seq' => 0]),
         ]);
 
         $connectionFailure = $this->postJson('/api/sync/cloud-exchange');
@@ -333,10 +343,10 @@ class CloudSyncTest extends TestCase
         $this->queueLocalNodeOp();
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::response([
+            self::cloudSync('push') => Http::response([
                 'message' => 'secret response body',
             ], 401),
-            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 0]),
+            self::cloudSync('pull').'*' => Http::response(['ops' => [], 'latest_seq' => 0]),
         ]);
 
         $httpFailure = $this->postJson('/api/sync/cloud-exchange');
@@ -352,10 +362,10 @@ class CloudSyncTest extends TestCase
         $opId = $this->queueLocalNodeOp();
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::response([
+            self::cloudSync('push') => Http::response([
                 'accepted' => [['op_id' => $opId, 'server_seq' => 1]],
             ]),
-            self::CLOUD.'/api/sync/pull*' => Http::response([
+            self::cloudSync('pull').'*' => Http::response([
                 'message' => 'internal cloud detail',
             ], 503),
         ]);
@@ -377,7 +387,7 @@ class CloudSyncTest extends TestCase
         $frozenAt = $this->freezeSecond();
 
         Http::fake([
-            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 0]),
+            self::cloudSync('pull').'*' => Http::response(['ops' => [], 'latest_seq' => 0]),
         ]);
 
         $this->postJson('/api/sync/cloud-exchange')
@@ -457,6 +467,59 @@ class CloudSyncTest extends TestCase
             ->assertJsonPath('pending_blob_uploads', 1);
     }
 
+    public function test_cloud_workspace_list_is_proxied_without_exposing_credentials(): void
+    {
+        Http::fake([
+            self::CLOUD.'/api/workspaces' => Http::response(['workspaces' => [
+                ['id' => 'personal', 'name' => 'Personal'],
+                ['id' => 'knowledge', 'name' => 'Albert Knowledge'],
+            ]]),
+        ]);
+
+        $this->postJson('/api/cloud/workspaces', [
+            'url' => self::CLOUD,
+            'token' => 'secret-token',
+        ])->assertSuccessful()
+            ->assertJsonCount(2, 'workspaces')
+            ->assertJsonPath('workspaces.1.id', 'knowledge');
+
+        Http::assertSent(fn ($request): bool => $request->url() === self::CLOUD.'/api/workspaces'
+            && $request->hasHeader('Authorization', 'Bearer secret-token'));
+    }
+
+    public function test_connect_can_create_and_pair_a_new_cloud_workspace(): void
+    {
+        Http::fake(function ($request) {
+            if ($request->method() === 'POST' && $request->url() === self::CLOUD.'/api/workspaces') {
+                return Http::response([
+                    'workspace' => ['id' => 'knowledge', 'name' => 'Albert Knowledge'],
+                ], 201);
+            }
+
+            if ($request->url() === self::CLOUD.'/api/workspaces/knowledge/sync/status') {
+                return Http::response(['workspace_id' => 'knowledge', 'latest_seq' => 0]);
+            }
+
+            if (str_starts_with($request->url(), self::CLOUD.'/api/workspaces/knowledge/sync/pull')) {
+                return Http::response(['ops' => [], 'latest_seq' => 0]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $this->postJson('/api/cloud/connect', [
+            'url' => self::CLOUD,
+            'token' => 'secret-token',
+            'new_workspace_name' => 'Albert Knowledge',
+        ])->assertSuccessful()
+            ->assertJsonPath('ok', true);
+
+        $this->assertSame('knowledge', SyncState::current()->cloud_workspace_id);
+        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+            && $request->url() === self::CLOUD.'/api/workspaces'
+            && $request['name'] === 'Albert Knowledge');
+    }
+
     public function test_exchange_drains_multiple_full_batches_and_reports_acknowledged_count(): void
     {
         $this->pairedState();
@@ -484,7 +547,7 @@ class CloudSyncTest extends TestCase
         $pushRequests = 0;
 
         Http::fake(function ($request) use (&$nextServerSeq, &$pushRequests) {
-            if (str_ends_with($request->url(), '/api/sync/push')) {
+            if (str_ends_with($request->url(), '/sync/push')) {
                 $pushRequests++;
                 $accepted = [];
 
@@ -524,8 +587,8 @@ class CloudSyncTest extends TestCase
         ]]])->assertOk();
 
         Http::fake([
-            self::CLOUD.'/api/sync/push' => Http::response(['accepted' => [['op_id' => $opId, 'server_seq' => 3]]]),
-            self::CLOUD.'/api/sync/pull*' => Http::sequence()
+            self::cloudSync('push') => Http::response(['accepted' => [['op_id' => $opId, 'server_seq' => 3]]]),
+            self::cloudSync('pull').'*' => Http::sequence()
                 ->push([
                     'ops' => [[
                         'server_seq' => 3, 'op_id' => $opId, 'client_id' => 'win', 'hlc' => $hlc,
@@ -554,11 +617,11 @@ class CloudSyncTest extends TestCase
         $node->save();
 
         Http::fake(function ($request) {
-            if (str_ends_with($request->url(), '/api/sync/status')) {
+            if (str_ends_with($request->url(), '/sync/status')) {
                 return Http::response(['workspace_id' => 'w', 'latest_seq' => 0]);
             }
 
-            if (str_ends_with($request->url(), '/api/sync/push')) {
+            if (str_ends_with($request->url(), '/sync/push')) {
                 return Http::response(['accepted' => collect($request['ops'])
                     ->values()
                     ->map(fn ($op, $index) => [
@@ -573,13 +636,14 @@ class CloudSyncTest extends TestCase
         $response = $this->postJson('/api/cloud/connect', [
             'url' => self::CLOUD,
             'token' => 'test-token',
+            'workspace_id' => 'w',
         ]);
 
         $response->assertOk();
         $this->assertTrue($response->json('seeded'));
 
         Http::assertSent(function ($request) use ($pageId) {
-            if (! str_contains($request->url(), '/api/sync/push')) {
+            if (! str_contains($request->url(), '/sync/push')) {
                 return false;
             }
 
@@ -614,11 +678,11 @@ class CloudSyncTest extends TestCase
             &$nextServerSeq,
             &$recovering,
         ) {
-            if (str_ends_with($request->url(), '/api/sync/status')) {
+            if (str_ends_with($request->url(), '/sync/status')) {
                 return Http::response(['workspace_id' => 'w', 'latest_seq' => 0]);
             }
 
-            if (str_ends_with($request->url(), '/api/sync/push')) {
+            if (str_ends_with($request->url(), '/sync/push')) {
                 if ($recovering) {
                     if ($retryBatchIds === []) {
                         $retryBatchIds = collect($request['ops'])->pluck('op_id')->all();
@@ -655,6 +719,7 @@ class CloudSyncTest extends TestCase
         $this->postJson('/api/cloud/connect', [
             'url' => self::CLOUD,
             'token' => 'test-token',
+            'workspace_id' => 'w',
         ])->assertStatus(422)
             ->assertJsonPath('message', 'Cloud seed failed (HTTP 503).');
 
@@ -680,8 +745,8 @@ class CloudSyncTest extends TestCase
         $childId = fake()->uuid();
 
         Http::fake([
-            self::CLOUD.'/api/sync/status' => Http::response(['workspace_id' => 'w', 'latest_seq' => 12]),
-            self::CLOUD.'/api/sync/bootstrap' => Http::response([
+            self::cloudSync('status') => Http::response(['workspace_id' => 'w', 'latest_seq' => 12]),
+            self::cloudSync('bootstrap') => Http::response([
                 'latest_seq' => 12,
                 'nodes' => [
                     // Child listed first: bootstrap must order parents first
@@ -696,13 +761,14 @@ class CloudSyncTest extends TestCase
                 ],
                 'media' => [],
             ]),
-            self::CLOUD.'/api/sync/push' => Http::response(['accepted' => []]),
-            self::CLOUD.'/api/sync/pull*' => Http::response(['ops' => [], 'latest_seq' => 12]),
+            self::cloudSync('push') => Http::response(['accepted' => []]),
+            self::cloudSync('pull').'*' => Http::response(['ops' => [], 'latest_seq' => 12]),
         ]);
 
         $response = $this->postJson('/api/cloud/connect', [
             'url' => self::CLOUD,
             'token' => 'test-token',
+            'workspace_id' => 'w',
         ]);
 
         $response->assertOk();
@@ -723,10 +789,14 @@ class CloudSyncTest extends TestCase
         $node->save();
 
         Http::fake([
-            self::CLOUD.'/api/sync/status' => Http::response(['workspace_id' => 'w', 'latest_seq' => 5]),
+            self::cloudSync('status') => Http::response(['workspace_id' => 'w', 'latest_seq' => 5]),
         ]);
 
-        $this->postJson('/api/cloud/connect', ['url' => self::CLOUD, 'token' => 't'])
+        $this->postJson('/api/cloud/connect', [
+            'url' => self::CLOUD,
+            'token' => 't',
+            'workspace_id' => 'w',
+        ])
             ->assertStatus(422);
 
         $this->assertNull(SyncState::current());
@@ -736,7 +806,7 @@ class CloudSyncTest extends TestCase
     {
         $this->pairedState(12);
         Http::fake([
-            self::CLOUD.'/api/sync/status' => Http::response([
+            self::cloudSync('status') => Http::response([
                 'workspace_id' => 'w',
                 'latest_seq' => 12,
                 'realtime' => [

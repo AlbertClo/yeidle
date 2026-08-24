@@ -229,11 +229,13 @@ final class TwoReplicaHarness
             $url = $request->url();
             $path = parse_url($url, PHP_URL_PATH);
 
-            if ($request->method() === 'POST' && $path === '/api/sync/push') {
+            if ($request->method() === 'POST'
+                && $path === '/api/workspaces/workspace-1/sync/push') {
                 return $this->acceptPush($request);
             }
 
-            if ($request->method() === 'GET' && $path === '/api/sync/pull') {
+            if ($request->method() === 'GET'
+                && $path === '/api/workspaces/workspace-1/sync/pull') {
                 parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
                 $since = (int) ($query['since'] ?? 0);
 
@@ -247,7 +249,7 @@ final class TwoReplicaHarness
             }
 
             if ($request->method() === 'GET'
-                && preg_match('#^/api/blobs/([0-9a-f]{64})/download-url$#', $path, $matches)) {
+                && preg_match('#^/api/workspaces/workspace-1/blobs/([0-9a-f]{64})/download-url$#', $path, $matches)) {
                 return isset($this->cloudBlobs[$matches[1]])
                     ? Http::response(['url' => "https://blobs.test/{$matches[1]}"])
                     : Http::response([], 404);

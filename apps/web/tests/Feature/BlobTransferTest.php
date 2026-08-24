@@ -23,15 +23,21 @@ beforeEach(function () {
     Storage::forgetDisk('s3_public');
 });
 
+function blobUrl(Workspace $workspace, string $hash, string $suffix = ''): string
+{
+    return "/api/workspaces/{$workspace->id}/blobs/{$hash}{$suffix}";
+}
+
 test('blob endpoints require authentication', function () {
+    $workspace = Workspace::factory()->create();
     $hash = str_repeat('ab', 32);
 
-    $this->head("/api/blobs/{$hash}")->assertUnauthorized();
-    $this->postJson("/api/blobs/{$hash}/upload-url", [
+    $this->head(blobUrl($workspace, $hash))->assertUnauthorized();
+    $this->postJson(blobUrl($workspace, $hash, '/upload-url'), [
         'mime_type' => 'image/png',
         'size' => 10,
     ])->assertUnauthorized();
-    $this->getJson("/api/blobs/{$hash}/download-url")->assertUnauthorized();
+    $this->getJson(blobUrl($workspace, $hash, '/download-url'))->assertUnauthorized();
 });
 
 test('blob existence is scoped to the authenticated workspace', function () {
@@ -44,10 +50,10 @@ test('blob existence is scoped to the authenticated workspace', function () {
     Storage::disk('s3')->put("blobs/{$aliceWorkspace->id}/{$hash}", 'private');
 
     Sanctum::actingAs($alice);
-    $this->head("/api/blobs/{$hash}")->assertNoContent();
+    $this->head(blobUrl($aliceWorkspace, $hash))->assertNoContent();
 
     Sanctum::actingAs($bob);
-    $this->head("/api/blobs/{$hash}")->assertNotFound();
+    $this->head(blobUrl($aliceWorkspace, $hash))->assertNotFound();
 });
 
 test('it returns workspace-scoped presigned transfer urls', function () {
@@ -56,7 +62,7 @@ test('it returns workspace-scoped presigned transfer urls', function () {
     $hash = str_repeat('ef', 32);
     Sanctum::actingAs($user);
 
-    $upload = $this->postJson("/api/blobs/{$hash}/upload-url", [
+    $upload = $this->postJson(blobUrl($workspace, $hash, '/upload-url'), [
         'mime_type' => 'image/png',
         'size' => 123,
     ])->assertOk()
@@ -73,7 +79,7 @@ test('it returns workspace-scoped presigned transfer urls', function () {
 
     Storage::disk('s3')->put("blobs/{$workspace->id}/{$hash}", 'blob');
 
-    $download = $this->getJson("/api/blobs/{$hash}/download-url")
+    $download = $this->getJson(blobUrl($workspace, $hash, '/download-url'))
         ->assertOk()
         ->assertJsonStructure(['url']);
 
@@ -89,7 +95,7 @@ test('it does not issue another upload url for an existing blob', function () {
     Sanctum::actingAs($user);
     Storage::disk('s3')->put("blobs/{$workspace->id}/{$hash}", 'blob');
 
-    $this->postJson("/api/blobs/{$hash}/upload-url", [
+    $this->postJson(blobUrl($workspace, $hash, '/upload-url'), [
         'mime_type' => 'application/octet-stream',
         'size' => 4,
     ])->assertOk()
@@ -97,7 +103,9 @@ test('it does not issue another upload url for an existing blob', function () {
 });
 
 test('blob hashes must be canonical sha256 values', function () {
-    Sanctum::actingAs(User::factory()->create());
+    $user = User::factory()->create();
+    $workspace = Workspace::factory()->for($user)->create();
+    Sanctum::actingAs($user);
 
-    $this->head('/api/blobs/not-a-hash')->assertNotFound();
+    $this->head(blobUrl($workspace, 'not-a-hash'))->assertNotFound();
 });

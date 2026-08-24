@@ -1,0 +1,37 @@
+[
+    {
+        "title": "Project Notes",
+        "uid": "page-project",
+        "children": [
+            {
+                "string": "{{[[TODO]]}} Link to [[Reference Page]] and ((block-target))",
+                "uid": "block-source"
+            },
+            {
+                "string": "{{[[embed]]: ((block-target))}}",
+                "uid": "block-embed"
+            },
+            {
+                "string": "![diagram.png](https://firebasestorage.googleapis.com/v0/b/example/o/users%2Fdemo%2Fdiagram.png?alt=media&token=test)",
+                "uid": "block-file"
+            }
+        ]
+    },
+    {
+        "title": "Reference Page",
+        "uid": "page-reference",
+        "children": [
+            {
+                "string": "Target text",
+                "uid": "block-target",
+                "heading": 2,
+                "children": [
+                    {
+                        "string": "Nested target",
+                        "uid": "block-nested"
+                    }
+                ]
+            }
+        ]
+    }
+]

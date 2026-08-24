@@ -1,1 +1,3 @@
 *.sqlite*
+workspaces.json
+workspaces/

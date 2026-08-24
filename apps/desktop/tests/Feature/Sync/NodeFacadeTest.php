@@ -65,6 +65,25 @@ class NodeFacadeTest extends TestCase
         $this->assertSame('v2', Node::find($id)->content);
     }
 
+    public function test_reference_endpoint_returns_the_target_subtree_and_root_page(): void
+    {
+        $page = $this->postJson('/api/nodes', ['content' => 'Reference root'])->json('id');
+        $target = $this->postJson('/api/nodes', [
+            'parent_id' => $page,
+            'content' => 'Referenced block',
+        ])->json('id');
+        $child = $this->postJson('/api/nodes', [
+            'parent_id' => $target,
+            'content' => 'Nested block',
+        ])->json('id');
+
+        $this->getJson("/api/nodes/{$target}/reference")
+            ->assertOk()
+            ->assertJsonPath('id', $target)
+            ->assertJsonPath('page_id', $page)
+            ->assertJsonPath('children.0.id', $child);
+    }
+
     public function test_legacy_endpoints_are_gone(): void
     {
         $id = fake()->uuid();

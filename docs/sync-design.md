@@ -241,7 +241,7 @@ text" because they touched different fields.
 ### Push (client → cloud)
 
 ```
-POST /api/sync/push   { client_id, ops: [...] }
+POST /api/workspaces/{workspace}/sync/push   { client_id, ops: [...] }
 → { accepted: [{ op_id, server_seq }, ...] }
 ```
 
@@ -255,7 +255,7 @@ POST /api/sync/push   { client_id, ops: [...] }
 ### Pull (cloud → client)
 
 ```
-GET /api/sync/pull?since={last_server_seq}
+GET /api/workspaces/{workspace}/sync/pull?since={last_server_seq}
 → { ops: [...], latest_seq }
 ```
 
@@ -324,8 +324,8 @@ remote transactions are marked `addToHistory: false`.
 A new Laravel app (`apps/web`), which will eventually also serve the web
 client. For sync it provides:
 
-- `workspaces` (single personal workspace initially; the schema carries
-  `workspace_id` from day one so sharing is additive later).
+- `workspaces` (multiple owner-only personal workspaces initially; the schema
+  carries `workspace_id` from day one so sharing is additive later).
 - `ops` log table per workspace (`server_seq` = per-workspace monotonic).
 - **Projection tables** (`nodes`, `media`) maintained transactionally as ops
   are accepted — the same apply logic the desktop uses, shared as a package
@@ -362,7 +362,7 @@ favors Postgres if anything.
 Blobs are immutable and content-addressed, so this layer is conflict-free:
 
 - **Upload**: after a local upload completes, the client asks
-  `HEAD /api/blobs/{hash}`. On 404 it requests a short-lived presigned PUT
+  `HEAD /api/workspaces/{workspace}/blobs/{hash}`. On 404 it requests a short-lived presigned PUT
   URL and uploads directly to object storage. A durable local timestamp
   retries unfinished transfers, and the normal outbox is not published
   until blob upload succeeds. The `media.create` op still carries only

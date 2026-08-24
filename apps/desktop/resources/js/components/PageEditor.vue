@@ -24,6 +24,7 @@ import type { Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import type { EditorView } from '@tiptap/pm/view';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import { generateNKeysBetween } from 'fractional-indexing';
 import {
@@ -49,6 +50,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { BlockEmbed } from '@/extensions/blockembed';
+import { BlockReference } from '@/extensions/blockreference';
 import { FileNode } from '@/extensions/filenode';
 import { SlashCommand } from '@/extensions/slashcommand';
 import { WebLink } from '@/extensions/weblink';
@@ -123,7 +126,10 @@ function focusStart() {
         }
     });
 
-    if (firstItemNode?.firstChild?.type.name === 'fileNode') {
+    if (
+        firstItemNode?.firstChild?.type.name === 'fileNode' ||
+        firstItemNode?.firstChild?.type.name === 'blockEmbed'
+    ) {
         const gapPos = firstItemPos + 1;
         e.view.focus();
         e.view.dispatch(
@@ -816,9 +822,7 @@ const AlwaysSplitListItem = Extension.create({
                             tr = tr.delete(delFrom, delTo);
                             // Place cursor at join point
                             tr = tr.setSelection(
-                                editor.state.selection.constructor.near(
-                                    tr.doc.resolve(targetEnd),
-                                ),
+                                TextSelection.near(tr.doc.resolve(targetEnd)),
                             );
                             editor.view.dispatch(tr);
 
@@ -933,7 +937,7 @@ const AlwaysSplitListItem = Extension.create({
                                     }
 
                                     tr = tr.setSelection(
-                                        editor.state.selection.constructor.near(
+                                        TextSelection.near(
                                             tr.doc.resolve(cursorPos),
                                         ),
                                     );
@@ -1018,9 +1022,7 @@ const AlwaysSplitListItem = Extension.create({
                         ]);
                         const tr = editor.state.tr.insert(endPos, newItem);
                         tr.setSelection(
-                            editor.state.selection.constructor.near(
-                                tr.doc.resolve(endPos + 1),
-                            ),
+                            TextSelection.near(tr.doc.resolve(endPos + 1)),
                         );
                         tr.scrollIntoView();
                         editor.view.dispatch(tr);
@@ -1197,6 +1199,18 @@ function listItemToNode(
             return `[[${a?.label ?? a?.id ?? ''}]]`;
         }
 
+        if (node.type === 'blockReference') {
+            const a = node.attrs as Record<string, unknown>;
+
+            return `((${a?.fallback ?? a?.targetUid ?? ''}))`;
+        }
+
+        if (node.type === 'blockEmbed') {
+            const a = node.attrs as Record<string, unknown>;
+
+            return `{{embed: ((${a?.fallback ?? a?.targetUid ?? ''}))}}`;
+        }
+
         if (node.type === 'fileNode') {
             const a = node.attrs as Record<string, unknown>;
 
@@ -1235,7 +1249,8 @@ function listItemToNode(
         position,
         content: textContent,
         tiptap_content: tiptapContent,
-        is_checked: attrs.checked ?? null,
+        is_checked: typeof attrs.checked === 'boolean' ? attrs.checked : null,
+        modified_hlc: '',
         created_at: '',
         updated_at: '',
         children,
@@ -1505,6 +1520,7 @@ function updateLink() {
         selectedPageTitle: label,
         pos: pos,
         searchResults: [],
+        searchSelectedIndex: 0,
     };
 
     // Load initial page title
@@ -1684,6 +1700,114 @@ function handleWebLinkKeydown(e: KeyboardEvent) {
         e.preventDefault();
         saveUpdatedWebLink();
     }
+}
+
+function isAtomOnlyTextblock(node: PmNode): boolean {
+    if (!node.isTextblock || node.childCount === 0) {
+        return false;
+    }
+
+    for (let index = 0; index < node.childCount; index++) {
+        const child = node.child(index);
+
+        if (!child.isInline || !child.isAtom) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function adjacentTextblock(
+    doc: PmNode,
+    currentPos: number,
+    direction: -1 | 1,
+): { node: PmNode; pos: number } | null {
+    let adjacent: { node: PmNode; pos: number } | null = null;
+
+    doc.descendants((node, pos) => {
+        if (!node.isTextblock) {
+            return true;
+        }
+
+        if (direction === -1 && pos < currentPos) {
+            adjacent = { node, pos };
+        } else if (direction === 1 && pos > currentPos && adjacent === null) {
+            adjacent = { node, pos };
+        }
+
+        return false;
+    });
+
+    return adjacent;
+}
+
+function caretIsOnBoundaryLine(
+    view: EditorView,
+    cursorPos: number,
+    boundaryPos: number,
+): boolean {
+    const cursor = view.coordsAtPos(cursorPos);
+    const boundary = view.coordsAtPos(boundaryPos);
+
+    return Math.abs(cursor.top - boundary.top) <= 2;
+}
+
+function moveAcrossAtomOnlyTextblock(
+    view: EditorView,
+    event: KeyboardEvent,
+): boolean {
+    if (
+        (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        document.querySelector('.tippy-box') ||
+        !(view.state.selection instanceof TextSelection) ||
+        !view.state.selection.empty
+    ) {
+        return false;
+    }
+
+    const { $head } = view.state.selection;
+
+    if (!$head.parent.isTextblock) {
+        return false;
+    }
+
+    const direction = event.key === 'ArrowUp' ? -1 : 1;
+    const currentPos = $head.before($head.depth);
+    const adjacent = adjacentTextblock(view.state.doc, currentPos, direction);
+
+    if (
+        adjacent === null ||
+        (!isAtomOnlyTextblock($head.parent) &&
+            !isAtomOnlyTextblock(adjacent.node))
+    ) {
+        return false;
+    }
+
+    const boundaryPos =
+        direction === -1 ? $head.start($head.depth) : $head.end($head.depth);
+
+    if (
+        !isAtomOnlyTextblock($head.parent) &&
+        !caretIsOnBoundaryLine(view, $head.pos, boundaryPos)
+    ) {
+        return false;
+    }
+
+    const targetPos =
+        adjacent.pos + 1 + (direction === -1 ? adjacent.node.content.size : 0);
+    const transaction = view.state.tr
+        .setSelection(TextSelection.create(view.state.doc, targetPos))
+        .scrollIntoView();
+
+    event.preventDefault();
+    view.dispatch(transaction);
+
+    return true;
 }
 
 const editor = useEditor({
@@ -1883,9 +2007,9 @@ const editor = useEditor({
             suggestion: wikiLinkSuggestion(),
             renderText: ({ node }) =>
                 `[[${node.attrs.label ?? node.attrs.id}]]`,
-            renderHTML: ({ node, HTMLAttributes }) => [
+            renderHTML: ({ node }) => [
                 'span',
-                { ...HTMLAttributes, 'data-page-id': node.attrs.id },
+                { class: 'wiki-link', 'data-page-id': node.attrs.id },
                 ['span', { class: 'wiki-link-bracket' }, '[['],
                 [
                     'span',
@@ -1896,6 +2020,8 @@ const editor = useEditor({
             ],
         }),
         WebLink,
+        BlockReference,
+        BlockEmbed,
         FileNode,
         SlashCommand,
     ],
@@ -1904,6 +2030,10 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleKeyDown: (view, event) => {
+            if (moveAcrossAtomOnlyTextblock(view, event)) {
+                return true;
+            }
+
             // Enter at GapCursor: split listItem at the gap position
             if (
                 event.key === 'Enter' &&
@@ -2097,7 +2227,7 @@ const editor = useEditor({
             }
 
             // Select atom inline nodes (mentions, web links) with arrow keys
-            const atomTypes = ['mention', 'webLink'];
+            const atomTypes = ['mention', 'webLink', 'blockReference'];
 
             if (event.key === 'ArrowRight') {
                 const { $head } = view.state.selection;
@@ -2118,9 +2248,7 @@ const editor = useEditor({
                 ) {
                     const pos = view.state.selection.to;
                     const tr = view.state.tr.setSelection(
-                        view.state.selection.constructor.near(
-                            view.state.doc.resolve(pos),
-                        ),
+                        TextSelection.near(view.state.doc.resolve(pos)),
                     );
                     view.dispatch(tr);
 
@@ -2135,10 +2263,7 @@ const editor = useEditor({
                 ) {
                     const pos = view.state.selection.from;
                     const tr = view.state.tr.setSelection(
-                        view.state.selection.constructor.near(
-                            view.state.doc.resolve(pos),
-                            -1,
-                        ),
+                        TextSelection.near(view.state.doc.resolve(pos), -1),
                     );
                     view.dispatch(tr);
 
@@ -2189,7 +2314,7 @@ const editor = useEditor({
                                         newItem,
                                     );
                                     tr.setSelection(
-                                        view.state.selection.constructor.near(
+                                        TextSelection.near(
                                             tr.doc.resolve(endPos + 1),
                                         ),
                                     );
@@ -2246,9 +2371,7 @@ const editor = useEditor({
                             ]);
                             const tr = view.state.tr.insert(endPos, newItem);
                             tr.setSelection(
-                                view.state.selection.constructor.near(
-                                    tr.doc.resolve(endPos + 1),
-                                ),
+                                TextSelection.near(tr.doc.resolve(endPos + 1)),
                             );
                             view.dispatch(tr);
 
@@ -2565,7 +2688,9 @@ onBeforeUnmount(() => {
                         <Input
                             :model-value="updateLinkModal.pageQuery"
                             placeholder="Search for a page..."
-                            @update:model-value="searchPagesForUpdate"
+                            @update:model-value="
+                                (value) => searchPagesForUpdate(String(value))
+                            "
                             @keydown="handlePageInputKeydown"
                         />
                         <div

@@ -14,8 +14,10 @@ class SyncController extends Controller
         private SyncService $sync,
     ) {}
 
-    public function push(Request $request): JsonResponse
+    public function push(Request $request, Workspace $workspace): JsonResponse
     {
+        $this->authorizeWorkspace($request, $workspace);
+
         $request->validate([
             'client_id' => ['required', 'string'],
             'ops' => ['required', 'array', 'max:1000'],
@@ -31,7 +33,7 @@ class SyncController extends Controller
         // Raw input, not the validated subset: validation keeps only keys
         // with explicit rules and would strip payload fields from the log
         $accepted = $this->sync->push(
-            $this->workspaceFor($request),
+            $workspace,
             $request->user(),
             $request->string('client_id')->toString(),
             $request->input('ops'),
@@ -40,21 +42,25 @@ class SyncController extends Controller
         return response()->json(['accepted' => $accepted]);
     }
 
-    public function pull(Request $request): JsonResponse
+    public function pull(Request $request, Workspace $workspace): JsonResponse
     {
+        $this->authorizeWorkspace($request, $workspace);
+
         $request->validate([
             'since' => ['required', 'integer', 'min:0'],
         ]);
 
         return response()->json(
-            $this->sync->pull($this->workspaceFor($request), (int) $request->input('since')),
+            $this->sync->pull($workspace, (int) $request->input('since')),
         );
     }
 
-    public function bootstrap(Request $request): JsonResponse
+    public function bootstrap(Request $request, Workspace $workspace): JsonResponse
     {
+        $this->authorizeWorkspace($request, $workspace);
+
         return response()->json(
-            $this->sync->bootstrap($this->workspaceFor($request)),
+            $this->sync->bootstrap($workspace),
         );
     }
 
@@ -62,9 +68,9 @@ class SyncController extends Controller
      * Cheap probe for pairing: token validity plus the workspace's cursor
      * position, without shipping any data.
      */
-    public function status(Request $request): JsonResponse
+    public function status(Request $request, Workspace $workspace): JsonResponse
     {
-        $workspace = $this->workspaceFor($request);
+        $this->authorizeWorkspace($request, $workspace);
 
         return response()->json([
             'workspace_id' => $workspace->id,
@@ -105,14 +111,8 @@ class SyncController extends Controller
         ];
     }
 
-    /**
-     * Phase 1: every user gets one personal workspace, created on first
-     * use. Multiple workspaces become a route parameter later (§14).
-     */
-    private function workspaceFor(Request $request): Workspace
+    private function authorizeWorkspace(Request $request, Workspace $workspace): void
     {
-        return $request->user()->workspaces()->firstOrCreate([], [
-            'name' => 'Personal',
-        ]);
+        abort_unless($workspace->user_id === $request->user()->id, 404);
     }
 }

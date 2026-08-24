@@ -1,7 +1,5 @@
-import { mergeAttributes, Node, inputRuleFromRegExp } from '@tiptap/core';
+import { InputRule, mergeAttributes, Node } from '@tiptap/core';
 
-// Match URLs typed followed by a space
-const URL_REGEX = /(?:https?:\/\/)[^\s]+/;
 const URL_INPUT_REGEX = /((?:https?:\/\/)[^\s]+)\s$/;
 
 export const WebLink = Node.create({
@@ -45,7 +43,7 @@ export const WebLink = Node.create({
 
     addInputRules() {
         return [
-            {
+            new InputRule({
                 find: URL_INPUT_REGEX,
                 handler: ({ state, range, match }) => {
                     const href = match[1];
@@ -55,7 +53,7 @@ export const WebLink = Node.create({
                     tr.replaceWith(range.from, range.to, node);
                     tr.insertText(' ');
                 },
-            },
+            }),
         ];
     },
 
@@ -68,7 +66,11 @@ export const WebLink = Node.create({
                     if (nodeBefore?.type.name === this.name) {
                         // Convert back to editable text instead of deleting
                         const pos = $from.pos - nodeBefore.nodeSize;
-                        tr.replaceWith(pos, $from.pos, state.schema.text(nodeBefore.attrs.href));
+                        tr.replaceWith(
+                            pos,
+                            $from.pos,
+                            state.schema.text(nodeBefore.attrs.href),
+                        );
                         return true;
                     }
                     return false;

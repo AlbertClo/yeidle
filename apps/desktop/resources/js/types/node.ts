@@ -3,7 +3,7 @@ export type Node = {
     parent_id: string | null;
     position: string;
     content: string;
-    tiptap_content: Record<string, unknown> | null;
+    tiptap_content: Record<string, unknown> | Record<string, unknown>[] | null;
     is_checked: boolean | null;
     modified_hlc: string;
     created_at: string;

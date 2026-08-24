@@ -151,10 +151,11 @@ class MediaSyncTest extends TestCase
             'size' => strlen($contents),
         ]);
         Storage::disk('local')->put("media/{$hash}", $contents);
+        $blobUrl = "https://cloud.test/api/workspaces/{$state->cloud_workspace_id}/blobs/{$hash}";
 
         Http::fake([
-            "https://cloud.test/api/blobs/{$hash}" => Http::response(status: 404),
-            "https://cloud.test/api/blobs/{$hash}/upload-url" => Http::response([
+            $blobUrl => Http::response(status: 404),
+            $blobUrl.'/upload-url' => Http::response([
                 'exists' => false,
                 'url' => 'https://objects.test/upload',
                 'headers' => ['Content-Type' => 'text/plain'],
@@ -183,9 +184,10 @@ class MediaSyncTest extends TestCase
             'size' => strlen($contents),
         ]);
         Storage::disk('local')->put("media/{$hash}", $contents);
+        $blobUrl = "https://cloud.test/api/workspaces/{$state->cloud_workspace_id}/blobs/{$hash}";
 
         Http::fake([
-            "https://cloud.test/api/blobs/{$hash}" => Http::response(status: 204),
+            $blobUrl => Http::response(status: 204),
         ]);
 
         $uploaded = app(CloudBlobService::class)->uploadPending($state);
@@ -235,9 +237,10 @@ class MediaSyncTest extends TestCase
             'mime_type' => 'text/plain',
             'size' => strlen($contents),
         ]);
+        $blobUrl = 'https://cloud.test/api/workspaces/'.SyncState::current()->cloud_workspace_id."/blobs/{$hash}";
 
         Http::fake([
-            "https://cloud.test/api/blobs/{$hash}/download-url" => Http::response([
+            $blobUrl.'/download-url' => Http::response([
                 'url' => 'https://objects.test/download',
             ]),
             'https://objects.test/download' => Http::response($contents),
@@ -261,9 +264,10 @@ class MediaSyncTest extends TestCase
             'mime_type' => 'text/plain',
             'size' => 8,
         ]);
+        $blobUrl = 'https://cloud.test/api/workspaces/'.SyncState::current()->cloud_workspace_id."/blobs/{$hash}";
 
         Http::fake([
-            "https://cloud.test/api/blobs/{$hash}/download-url" => Http::response([
+            $blobUrl.'/download-url' => Http::response([
                 'url' => 'https://objects.test/corrupt',
             ]),
             'https://objects.test/corrupt' => Http::response('wrong'),

@@ -29,10 +29,27 @@ function setOp(string $id, array $fields, int $millis, string $client = 'device-
     return makeOp('node.set', ['v' => 1, 'id' => $id, 'page_id' => $id, 'fields' => $fields], $millis, $client);
 }
 
+function syncUrl(string $endpoint, ?Workspace $workspace = null): string
+{
+    if ($workspace === null) {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            throw new RuntimeException('An authenticated user is required to infer a workspace.');
+        }
+
+        $workspace = $user->workspaces()->firstOrCreate([], ['name' => 'Personal']);
+    }
+
+    return "/api/workspaces/{$workspace->id}/sync/{$endpoint}";
+}
+
 test('sync endpoints require authentication', function () {
-    $this->postJson('/api/sync/push', [])->assertUnauthorized();
-    $this->getJson('/api/sync/pull?since=0')->assertUnauthorized();
-    $this->getJson('/api/sync/bootstrap')->assertUnauthorized();
+    $workspace = Workspace::factory()->create();
+
+    $this->postJson(syncUrl('push', $workspace), [])->assertUnauthorized();
+    $this->getJson(syncUrl('pull', $workspace).'?since=0')->assertUnauthorized();
+    $this->getJson(syncUrl('bootstrap', $workspace))->assertUnauthorized();
 });
 
 test('push assigns server sequence, stamps the user, and applies', function () {
@@ -40,7 +57,7 @@ test('push assigns server sequence, stamps the user, and applies', function () {
     Sanctum::actingAs($user);
 
     $id = fake()->uuid();
-    $response = $this->postJson('/api/sync/push', [
+    $response = $this->postJson(syncUrl('push'), [
         'client_id' => 'device-a',
         'ops' => [setOp($id, ['content' => 'from device a'], 100)],
     ]);
@@ -62,7 +79,7 @@ test('push broadcasts newly committed ops in pull wire format', function () {
 
     $operation = setOp(fake()->uuid(), ['content' => 'broadcast me'], 100);
 
-    $response = $this->postJson('/api/sync/push', [
+    $response = $this->postJson(syncUrl('push'), [
         'client_id' => 'installation-a',
         'ops' => [$operation],
     ])->assertSuccessful();
@@ -91,8 +108,8 @@ test('push is idempotent by op id', function () {
 
     $op = setOp(fake()->uuid(), ['content' => 'once'], 100);
 
-    $first = $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [$op]]);
-    $second = $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [$op]]);
+    $first = $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [$op]]);
+    $second = $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [$op]]);
 
     $second->assertOk();
     expect($second->json('accepted.0.server_seq'))->toBe($first->json('accepted.0.server_seq'));
@@ -107,7 +124,7 @@ test('oversized broadcasts send a sequence hint without operation contents', fun
     Event::fake([WorkspaceOpsCommitted::class]);
     config()->set('reverb.broadcast_max_payload_size', 1);
 
-    $this->postJson('/api/sync/push', [
+    $this->postJson(syncUrl('push'), [
         'client_id' => 'installation-a',
         'ops' => [setOp(fake()->uuid(), ['content' => 'pull this instead'], 100)],
     ])->assertSuccessful();
@@ -128,19 +145,19 @@ test('workspace broadcast cursors chain across globally non-contiguous sequences
     Event::fake([WorkspaceOpsCommitted::class]);
 
     Sanctum::actingAs($alice);
-    $first = $this->postJson('/api/sync/push', [
+    $first = $this->postJson(syncUrl('push'), [
         'client_id' => 'alice-a',
         'ops' => [setOp(fake()->uuid(), ['content' => 'alice first'], 100)],
     ])->json('accepted.0.server_seq');
 
     Sanctum::actingAs($bob);
-    $this->postJson('/api/sync/push', [
+    $this->postJson(syncUrl('push'), [
         'client_id' => 'bob-a',
         'ops' => [setOp(fake()->uuid(), ['content' => 'bob'], 101)],
     ])->assertSuccessful();
 
     Sanctum::actingAs($alice);
-    $latest = $this->postJson('/api/sync/push', [
+    $latest = $this->postJson(syncUrl('push'), [
         'client_id' => 'alice-b',
         'ops' => [setOp(fake()->uuid(), ['content' => 'alice second'], 102)],
     ])->json('accepted.0.server_seq');
@@ -157,17 +174,17 @@ test('workspace broadcast cursors chain across globally non-contiguous sequences
 test('pull returns ops after the cursor in order', function () {
     Sanctum::actingAs(User::factory()->create());
 
-    $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [
+    $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [
         setOp(fake()->uuid(), ['content' => 'first'], 100),
         setOp(fake()->uuid(), ['content' => 'second'], 101),
     ]])->assertOk();
 
-    $all = $this->getJson('/api/sync/pull?since=0');
+    $all = $this->getJson(syncUrl('pull').'?since=0');
     expect($all->json('ops'))->toHaveCount(2);
     expect($all->json('ops.0.payload.fields.content'))->toBe('first');
 
     $latest = $all->json('latest_seq');
-    $none = $this->getJson("/api/sync/pull?since={$latest}");
+    $none = $this->getJson(syncUrl('pull')."?since={$latest}");
     expect($none->json('ops'))->toHaveCount(0);
     expect($none->json('latest_seq'))->toBe($latest);
 });
@@ -178,23 +195,53 @@ test('workspaces are isolated between users', function () {
 
     Sanctum::actingAs($alice);
     $nodeId = fake()->uuid();
-    $this->postJson('/api/sync/push', ['client_id' => 'a', 'ops' => [
+    $this->postJson(syncUrl('push'), ['client_id' => 'a', 'ops' => [
         setOp($nodeId, ['content' => 'alice secret'], 100),
     ]])->assertOk();
 
     Sanctum::actingAs($bob);
-    $pull = $this->getJson('/api/sync/pull?since=0');
+    $pull = $this->getJson(syncUrl('pull').'?since=0');
     expect($pull->json('ops'))->toHaveCount(0);
 
-    $bootstrap = $this->getJson('/api/sync/bootstrap');
+    $bootstrap = $this->getJson(syncUrl('bootstrap'));
     expect($bootstrap->json('nodes'))->toHaveCount(0);
 
     // Bob referencing Alice's node id cannot touch her data
-    $this->postJson('/api/sync/push', ['client_id' => 'b', 'ops' => [
+    $this->postJson(syncUrl('push'), ['client_id' => 'b', 'ops' => [
         setOp($nodeId, ['content' => 'bob overwrite attempt'], 999999),
     ]])->assertOk();
 
     expect(Node::find($nodeId)->content)->toBe('alice secret');
+});
+
+test('multiple workspaces owned by one user have independent logs and projections', function () {
+    $user = User::factory()->create();
+    $personal = Workspace::factory()->for($user)->create(['name' => 'Personal']);
+    $knowledge = Workspace::factory()->for($user)->create(['name' => 'Albert Knowledge']);
+    Sanctum::actingAs($user);
+
+    $nodeId = fake()->uuid();
+    $this->postJson(syncUrl('push', $knowledge), [
+        'client_id' => 'importer',
+        'ops' => [setOp($nodeId, ['content' => 'Roam import'], 100)],
+    ])->assertSuccessful();
+
+    $this->getJson(syncUrl('pull', $personal).'?since=0')
+        ->assertSuccessful()
+        ->assertJsonCount(0, 'ops');
+    $this->getJson(syncUrl('bootstrap', $personal))
+        ->assertSuccessful()
+        ->assertJsonCount(0, 'nodes');
+    $this->getJson(syncUrl('bootstrap', $knowledge))
+        ->assertSuccessful()
+        ->assertJsonPath('nodes.0.id', $nodeId);
+});
+
+test('a user cannot address another users workspace directly', function () {
+    $workspace = Workspace::factory()->create();
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->getJson(syncUrl('status', $workspace))->assertNotFound();
 });
 
 test('replaying another workspaces op id does not leak or apply', function () {
@@ -202,11 +249,11 @@ test('replaying another workspaces op id does not leak or apply', function () {
     Sanctum::actingAs($alice);
 
     $op = setOp(fake()->uuid(), ['content' => 'alice data'], 100);
-    $this->postJson('/api/sync/push', ['client_id' => 'a', 'ops' => [$op]])->assertOk();
+    $this->postJson(syncUrl('push'), ['client_id' => 'a', 'ops' => [$op]])->assertOk();
 
     $bob = User::factory()->create();
     Sanctum::actingAs($bob);
-    $replay = $this->postJson('/api/sync/push', ['client_id' => 'b', 'ops' => [$op]]);
+    $replay = $this->postJson(syncUrl('push'), ['client_id' => 'b', 'ops' => [$op]]);
 
     $replay->assertOk();
     expect($replay->json('accepted'))->toHaveCount(0);
@@ -217,12 +264,12 @@ test('bootstrap returns the projection with clocks and a consistent cursor', fun
     Sanctum::actingAs(User::factory()->create());
 
     $id = fake()->uuid();
-    $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [
+    $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [
         setOp($id, ['content' => 'snapshot me'], 100),
         makeOp('node.delete', ['v' => 1, 'id' => $id, 'page_id' => $id], 200),
     ]])->assertOk();
 
-    $bootstrap = $this->getJson('/api/sync/bootstrap');
+    $bootstrap = $this->getJson(syncUrl('bootstrap'));
     $bootstrap->assertOk();
 
     $node = collect($bootstrap->json('nodes'))->firstWhere('id', $id);
@@ -230,21 +277,21 @@ test('bootstrap returns the projection with clocks and a consistent cursor', fun
     expect($node['field_clocks'])->toHaveKey('deleted');
     expect($node['modified_hlc'])->toBe($node['field_clocks']['deleted']);
     expect($node['deleted_at'])->not->toBeNull();
-    expect($bootstrap->json('latest_seq'))->toBe($this->getJson('/api/sync/pull?since=0')->json('latest_seq'));
+    expect($bootstrap->json('latest_seq'))->toBe($this->getJson(syncUrl('pull').'?since=0')->json('latest_seq'));
 });
 
 test('status reports the workspace cursor cheaply', function () {
     Sanctum::actingAs(User::factory()->create());
 
-    $empty = $this->getJson('/api/sync/status');
+    $empty = $this->getJson(syncUrl('status'));
     $empty->assertSuccessful();
     expect($empty->json('latest_seq'))->toBe(0);
 
-    $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [
+    $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [
         setOp(fake()->uuid(), ['content' => 'x'], 100),
     ]])->assertSuccessful();
 
-    expect($this->getJson('/api/sync/status')->json('latest_seq'))->toBeGreaterThan(0);
+    expect($this->getJson(syncUrl('status'))->json('latest_seq'))->toBeGreaterThan(0);
 });
 
 test('status exposes public realtime settings without the app secret', function () {
@@ -257,7 +304,7 @@ test('status exposes public realtime settings without the app secret', function 
         'scheme' => 'https',
     ]);
 
-    $response = $this->getJson('/api/sync/status')->assertSuccessful();
+    $response = $this->getJson(syncUrl('status'))->assertSuccessful();
 
     $response->assertJsonPath('realtime.enabled', true)
         ->assertJsonPath('realtime.app_key', 'public-key')
@@ -316,7 +363,7 @@ test('workspace broadcast authorization requires authentication', function () {
 test('media create ops flow through the relay', function () {
     Sanctum::actingAs(User::factory()->create());
 
-    $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [
+    $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [
         makeOp('media.create', [
             'v' => 1,
             'id' => fake()->uuid(),
@@ -327,7 +374,7 @@ test('media create ops flow through the relay', function () {
         ], 100),
     ]])->assertOk();
 
-    $bootstrap = $this->getJson('/api/sync/bootstrap');
+    $bootstrap = $this->getJson(syncUrl('bootstrap'));
     expect($bootstrap->json('media'))->toHaveCount(1);
     expect($bootstrap->json('media.0.filename'))->toBe(str_repeat('ab', 32));
 });
@@ -335,7 +382,7 @@ test('media create ops flow through the relay', function () {
 test('media create ops with non canonical hashes are dropped', function () {
     Sanctum::actingAs(User::factory()->create());
 
-    $this->postJson('/api/sync/push', ['client_id' => 'd', 'ops' => [
+    $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [
         makeOp('media.create', [
             'v' => 1,
             'id' => fake()->uuid(),
@@ -346,5 +393,5 @@ test('media create ops with non canonical hashes are dropped', function () {
         ], 100),
     ]])->assertOk();
 
-    expect($this->getJson('/api/sync/bootstrap')->json('media'))->toBeEmpty();
+    expect($this->getJson(syncUrl('bootstrap'))->json('media'))->toBeEmpty();
 });

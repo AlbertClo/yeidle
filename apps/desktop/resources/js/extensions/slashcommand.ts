@@ -31,17 +31,21 @@ export const SlashCommand = Extension.create({
 
                     return {
                         onStart: (props: any) => {
-                            component = new VueRenderer(SlashCommandSuggestion, {
-                                props,
-                                editor: props.editor,
-                            });
+                            component = new VueRenderer(
+                                SlashCommandSuggestion,
+                                {
+                                    props,
+                                    editor: props.editor,
+                                },
+                            );
 
                             if (!props.clientRect) return;
 
                             popup = tippy('body', {
-                                getReferenceClientRect: props.clientRect as () => DOMRect,
+                                getReferenceClientRect:
+                                    props.clientRect as () => DOMRect,
                                 appendTo: () => document.body,
-                                content: component.element,
+                                content: component.element as HTMLElement,
                                 showOnCreate: true,
                                 interactive: true,
                                 trigger: 'manual',
@@ -52,7 +56,8 @@ export const SlashCommand = Extension.create({
                             component.updateProps(props);
                             if (props.clientRect) {
                                 popup[0].setProps({
-                                    getReferenceClientRect: props.clientRect as () => DOMRect,
+                                    getReferenceClientRect:
+                                        props.clientRect as () => DOMRect,
                                 });
                             }
                         },
@@ -61,7 +66,9 @@ export const SlashCommand = Extension.create({
                                 popup[0].hide();
                                 return true;
                             }
-                            return component.ref?.onKeyDown(props.event) ?? false;
+                            return (
+                                component.ref?.onKeyDown(props.event) ?? false
+                            );
                         },
                         onExit: () => {
                             popup[0].destroy();
@@ -90,7 +97,8 @@ export const SlashCommand = Extension.create({
                                             attrs: {
                                                 mediaId: media.id,
                                                 src: `/api/media/${media.id}`,
-                                                originalName: media.original_name,
+                                                originalName:
+                                                    media.original_name,
                                                 mimeType: media.mime_type,
                                                 size: media.size,
                                             },

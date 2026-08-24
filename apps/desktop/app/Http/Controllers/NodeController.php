@@ -79,6 +79,33 @@ class NodeController extends Controller
         );
     }
 
+    public function reference(Node $node): JsonResponse
+    {
+        abort_unless($node->isReachable(), 404);
+
+        $page = $node;
+        while ($page->parent_id !== null) {
+            $parent = Node::find($page->parent_id);
+
+            if (! $parent) {
+                break;
+            }
+
+            $page = $parent;
+        }
+
+        $node->load('children');
+        $this->loadChildrenRecursive($node, []);
+
+        return response()->json([
+            'id' => $node->id,
+            'content' => $node->content,
+            'tiptap_content' => $node->tiptap_content,
+            'page_id' => $page->id,
+            'children' => $node->children,
+        ]);
+    }
+
     /** The top-level page an op belongs to: itself for pages, else the root
      * of the parent chain. */
     private function rootPageId(string $id, ?string $parentId): string
@@ -94,5 +121,22 @@ class NodeController extends Controller
         }
 
         return $node?->id ?? $id;
+    }
+
+    /** @param array<string, true> $visited */
+    private function loadChildrenRecursive(Node $node, array $visited): void
+    {
+        if (isset($visited[$node->id])) {
+            $node->setRelation('children', collect());
+
+            return;
+        }
+
+        $visited[$node->id] = true;
+
+        foreach ($node->children as $child) {
+            $child->load('children');
+            $this->loadChildrenRecursive($child, $visited);
+        }
     }
 }

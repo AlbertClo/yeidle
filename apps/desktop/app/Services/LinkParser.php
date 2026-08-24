@@ -3,7 +3,7 @@
 namespace App\Services;
 
 /**
- * Extracts wikilink mentions from TipTap JSON. Used by the op-apply
+ * Extracts native page and block links from TipTap JSON. Used by the op-apply
  * function to rebuild the node_links projection — links derive from
  * UUID-based mentions only (sync design §5): title-based resolution against
  * local state would mint different page ids on different replicas.
@@ -11,7 +11,7 @@ namespace App\Services;
 class LinkParser
 {
     /**
-     * Extract mention nodes from tiptap_content JSON.
+     * Extract linked nodes from tiptap_content JSON.
      * Returns array of ['id' => pageId, 'label' => label]
      */
     public function extractMentions(array $content): array
@@ -34,6 +34,14 @@ class LinkParser
             $mentions[] = [
                 'id' => $content['attrs']['id'],
                 'label' => $content['attrs']['label'] ?? null,
+            ];
+        }
+
+        if (in_array(($content['type'] ?? ''), ['blockReference', 'blockEmbed'], true)
+            && isset($content['attrs']['targetId'])) {
+            $mentions[] = [
+                'id' => $content['attrs']['targetId'],
+                'label' => $content['attrs']['fallback'] ?? null,
             ];
         }
 

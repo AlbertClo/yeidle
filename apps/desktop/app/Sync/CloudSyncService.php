@@ -41,14 +41,24 @@ class CloudSyncService
      *
      * @throws \RuntimeException on unreachable/unauthorized cloud or refused pairing
      */
-    public function connect(string $url, string $token): array
-    {
+    public function connect(
+        string $url,
+        string $token,
+        ?string $workspaceId = null,
+        ?string $newWorkspaceName = null,
+    ): array {
         $url = rtrim($url, '/');
+
+        if ($newWorkspaceName !== null) {
+            $workspaceId = $this->createCloudWorkspace($url, $token, $newWorkspaceName)['id'];
+        } elseif ($workspaceId === null) {
+            throw new \RuntimeException('Choose which cloud workspace to connect.');
+        }
 
         try {
             $status = Http::withToken($token)->acceptJson()
                 ->connectTimeout(5)->timeout(15)
-                ->get("{$url}/api/sync/status");
+                ->get("{$url}/api/workspaces/{$workspaceId}/sync/status");
         } catch (ConnectionException) {
             throw new \RuntimeException('Could not connect to the cloud server.');
         }
@@ -57,10 +67,10 @@ class CloudSyncService
             throw new \RuntimeException("Could not reach the cloud server (HTTP {$status->status()}).");
         }
 
-        $workspaceId = $status->json('workspace_id');
+        $statusWorkspaceId = $status->json('workspace_id');
         $cloudSeq = $status->json('latest_seq');
 
-        if (! is_string($workspaceId) || $workspaceId === '' || ! is_int($cloudSeq) || $cloudSeq < 0) {
+        if ($statusWorkspaceId !== $workspaceId || ! is_int($cloudSeq) || $cloudSeq < 0) {
             throw new \RuntimeException('The cloud server returned an invalid sync status.');
         }
 
@@ -140,6 +150,49 @@ class CloudSyncService
             'ok' => $exchange['ok'],
             'error' => $exchange['error'],
         ];
+    }
+
+    /** @return list<array{id: string, name: string}> */
+    public function availableWorkspaces(string $url, string $token): array
+    {
+        $url = rtrim($url, '/');
+
+        try {
+            $response = Http::withToken($token)->acceptJson()
+                ->connectTimeout(5)->timeout(15)
+                ->get("{$url}/api/workspaces");
+        } catch (ConnectionException) {
+            throw new \RuntimeException('Could not connect to the cloud server.');
+        }
+
+        if (! $response->successful()) {
+            throw new \RuntimeException("Could not reach the cloud server (HTTP {$response->status()}).");
+        }
+
+        $workspaces = $response->json('workspaces');
+
+        if (! is_array($workspaces)) {
+            throw new \RuntimeException('The cloud server returned an invalid workspace list.');
+        }
+
+        $validated = [];
+
+        foreach ($workspaces as $workspace) {
+            if (! is_array($workspace)
+                || ! is_string($workspace['id'] ?? null)
+                || $workspace['id'] === ''
+                || ! is_string($workspace['name'] ?? null)
+                || $workspace['name'] === '') {
+                throw new \RuntimeException('The cloud server returned an invalid workspace list.');
+            }
+
+            $validated[] = [
+                'id' => $workspace['id'],
+                'name' => $workspace['name'],
+            ];
+        }
+
+        return $validated;
     }
 
     /**
@@ -247,7 +300,7 @@ class CloudSyncService
         }
 
         $response = $this->http($state)
-            ->get("{$state->cloud_url}/api/sync/status")
+            ->get($this->workspaceUrl($state, 'sync/status'))
             ->throw();
         $workspaceId = $response->json('workspace_id');
         $realtime = $response->json('realtime');
@@ -458,7 +511,7 @@ class CloudSyncService
                     return ['count' => $total, 'error' => null];
                 }
 
-                $response = $this->http($state)->post("{$state->cloud_url}/api/sync/push", [
+                $response = $this->http($state)->post($this->workspaceUrl($state, 'sync/push'), [
                     'client_id' => $state->client_id,
                     'ops' => $batch->map(fn (Op $op) => [
                         'op_id' => $op->op_id,
@@ -580,7 +633,7 @@ class CloudSyncService
 
         try {
             while (true) {
-                $response = $this->http($state)->get("{$state->cloud_url}/api/sync/pull", [
+                $response = $this->http($state)->get($this->workspaceUrl($state, 'sync/pull'), [
                     'since' => (int) $state->last_server_seq,
                 ]);
 
@@ -775,7 +828,7 @@ class CloudSyncService
         }
 
         foreach (array_chunk($ops, self::BATCH) as $chunk) {
-            $response = $this->http($state)->post("{$state->cloud_url}/api/sync/push", [
+            $response = $this->http($state)->post($this->workspaceUrl($state, 'sync/push'), [
                 'client_id' => $state->client_id,
                 'ops' => $chunk,
             ]);
@@ -807,7 +860,7 @@ class CloudSyncService
     private function bootstrapFromCloud(SyncState $state): void
     {
         $snapshot = $this->http($state)
-            ->get("{$state->cloud_url}/api/sync/bootstrap")
+            ->get($this->workspaceUrl($state, 'sync/bootstrap'))
             ->throw()
             ->json();
 
@@ -882,5 +935,42 @@ class CloudSyncService
             : [];
 
         return $hlcs === [] ? HlcGenerator::EPOCH : max($hlcs);
+    }
+
+    /** @return array{id: string, name: string} */
+    private function createCloudWorkspace(string $url, string $token, string $name): array
+    {
+        try {
+            $response = Http::withToken($token)->acceptJson()
+                ->connectTimeout(5)->timeout(15)
+                ->post(rtrim($url, '/').'/api/workspaces', ['name' => $name]);
+        } catch (ConnectionException) {
+            throw new \RuntimeException('Could not connect to the cloud server.');
+        }
+
+        if (! $response->successful()) {
+            throw new \RuntimeException("Could not create the cloud workspace (HTTP {$response->status()}).");
+        }
+
+        $workspace = $response->json('workspace');
+
+        if (! is_array($workspace)
+            || ! is_string($workspace['id'] ?? null)
+            || $workspace['id'] === ''
+            || ! is_string($workspace['name'] ?? null)
+            || $workspace['name'] === '') {
+            throw new \RuntimeException('The cloud server returned an invalid workspace.');
+        }
+
+        return ['id' => $workspace['id'], 'name' => $workspace['name']];
+    }
+
+    private function workspaceUrl(SyncState $state, string $path): string
+    {
+        if (! $state->cloud_url || ! $state->cloud_workspace_id) {
+            throw new \RuntimeException('Cloud sync is not configured.');
+        }
+
+        return "{$state->cloud_url}/api/workspaces/{$state->cloud_workspace_id}/{$path}";
     }
 }

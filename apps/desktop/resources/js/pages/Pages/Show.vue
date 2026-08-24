@@ -28,6 +28,7 @@ import {
     setCachedPage,
 } from '@/stores/pageCache';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
+import { notifyLocalNodesChanged } from '@/sync/nodeChanges';
 import {
     getClientId,
     mintNodeDelete,
@@ -313,13 +314,19 @@ async function flushOutbox(): Promise<boolean> {
         return true;
     }
 
-    const ok = await pushOps(outbox.slice());
+    const pushedOps = outbox.slice(0, pushed);
+    const ok = await pushOps(pushedOps);
 
     if (!ok) {
         return false;
     }
 
     outbox.splice(0, pushed);
+    notifyLocalNodesChanged(
+        pushedOps
+            .map((op) => op.payload.id)
+            .filter((id): id is string => typeof id === 'string'),
+    );
 
     return true;
 }
@@ -623,6 +630,14 @@ onMounted(() => {
     document.addEventListener('keydown', handleGlobalKeydown);
     refreshBacklinks();
     pullTimer = setInterval(pollRemoteOps, 1500);
+
+    const requestedBlock = new URLSearchParams(window.location.search).get(
+        'block',
+    );
+
+    if (requestedBlock) {
+        void nextTick(() => pageEditorRef.value?.focusBlock(requestedBlock));
+    }
 });
 
 onBeforeUnmount(() => {
@@ -683,7 +698,7 @@ onBeforeUnmount(() => {
                         v-else
                         class="cursor-text text-3xl font-bold"
                         :class="{ 'text-red-500': titleError }"
-                        @click="startEditingTitle"
+                        @click="startEditingTitle()"
                     >
                         {{ titleContent || '[untitled]' }}
                     </h1>
