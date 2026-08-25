@@ -1,8 +1,10 @@
-import { type SuggestionOptions } from '@tiptap/suggestion';
+import type { SuggestionOptions } from '@tiptap/suggestion';
 import { VueRenderer } from '@tiptap/vue-3';
-import tippy, { type Instance } from 'tippy.js';
+import tippy from 'tippy.js';
+import type { Instance } from 'tippy.js';
 import WikiLinkSuggestion from '@/components/WikiLinkSuggestion.vue';
 import type { SuggestionItem } from '@/components/WikiLinkSuggestion.vue';
+import { WIKI_LINK_ALLOW_SPACES } from './wikilinkMatch';
 
 export function wikiLinkSuggestion(): Omit<
     SuggestionOptions<SuggestionItem>,
@@ -10,6 +12,7 @@ export function wikiLinkSuggestion(): Omit<
 > {
     return {
         char: '[[',
+        allowSpaces: WIKI_LINK_ALLOW_SPACES,
         items: async ({ query }) => {
             const items: SuggestionItem[] = [];
 
@@ -25,6 +28,7 @@ export function wikiLinkSuggestion(): Omit<
                 const pages = data.filter(
                     (n: { parent_id: string | null }) => !n.parent_id,
                 );
+
                 for (const page of pages.slice(0, 10)) {
                     items.push({
                         id: page.id,
@@ -35,6 +39,7 @@ export function wikiLinkSuggestion(): Omit<
                 const exactMatch = items.some(
                     (i) => i.content.toLowerCase() === query.toLowerCase(),
                 );
+
                 if (!exactMatch) {
                     items.unshift({
                         id: `create:${query}`,
@@ -47,6 +52,7 @@ export function wikiLinkSuggestion(): Omit<
                     headers: { Accept: 'application/json' },
                 });
                 const data = await res.json();
+
                 for (const page of data.slice(0, 10)) {
                     items.push({
                         id: page.id,
@@ -68,7 +74,9 @@ export function wikiLinkSuggestion(): Omit<
                         editor: props.editor,
                     });
 
-                    if (!props.clientRect) return;
+                    if (!props.clientRect) {
+                        return;
+                    }
 
                     popup = tippy('body', {
                         getReferenceClientRect:
@@ -83,6 +91,7 @@ export function wikiLinkSuggestion(): Omit<
                 },
                 onUpdate: (props) => {
                     component.updateProps(props);
+
                     if (props.clientRect) {
                         popup[0].setProps({
                             getReferenceClientRect:
@@ -93,8 +102,10 @@ export function wikiLinkSuggestion(): Omit<
                 onKeyDown: (props) => {
                     if (props.event.key === 'Escape') {
                         popup[0].hide();
+
                         return true;
                     }
+
                     return component.ref?.onKeyDown(props.event) ?? false;
                 },
                 onExit: () => {
