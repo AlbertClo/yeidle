@@ -12,6 +12,12 @@ export const THEME_OPTIONS = [
         preview: ['#ffffff', '#f5f5f5', '#0a0a0a', '#2563eb'],
     },
     {
+        value: 'blush',
+        label: 'Blush',
+        dark: false,
+        preview: ['#fff7fb', '#ffeaf5', '#2a1726', '#c2187a'],
+    },
+    {
         value: 'catppuccin-mocha',
         label: 'Catppuccin Mocha',
         dark: true,
@@ -42,6 +48,12 @@ export const THEME_OPTIONS = [
         preview: ['#1a1b26', '#24283b', '#c0caf5', '#7aa2f7'],
     },
     {
+        value: 'cyberpunk',
+        label: 'Cyberpunk',
+        dark: true,
+        preview: ['#160b2d', '#271344', '#f7f1ff', '#fcee0a'],
+    },
+    {
         value: 'nord',
         label: 'Nord',
         dark: true,
@@ -58,6 +70,24 @@ export const THEME_OPTIONS = [
         label: 'Solarized Light',
         dark: false,
         preview: ['#fdf6e3', '#eee8d5', '#657b83', '#268bd2'],
+    },
+    {
+        value: 'cobalt2',
+        label: 'Cobalt2',
+        dark: true,
+        preview: ['#193549', '#1f4662', '#ffffff', '#ffc600'],
+    },
+    {
+        value: 'monokai',
+        label: 'Monokai',
+        dark: true,
+        preview: ['#272822', '#34352f', '#f8f8f2', '#a6e22e'],
+    },
+    {
+        value: 'oxblood',
+        label: 'Oxblood',
+        dark: true,
+        preview: ['#190d10', '#291419', '#f3e7e9', '#d85a72'],
     },
 ] as const;
 

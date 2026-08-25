@@ -31,14 +31,19 @@ final class PreferenceNodes
     public const THEMES = [
         'dark',
         'light',
+        'blush',
         'catppuccin-mocha',
         'catppuccin-latte',
         'gruvbox-dark',
         'gruvbox-light',
         'tokyo-night',
+        'cyberpunk',
         'nord',
         'solarized-dark',
         'solarized-light',
+        'cobalt2',
+        'monokai',
+        'oxblood',
     ];
 
     public const DARK_THEMES = [
@@ -46,8 +51,12 @@ final class PreferenceNodes
         'catppuccin-mocha',
         'gruvbox-dark',
         'tokyo-night',
+        'cyberpunk',
         'nord',
         'solarized-dark',
+        'cobalt2',
+        'monokai',
+        'oxblood',
     ];
 
     public function __construct(

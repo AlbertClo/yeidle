@@ -66,9 +66,9 @@ onBeforeUnmount(() => {
 
 <template>
     <Dialog v-model:open="isOpen">
-        <DialogContent class="max-h-[85svh] overflow-y-auto sm:max-w-4xl">
+        <DialogContent class="max-h-[85svh] overflow-y-auto sm:max-w-5xl">
             <div
-                class="grid gap-6 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]"
+                class="grid gap-6 md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]"
             >
                 <div>
                     <DialogHeader class="mb-4">
@@ -78,7 +78,7 @@ onBeforeUnmount(() => {
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-3 gap-3">
                         <button
                             v-for="theme in THEME_OPTIONS"
                             :key="theme.value"

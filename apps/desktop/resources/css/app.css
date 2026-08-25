@@ -181,12 +181,17 @@
 :root:is(
     [data-theme='catppuccin-mocha'],
     [data-theme='catppuccin-latte'],
+    [data-theme='blush'],
     [data-theme='gruvbox-dark'],
     [data-theme='gruvbox-light'],
     [data-theme='tokyo-night'],
+    [data-theme='cyberpunk'],
     [data-theme='nord'],
     [data-theme='solarized-dark'],
-    [data-theme='solarized-light']
+    [data-theme='solarized-light'],
+    [data-theme='cobalt2'],
+    [data-theme='monokai'],
+    [data-theme='oxblood']
 ) {
     --background: var(--theme-background);
     --foreground: var(--theme-foreground);
@@ -216,7 +221,20 @@
     --sidebar-border: var(--theme-border);
     --sidebar-ring: var(--theme-accent);
     --sidebar: var(--theme-sidebar);
-    --link: var(--theme-accent);
+    --link: var(--theme-link, var(--theme-accent));
+}
+
+:root[data-theme='blush'] {
+    --theme-background: #fff7fb;
+    --theme-foreground: #2a1726;
+    --theme-surface: #ffeaf5;
+    --theme-muted: #ffd6ec;
+    --theme-muted-foreground: #7d6173;
+    --theme-border: #f3b5d6;
+    --theme-accent: #c2187a;
+    --theme-link: #7e57c2;
+    --theme-destructive: #c6285d;
+    --theme-sidebar: #fae6f2;
 }
 
 :root[data-theme='catppuccin-mocha'] {
@@ -279,6 +297,18 @@
     --theme-sidebar: #16161e;
 }
 
+:root[data-theme='cyberpunk'] {
+    --theme-background: #160b2d;
+    --theme-foreground: #f7f1ff;
+    --theme-surface: #271344;
+    --theme-muted: #1d1034;
+    --theme-muted-foreground: #b9a7d0;
+    --theme-border: #5c2a82;
+    --theme-accent: #fcee0a;
+    --theme-destructive: #ff2a6d;
+    --theme-sidebar: #0f071e;
+}
+
 :root[data-theme='nord'] {
     --theme-background: #2e3440;
     --theme-foreground: #eceff4;
@@ -313,6 +343,44 @@
     --theme-accent: #268bd2;
     --theme-destructive: #dc322f;
     --theme-sidebar: #eee8d5;
+}
+
+:root[data-theme='cobalt2'] {
+    --theme-background: #193549;
+    --theme-foreground: #ffffff;
+    --theme-surface: #1f4662;
+    --theme-muted: #122738;
+    --theme-muted-foreground: #aaaaaa;
+    --theme-border: #234e6d;
+    --theme-accent: #ffc600;
+    --theme-link: #ffc600;
+    --theme-destructive: #ff628c;
+    --theme-sidebar: #15232d;
+}
+
+:root[data-theme='monokai'] {
+    --theme-background: #272822;
+    --theme-foreground: #f8f8f2;
+    --theme-surface: #34352f;
+    --theme-muted: #414339;
+    --theme-muted-foreground: #90908a;
+    --theme-border: #414339;
+    --theme-accent: #a6e22e;
+    --theme-link: #a6e22e;
+    --theme-destructive: #f92672;
+    --theme-sidebar: #1e1f1c;
+}
+
+:root[data-theme='oxblood'] {
+    --theme-background: #190d10;
+    --theme-foreground: #f3e7e9;
+    --theme-surface: #291419;
+    --theme-muted: #211014;
+    --theme-muted-foreground: #b99ba1;
+    --theme-border: #572631;
+    --theme-accent: #d85a72;
+    --theme-destructive: #ff334f;
+    --theme-sidebar: #110709;
 }
 
 @layer base {

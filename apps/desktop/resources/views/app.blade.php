@@ -34,12 +34,17 @@
 
             html[data-theme='catppuccin-mocha'] { background-color: #1e1e2e; }
             html[data-theme='catppuccin-latte'] { background-color: #eff1f5; }
+            html[data-theme='blush'] { background-color: #fff7fb; }
             html[data-theme='gruvbox-dark'] { background-color: #282828; }
             html[data-theme='gruvbox-light'] { background-color: #fbf1c7; }
             html[data-theme='tokyo-night'] { background-color: #1a1b26; }
+            html[data-theme='cyberpunk'] { background-color: #160b2d; }
             html[data-theme='nord'] { background-color: #2e3440; }
             html[data-theme='solarized-dark'] { background-color: #002b36; }
             html[data-theme='solarized-light'] { background-color: #fdf6e3; }
+            html[data-theme='cobalt2'] { background-color: #193549; }
+            html[data-theme='monokai'] { background-color: #272822; }
+            html[data-theme='oxblood'] { background-color: #190d10; }
         </style>
 
         <title inertia>{{ config('app.name', 'Laravel') }}</title>
