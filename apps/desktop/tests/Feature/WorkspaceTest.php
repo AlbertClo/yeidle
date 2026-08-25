@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Workspaces\WorkspaceIndex;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\TestCase;
@@ -72,6 +73,11 @@ class WorkspaceTest extends TestCase
         $this->assertTrue(
             $this->app->make('db')->connection($connection)->getSchemaBuilder()->hasTable('sync_state'),
         );
+        $this->assertNotNull(
+            $this->app->make('db')->connection($connection)->selectOne(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'node_search'",
+            ),
+        );
     }
 
     public function test_workspace_api_lists_creates_and_activates_local_workspaces(): void
@@ -96,6 +102,49 @@ class WorkspaceTest extends TestCase
             ->assertJsonPath('active_workspace_id', $created['id']);
 
         $this->assertNotSame($initial['active_workspace_id'], $created['id']);
+    }
+
+    public function test_selecting_an_existing_workspace_applies_pending_migrations(): void
+    {
+        $workspace = $this->workspaces->create('Older Workspace');
+        $databasePath = $this->workspaces->databasePath($workspace);
+        $schemaConnection = 'workspace_old_schema';
+        $activeConnection = 'workspace_active_test';
+        $originalConnection = DB::getDefaultConnection();
+        $connectionConfig = [
+            'driver' => 'sqlite',
+            'database' => $databasePath,
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+        ];
+        config([
+            "database.connections.{$schemaConnection}" => $connectionConfig,
+            "database.connections.{$activeConnection}" => $connectionConfig,
+        ]);
+
+        try {
+            DB::setDefaultConnection($schemaConnection);
+            $migration = require database_path('migrations/2026_08_25_000000_create_node_search_index.php');
+            $migration->down();
+            DB::table('migrations')
+                ->where('migration', '2026_08_25_000000_create_node_search_index')
+                ->delete();
+
+            DB::setDefaultConnection($activeConnection);
+            $this->workspaces->configureActiveConnection($workspace['id']);
+
+            $this->assertNotNull(
+                DB::connection($activeConnection)->selectOne(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'node_search'",
+                ),
+            );
+        } finally {
+            DB::setDefaultConnection($originalConnection);
+            DB::purge($schemaConnection);
+            DB::purge($activeConnection);
+            config()->offsetUnset("database.connections.{$schemaConnection}");
+            config()->offsetUnset("database.connections.{$activeConnection}");
+        }
     }
 
     public function test_unknown_workspace_cannot_be_activated(): void

@@ -123,9 +123,12 @@ final class WorkspaceIndex
         }
 
         config(["database.connections.{$connection}.database" => $this->databasePath($workspace)]);
-        DB::purge($connection);
-        DB::connection($connection)->statement('PRAGMA journal_mode=WAL;');
-        DB::connection($connection)->statement('PRAGMA busy_timeout=5000;');
+        $this->connect($connection);
+
+        if ($this->needsMigration($connection)) {
+            $this->migrate($this->databasePath($workspace));
+            $this->connect($connection);
+        }
 
         $storagePath = $this->storagePath($workspace);
 
@@ -135,6 +138,25 @@ final class WorkspaceIndex
 
         config(['filesystems.disks.local.root' => $storagePath]);
         Storage::forgetDisk('local');
+    }
+
+    private function connect(string $connection): void
+    {
+        DB::purge($connection);
+        DB::connection($connection)->statement('PRAGMA journal_mode=WAL;');
+        DB::connection($connection)->statement('PRAGMA busy_timeout=5000;');
+    }
+
+    private function needsMigration(string $connection): bool
+    {
+        $files = glob(database_path('migrations/*.php')) ?: [];
+        sort($files, SORT_STRING);
+        $latest = $files === [] ? null : pathinfo(end($files), PATHINFO_FILENAME);
+        $database = DB::connection($connection);
+
+        return $latest !== null
+            && (! $database->getSchemaBuilder()->hasTable('migrations')
+                || ! $database->table('migrations')->where('migration', $latest)->exists());
     }
 
     /** @param array{id: string, name: string, database: string} $workspace */
