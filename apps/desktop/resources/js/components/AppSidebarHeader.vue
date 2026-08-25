@@ -35,19 +35,20 @@ const workspaceSectionStyle = computed(() => ({
         class="window-drag-region fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b border-sidebar-border/70 bg-sidebar"
     >
         <div
-            class="group flex h-full shrink-0 items-center px-2 transition-[width] duration-200 ease-linear"
-            :data-collapsible="sidebarState === 'collapsed' ? 'icon' : ''"
+            class="flex h-full shrink-0 items-center transition-[width] duration-200 ease-linear"
             :style="workspaceSectionStyle"
         >
             <SidebarMenu
-                class="window-no-drag"
+                class="window-no-drag h-full [&>li]:h-full"
                 :class="{ 'items-center': sidebarState === 'collapsed' }"
             >
                 <WorkspaceSwitcher placement="header" />
             </SidebarMenu>
         </div>
 
-        <div class="flex h-full min-w-0 flex-1 items-center gap-2 pl-4">
+        <div
+            class="flex h-full min-w-0 flex-1 items-center gap-2 bg-background pl-4"
+        >
             <div class="window-no-drag flex min-w-0 items-center gap-2">
                 <SidebarTrigger class="-ml-1" />
                 <template v-if="breadcrumbs && breadcrumbs.length > 0">

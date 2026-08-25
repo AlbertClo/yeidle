@@ -17,6 +17,8 @@ class NativeAppServiceProvider implements ProvidesPhpIni
         Menu::create();
 
         Window::open()
+            ->width(1280)
+            ->height(800)
             ->frameless()
             ->transparent()
             ->hideMenu()

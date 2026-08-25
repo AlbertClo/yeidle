@@ -35,7 +35,7 @@ withDefaults(defineProps<Props>(), {
                 <slot />
             </div>
         </AppContent>
-        <div class="window-no-drag fixed right-4 bottom-4 z-40">
+        <div class="window-no-drag fixed right-1 bottom-1 z-40">
             <CloudSyncStatus />
         </div>
     </AppShell>
