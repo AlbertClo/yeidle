@@ -151,12 +151,23 @@ final class WorkspaceIndex
     {
         $files = glob(database_path('migrations/*.php')) ?: [];
         sort($files, SORT_STRING);
-        $latest = $files === [] ? null : pathinfo(end($files), PATHINFO_FILENAME);
         $database = DB::connection($connection);
 
-        return $latest !== null
-            && (! $database->getSchemaBuilder()->hasTable('migrations')
-                || ! $database->table('migrations')->where('migration', $latest)->exists());
+        if ($files === []) {
+            return false;
+        }
+
+        if (! $database->getSchemaBuilder()->hasTable('migrations')) {
+            return true;
+        }
+
+        $applied = $database->table('migrations')
+            ->pluck('migration')
+            ->flip();
+
+        return collect($files)->contains(
+            fn (string $file): bool => ! $applied->has(pathinfo($file, PATHINFO_FILENAME))
+        );
     }
 
     /** @param array{id: string, name: string, database: string} $workspace */

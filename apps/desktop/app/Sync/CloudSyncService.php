@@ -69,6 +69,7 @@ class CloudSyncService
 
         $statusWorkspaceId = $status->json('workspace_id');
         $cloudSeq = $status->json('latest_seq');
+        $cloudUserId = $status->json('user_id');
 
         if ($statusWorkspaceId !== $workspaceId || ! is_int($cloudSeq) || $cloudSeq < 0) {
             throw new \RuntimeException('The cloud server returned an invalid sync status.');
@@ -106,6 +107,9 @@ class CloudSyncService
         $state->cloud_url = $url;
         $state->cloud_token = $token;
         $state->cloud_workspace_id = $workspaceId;
+        if (is_string($cloudUserId) && $cloudUserId !== '') {
+            $state->cloud_user_id = $cloudUserId;
+        }
         $state->save();
 
         $seeded = false;
@@ -311,6 +315,8 @@ class CloudSyncService
             );
         }
 
+        $this->rememberCloudUserId($state, $response->json('user_id'));
+
         if (($realtime['enabled'] ?? false) !== true) {
             return ['enabled' => false];
         }
@@ -337,6 +343,50 @@ class CloudSyncService
             'port' => $port,
             'scheme' => $scheme,
         ];
+    }
+
+    /**
+     * Resolve and persist the authenticated cloud account identity. This is
+     * intentionally separate from the device client_id: one account must
+     * select the same private pin container on every installation.
+     */
+    public function refreshCloudUserId(): ?string
+    {
+        $state = SyncState::current();
+
+        if ($state === null || ! $state->cloud_url || ! $state->cloud_workspace_id) {
+            return null;
+        }
+
+        if (is_string($state->cloud_user_id) && $state->cloud_user_id !== '') {
+            return $state->cloud_user_id;
+        }
+
+        $response = $this->http($state)
+            ->get($this->workspaceUrl($state, 'sync/status'))
+            ->throw();
+
+        if ($response->json('workspace_id') !== $state->cloud_workspace_id) {
+            throw new CloudSyncProtocolException(
+                'Cloud identity protocol error: workspace does not match this installation.'
+            );
+        }
+
+        return $this->rememberCloudUserId($state, $response->json('user_id'));
+    }
+
+    private function rememberCloudUserId(SyncState $state, mixed $userId): ?string
+    {
+        if (! is_string($userId) || $userId === '') {
+            return null;
+        }
+
+        if ($state->cloud_user_id !== $userId) {
+            $state->cloud_user_id = $userId;
+            $state->save();
+        }
+
+        return $userId;
     }
 
     /** @return array{auth: string, channel_data?: string, shared_secret?: string} */

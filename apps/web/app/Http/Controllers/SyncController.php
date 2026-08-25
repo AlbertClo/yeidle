@@ -74,6 +74,7 @@ class SyncController extends Controller
 
         return response()->json([
             'workspace_id' => $workspace->id,
+            'user_id' => (string) $request->user()->getAuthIdentifier(),
             'latest_seq' => (int) Op::where('workspace_id', $workspace->id)->max('server_seq'),
             'realtime' => $this->realtimeConfig(),
         ]);

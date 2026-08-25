@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { EllipsisVertical, Trash2 } from 'lucide-vue-next';
+import { EllipsisVertical, Pin, Trash2 } from 'lucide-vue-next';
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { toast } from 'vue-sonner';
 import PageEditor from '@/components/PageEditor.vue';
@@ -17,6 +17,8 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuShortcut,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -27,6 +29,12 @@ import {
     markCachedPageInactive,
     setCachedPage,
 } from '@/stores/pageCache';
+import {
+    isNodePinned,
+    rememberPinState,
+    setNodePinned,
+    updatePinnedItemTitle,
+} from '@/stores/pins';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import { notifyLocalNodesChanged } from '@/sync/nodeChanges';
 import {
@@ -45,11 +53,13 @@ import type { Node } from '@/types/node';
 
 const props = defineProps<{
     page: Node;
+    pinned: boolean;
     backlinks: { id: string; page_id: string; page_title: string }[];
     syncCursor?: number;
 }>();
 
 markCachedPageActive(props.page.id);
+rememberPinState({ ...props.page, children: undefined }, props.pinned);
 
 const isEditingTitle = ref(false);
 const cached = getCachedPage(props.page.id);
@@ -57,6 +67,7 @@ const titleContent = ref(cached?.title ?? props.page.content);
 const pageNodes = ref<Node[]>(cached?.children ?? props.page.children ?? []);
 const pageBacklinks = ref(props.backlinks);
 const editorKey = ref(0);
+const pagePinned = computed(() => isNodePinned(props.page.id));
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'Pages', href: '/pages' },
@@ -160,6 +171,7 @@ async function saveTitle() {
 
     const children = getCachedPage(props.page.id)?.children ?? pageNodes.value;
     setCachedPage(props.page.id, title, children);
+    updatePinnedItemTitle(props.page.id, title);
 }
 
 function syncTitleDebounced() {
@@ -591,6 +603,14 @@ function handleVisibilityChange() {
 
 const showDeleteConfirm = ref(false);
 
+async function toggleCurrentPagePin() {
+    try {
+        await setNodePinned(props.page.id, !pagePinned.value);
+    } catch {
+        toast.error('Could not update the pinned page.');
+    }
+}
+
 async function deletePage() {
     const ok = await pushOps([mintNodeDelete(props.page.id, props.page.id)]);
     showDeleteConfirm.value = false;
@@ -674,6 +694,15 @@ onBeforeUnmount(() => {
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                        <DropdownMenuItem @select="toggleCurrentPagePin">
+                            <Pin
+                                class="mr-2 h-4 w-4"
+                                :class="{ 'fill-current': pagePinned }"
+                            />
+                            {{ pagePinned ? 'Unpin page' : 'Pin page' }}
+                            <DropdownMenuShortcut>Alt+P</DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
                             class="text-destructive"
                             @click="showDeleteConfirm = true"

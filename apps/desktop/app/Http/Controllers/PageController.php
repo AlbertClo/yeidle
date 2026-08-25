@@ -41,6 +41,8 @@ class PageController extends Controller
 
     public function show(Node $node): JsonResponse
     {
+        abort_if($node->isPinSystemNode(), 404);
+
         $node->load('children');
         $this->loadChildrenRecursive($node);
 
@@ -74,6 +76,8 @@ class PageController extends Controller
 
     public function backlinks(Node $node): JsonResponse
     {
+        abort_if($node->isPinSystemNode(), 404);
+
         $backlinks = $node->incomingLinks()
             ->with('sourceNode')
             ->get()

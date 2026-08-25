@@ -22,7 +22,7 @@ withDefaults(defineProps<Props>(), {
             :breadcrumbs="breadcrumbs"
             :current-page-id="currentPageId"
         />
-        <AppSidebar />
+        <AppSidebar :current-page-id="currentPageId" />
         <AppContent
             variant="sidebar"
             class="min-h-0 overflow-hidden md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-0"

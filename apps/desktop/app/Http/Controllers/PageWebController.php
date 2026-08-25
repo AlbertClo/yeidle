@@ -5,11 +5,16 @@ namespace App\Http\Controllers;
 use App\Models\Node;
 use App\Models\Op;
 use App\Models\PageVisit;
+use App\Support\PinNodes;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PageWebController extends Controller
 {
+    public function __construct(
+        private PinNodes $pins,
+    ) {}
+
     public function index(): Response
     {
         $pages = Node::pages()
@@ -23,6 +28,8 @@ class PageWebController extends Controller
 
     public function show(Node $node): Response
     {
+        abort_if($node->isPinSystemNode(), 404);
+
         // Pull cursor for the live-sync poll. Read BEFORE loading nodes: an
         // op landing between the two reads is then re-pulled and re-applied
         // (idempotent) rather than silently missed.
@@ -66,6 +73,7 @@ class PageWebController extends Controller
 
         return Inertia::render('Pages/Show', [
             'page' => $node,
+            'pinned' => $this->pins->isPinned($node),
             'backlinks' => $backlinks,
             'syncCursor' => $syncCursor,
         ]);

@@ -11,6 +11,7 @@ import {
     CommandList,
 } from '@/components/ui/command';
 import type { Node } from '@/types/node';
+import { OPEN_PAGE_SEARCH_EVENT } from '@/ui/pageSearch';
 
 const props = defineProps<{
     currentPageId?: string;
@@ -131,18 +132,24 @@ function navigate(node: Node) {
     router.visit(`/pages/${pageId}`);
 }
 
+function openSearch() {
+    isOpen.value = true;
+}
+
 function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.altKey && e.key === 'e') {
         e.preventDefault();
-        isOpen.value = true;
+        openSearch();
     }
 }
 
 onMounted(() => {
+    window.addEventListener(OPEN_PAGE_SEARCH_EVENT, openSearch);
     document.addEventListener('keydown', handleGlobalKeydown);
 });
 
 onBeforeUnmount(() => {
+    window.removeEventListener(OPEN_PAGE_SEARCH_EVENT, openSearch);
     document.removeEventListener('keydown', handleGlobalKeydown);
 });
 </script>
@@ -150,7 +157,7 @@ onBeforeUnmount(() => {
 <template>
     <button
         class="bg-sidebar-accent/50 text-muted-foreground ml-auto flex h-8 w-64 items-center gap-2 rounded-md px-3 text-sm"
-        @click="isOpen = true"
+        @click="openSearch"
     >
         <Search class="h-4 w-4" />
         <span>Find or Create Page</span>

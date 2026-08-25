@@ -497,7 +497,11 @@ class CloudSyncTest extends TestCase
             }
 
             if ($request->url() === self::CLOUD.'/api/workspaces/knowledge/sync/status') {
-                return Http::response(['workspace_id' => 'knowledge', 'latest_seq' => 0]);
+                return Http::response([
+                    'workspace_id' => 'knowledge',
+                    'user_id' => 'cloud-user-7',
+                    'latest_seq' => 0,
+                ]);
             }
 
             if (str_starts_with($request->url(), self::CLOUD.'/api/workspaces/knowledge/sync/pull')) {
@@ -515,6 +519,7 @@ class CloudSyncTest extends TestCase
             ->assertJsonPath('ok', true);
 
         $this->assertSame('knowledge', SyncState::current()->cloud_workspace_id);
+        $this->assertSame('cloud-user-7', SyncState::current()->cloud_user_id);
         Http::assertSent(fn ($request): bool => $request->method() === 'POST'
             && $request->url() === self::CLOUD.'/api/workspaces'
             && $request['name'] === 'Albert Knowledge');
@@ -808,6 +813,7 @@ class CloudSyncTest extends TestCase
         Http::fake([
             self::cloudSync('status') => Http::response([
                 'workspace_id' => 'w',
+                'user_id' => 'cloud-user-9',
                 'latest_seq' => 12,
                 'realtime' => [
                     'enabled' => true,
@@ -825,6 +831,8 @@ class CloudSyncTest extends TestCase
             ->assertJsonPath('workspace_id', 'w')
             ->assertJsonPath('app_key', 'public-key')
             ->assertJsonMissingPath('cloud_token');
+
+        $this->assertSame('cloud-user-9', SyncState::current()->cloud_user_id);
 
         Http::assertSent(fn ($request): bool => $request->hasHeader('Authorization', 'Bearer test-token'));
     }

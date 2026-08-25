@@ -3,6 +3,7 @@
 namespace App\Search;
 
 use App\Models\Node;
+use App\Support\PinNodes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -205,6 +206,10 @@ final class NodeSearch
             $current = $node;
 
             while (true) {
+                if ($current->id === PinNodes::ROOT_ID) {
+                    return false;
+                }
+
                 if ($current->purged || $current->trashed()) {
                     return false;
                 }

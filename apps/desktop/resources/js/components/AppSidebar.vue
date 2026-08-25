@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { FileText, LayoutGrid } from 'lucide-vue-next';
-import { ref } from 'vue';
+import { router } from '@inertiajs/vue3';
+import { LayoutGrid, List, SquareTerminal } from 'lucide-vue-next';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+import AppCommandPalette from '@/components/AppCommandPalette.vue';
 import NavMain from '@/components/NavMain.vue';
+import NavPinned from '@/components/NavPinned.vue';
 import {
     Dialog,
     DialogContent,
@@ -13,25 +16,59 @@ import {
     Sidebar,
     SidebarContent,
     SidebarFooter,
+    SidebarMenuBadge,
+    SidebarMenuButton,
+    SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import YeidleWordmark from '@/components/YeidleWordmark.vue';
 import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
+import { openCommandPalette } from '@/ui/commandPalette';
 
 const aboutOpen = ref(false);
+
+defineProps<{
+    currentPageId?: string;
+}>();
 
 const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+        shortcut: 'Alt+1',
     },
     {
         title: 'Pages',
         href: '/pages',
-        icon: FileText,
+        icon: List,
+        shortcut: 'Alt+2',
     },
 ];
+
+function handleNavigationShortcut(event: KeyboardEvent): void {
+    if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+        return;
+    }
+
+    const path =
+        event.key === '1' ? '/dashboard' : event.key === '2' ? '/pages' : null;
+
+    if (path === null) {
+        return;
+    }
+
+    event.preventDefault();
+    router.visit(path);
+}
+
+onMounted(() => {
+    document.addEventListener('keydown', handleNavigationShortcut);
+});
+
+onBeforeUnmount(() => {
+    document.removeEventListener('keydown', handleNavigationShortcut);
+});
 </script>
 
 <template>
@@ -41,7 +78,22 @@ const mainNavItems: NavItem[] = [
         class="!top-12 !bottom-0 !h-auto"
     >
         <SidebarContent>
-            <NavMain :items="mainNavItems" />
+            <NavMain :items="mainNavItems">
+                <SidebarMenuItem>
+                    <SidebarMenuButton
+                        tooltip="Command Palette"
+                        class="pr-16"
+                        @click="openCommandPalette"
+                    >
+                        <SquareTerminal />
+                        <span>Command Palette</span>
+                    </SidebarMenuButton>
+                    <SidebarMenuBadge class="font-normal text-muted-foreground">
+                        <kbd>Ctrl+K</kbd>
+                    </SidebarMenuBadge>
+                </SidebarMenuItem>
+            </NavMain>
+            <NavPinned />
         </SidebarContent>
         <SidebarFooter class="group-data-[collapsible=icon]:hidden">
             <button
@@ -55,11 +107,12 @@ const mainNavItems: NavItem[] = [
         </SidebarFooter>
     </Sidebar>
 
+    <AppCommandPalette :current-page-id="currentPageId" />
+
     <Dialog v-model:open="aboutOpen">
         <DialogContent class="sm:max-w-sm">
             <DialogHeader class="items-center text-center">
                 <YeidleWordmark class="mb-4 h-auto w-28 text-foreground" />
-                <DialogTitle>About Yeidle</DialogTitle>
                 <DialogDescription class="text-center">
                     A local-first workspace for connected notes and knowledge.
                 </DialogDescription>

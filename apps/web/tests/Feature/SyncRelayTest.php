@@ -281,11 +281,13 @@ test('bootstrap returns the projection with clocks and a consistent cursor', fun
 });
 
 test('status reports the workspace cursor cheaply', function () {
-    Sanctum::actingAs(User::factory()->create());
+    $user = User::factory()->create();
+    Sanctum::actingAs($user);
 
     $empty = $this->getJson(syncUrl('status'));
     $empty->assertSuccessful();
     expect($empty->json('latest_seq'))->toBe(0);
+    expect($empty->json('user_id'))->toBe((string) $user->id);
 
     $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [
         setOp(fake()->uuid(), ['content' => 'x'], 100),
