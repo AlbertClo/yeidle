@@ -85,6 +85,7 @@ return [
         'temp',
         'content',
         'node_modules',
+        'public/hot',
         '*/tests',
     ],
 
