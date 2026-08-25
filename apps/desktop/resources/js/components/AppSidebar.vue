@@ -27,8 +27,8 @@ const mainNavItems: NavItem[] = [
 
 <template>
     <Sidebar collapsible="icon" variant="inset">
-        <SidebarHeader>
-            <SidebarMenu>
+        <SidebarHeader class="window-drag-region">
+            <SidebarMenu class="window-no-drag">
                 <WorkspaceSwitcher />
             </SidebarMenu>
         </SidebarHeader>

@@ -204,6 +204,8 @@ final class RoamContentConverter
     {
         $nodes = [];
         $pattern = '~\[\[([^\]]+)\]\]|\(\(([^\)]+)\)\)|\[([^\]]+)\]\((https?://[^\s\)]+)\)|(https?://[^\s]+)~iu';
+        $codeRanges = RoamSyntax::codeRanges($text);
+        $componentNameRanges = RoamSyntax::componentNameRanges($text);
         $cursor = 0;
 
         if (! preg_match_all($pattern, $text, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL)) {
@@ -214,9 +216,14 @@ final class RoamContentConverter
 
         foreach ($matches as $match) {
             $offset = $match[0][1];
+            $length = strlen($match[0][0]);
             $this->appendText($nodes, substr($text, $cursor, $offset - $cursor));
 
-            if (($match[1][1] ?? -1) >= 0) {
+            if (RoamSyntax::overlaps($offset, $length, $codeRanges)
+                || (($match[1][1] ?? -1) >= 0
+                    && RoamSyntax::overlaps($offset, $length, $componentNameRanges))) {
+                $this->appendText($nodes, $match[0][0]);
+            } elseif (($match[1][1] ?? -1) >= 0) {
                 $title = $match[1][0];
                 $pageId = $this->pageIdsByTitle[$title]
                     ?? $this->caseInsensitivePageId($title);
@@ -261,7 +268,7 @@ final class RoamContentConverter
                 ];
             }
 
-            $cursor = $offset + strlen($match[0][0]);
+            $cursor = $offset + $length;
         }
 
         $this->appendText($nodes, substr($text, $cursor));

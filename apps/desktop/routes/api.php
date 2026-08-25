@@ -4,6 +4,7 @@ use App\Http\Controllers\CloudController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
+use App\Http\Controllers\RoamImportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\WorkspaceController;
@@ -12,6 +13,11 @@ use Illuminate\Support\Facades\Route;
 Route::get('workspaces', [WorkspaceController::class, 'index']);
 Route::post('workspaces', [WorkspaceController::class, 'store']);
 Route::post('workspaces/{workspaceId}/activate', [WorkspaceController::class, 'activate']);
+
+Route::post('imports/roam/init', [RoamImportController::class, 'initialize']);
+Route::post('imports/roam/chunk', [RoamImportController::class, 'uploadChunk']);
+Route::post('imports/roam/finish', [RoamImportController::class, 'finish']);
+Route::delete('imports/roam/{uploadId}', [RoamImportController::class, 'cancel']);
 
 Route::post('sync/push', [SyncController::class, 'push']);
 Route::get('sync/pull', [SyncController::class, 'pull']);

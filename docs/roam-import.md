@@ -6,7 +6,19 @@ are deterministic, and repeating an unchanged import does not duplicate data.
 
 ## Before importing
 
-Back up the Yeidle desktop data and run a dry run first:
+Open the workspace menu in the desktop app and choose **Import Roam
+database**. Select the JSON export, then either create a new workspace or
+explicitly choose an existing workspace. A new workspace is the safer default;
+importing into an existing workspace merges the Roam pages with its current
+content. File uploads are downloaded by default and can be disabled in the
+dialog.
+
+The dialog uploads large exports in 1 MB chunks, keeps the destination
+inactive until the import finishes, and shows a summary and any warnings before
+opening it.
+
+For command-line validation, back up the Yeidle desktop data and run a dry run
+first:
 
 ```bash
 cd apps/desktop

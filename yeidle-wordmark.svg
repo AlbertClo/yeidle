@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="364" height="151" viewBox="3 284 364 151" color="#0f2536" role="img" aria-labelledby="title">
+  <title id="title">Yeidle wordmark</title>
+  <g id="wordmark" fill="none" stroke="currentColor" stroke-width="13.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- All bowls use radius 28.5 and share the y=365 centerline. -->
+    <g id="letter-y">
+      <path d="M18.5 333v32a28.5 28.5 0 0 0 57 0v-32"/>
+      <path d="M75.5 333v60a28.5 28.5 0 0 1-48.65 20.15"/>
+    </g>
+
+    <g id="letter-e-1">
+      <!-- The crossbar and bowl use equal 20-unit cutbacks. -->
+      <path d="M142.15 385.15A28.5 28.5 0 1 1 142.3 345C149.7 352.5 142.8 365 130.5 365H93.5"/>
+    </g>
+
+    <g id="letter-i">
+      <path d="M171 334v60"/>
+      <circle cx="171" cy="307" r="8.5" fill="currentColor" stroke="none"/>
+    </g>
+
+    <g id="letter-d">
+      <circle cx="224.5" cy="365" r="28.5"/>
+      <path d="M253 299v66"/>
+    </g>
+
+    <g id="letter-l">
+      <path d="M279 299v95"/>
+    </g>
+
+    <g id="letter-e-2">
+      <path d="M350.15 385.15A28.5 28.5 0 1 1 350.3 345C357.7 352.5 350.8 365 338.5 365H301.5"/>
+    </g>
+  </g>
+</svg>

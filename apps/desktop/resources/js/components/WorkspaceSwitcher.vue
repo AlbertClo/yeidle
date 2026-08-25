@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { Check, ChevronsUpDown, Plus } from 'lucide-vue-next';
+import { Check, ChevronsUpDown, FileUp, Plus } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
+import RoamImportDialog from '@/components/RoamImportDialog.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -27,6 +28,7 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
+import { requestCloudExchange } from '@/sync/cloud';
 import { refreshRealtimeSync } from '@/sync/realtime';
 
 type Workspace = {
@@ -43,6 +45,7 @@ type WorkspaceState = {
 const { isMobile, state: sidebarState } = useSidebar();
 const state = ref<WorkspaceState | null>(null);
 const createDialogOpen = ref(false);
+const importDialogOpen = ref(false);
 const workspaceName = ref('');
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -53,6 +56,19 @@ const activeWorkspace = computed(
             (workspace) => workspace.id === state.value?.active_workspace_id,
         ) ?? null,
 );
+
+function visitPages(): void {
+    router.visit('/pages', {
+        replace: true,
+        onSuccess: () => {
+            void refreshRealtimeSync();
+            void requestCloudExchange();
+        },
+        onFinish: () => {
+            loading.value = false;
+        },
+    });
+}
 
 async function loadWorkspaces(): Promise<void> {
     const response = await fetch('/api/workspaces', {
@@ -95,15 +111,7 @@ async function activate(workspace: Workspace): Promise<void> {
             ? { ...state.value, active_workspace_id: workspace.id }
             : state.value;
 
-        router.visit('/pages', {
-            replace: true,
-            onSuccess: () => {
-                void refreshRealtimeSync();
-            },
-            onFinish: () => {
-                loading.value = false;
-            },
-        });
+        visitPages();
     } catch (reason) {
         error.value =
             reason instanceof Error
@@ -155,6 +163,27 @@ async function createWorkspace(): Promise<void> {
                 : 'Could not create the workspace.';
         loading.value = false;
     }
+}
+
+function rememberWorkspace(workspace: Workspace): void {
+    if (!state.value?.workspaces.some((item) => item.id === workspace.id)) {
+        state.value?.workspaces.push(workspace);
+    }
+}
+
+function openImportedWorkspace(workspace: Workspace): void {
+    rememberWorkspace(workspace);
+
+    importDialogOpen.value = false;
+
+    if (workspace.id === state.value?.active_workspace_id) {
+        loading.value = true;
+        visitPages();
+
+        return;
+    }
+
+    void activate(workspace);
 }
 
 onMounted(() => {
@@ -213,8 +242,20 @@ onMounted(() => {
                     <Plus class="size-4" />
                     New workspace
                 </DropdownMenuItem>
+                <DropdownMenuItem @select="importDialogOpen = true">
+                    <FileUp class="size-4" />
+                    Import Roam database
+                </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
+
+        <RoamImportDialog
+            v-model:open="importDialogOpen"
+            :workspaces="state?.workspaces ?? []"
+            :active-workspace-id="state?.active_workspace_id ?? null"
+            @workspace-added="rememberWorkspace"
+            @imported="openImportedWorkspace"
+        />
 
         <Dialog v-model:open="createDialogOpen">
             <DialogContent>
@@ -233,7 +274,6 @@ onMounted(() => {
                             v-model="workspaceName"
                             autofocus
                             maxlength="100"
-                            placeholder="Albert Knowledge"
                         />
                     </div>
                     <p v-if="error" class="text-sm text-destructive">

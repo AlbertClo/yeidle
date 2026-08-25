@@ -118,9 +118,15 @@ export default {
         artifactName: appName + '-${version}-${arch}.${ext}',
     },
     linux: {
-        target: ['AppImage', 'deb'],
+        target: ['AppImage'],
+        icon: 'build/icon.png',
         maintainer: appUrl,
         category: 'Utility',
+        desktop: {
+            entry: {
+                StartupWMClass: appId,
+            },
+        },
     },
     appImage: {
         artifactName: appName + '-${version}.${ext}',
@@ -128,6 +134,7 @@ export default {
     npmRebuild: false,
     extraMetadata: {
         name: fileName,
+        desktopName: appId,
         homepage: appUrl,
         version: appVersion,
         author: appAuthor,

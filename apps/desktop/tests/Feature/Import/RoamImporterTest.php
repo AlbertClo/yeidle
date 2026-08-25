@@ -3,7 +3,9 @@
 namespace Tests\Feature\Import;
 
 use App\Import\Roam\RoamAttachmentFetcher;
+use App\Import\Roam\RoamContentConverter;
 use App\Import\Roam\RoamExport;
+use App\Import\Roam\RoamImportReport;
 use App\Models\Media;
 use App\Models\Node;
 use App\Models\NodeLink;
@@ -163,5 +165,27 @@ class RoamImporterTest extends TestCase
         $this->assertSame(0, Media::count());
         $content = Node::findOrFail(RoamExport::nodeId('block-file'))->tiptap_content;
         $this->assertSame('webLink', $content['content'][0]['type']);
+    }
+
+    public function test_code_and_roam_component_names_do_not_create_unresolved_page_warnings(): void
+    {
+        $report = new RoamImportReport;
+        $converter = new RoamContentConverter([], [], [], [], $report);
+        $source = <<<'ROAM'
+```css
+/* Colors from [[Dracula Pro]] */
+```
+`[[Inline example]]`
+{{[[video]]: https://files.test/example.mp4}}
+Actual reference: [[Missing Page]]
+ROAM;
+
+        $converted = $converter->convert($source);
+
+        $this->assertSame($source, $converted['content']);
+        $this->assertSame(1, $report->unresolvedPageReferences);
+        $this->assertSame([
+            'Unresolved page reference [[Missing Page]] was preserved as text.',
+        ], $report->warnings);
     }
 }

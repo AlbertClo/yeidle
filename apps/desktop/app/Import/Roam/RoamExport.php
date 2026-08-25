@@ -195,8 +195,7 @@ final class RoamExport
 
     private function analyseText(string $content): void
     {
-        $referencesContent = preg_replace('/\{\{\s*\[\[(?:TODO|DONE)\]\]\s*\}\}/iu', '', $content) ?? $content;
-        $this->report->pageReferences += preg_match_all('/\[\[[^\]]+\]\]/u', $referencesContent);
+        $this->report->pageReferences += RoamSyntax::pageReferenceCount($content);
         $this->report->blockReferences += preg_match_all('/\(\([^\)]+\)\)/u', $content);
         $this->report->blockEmbeds += preg_match_all('/\{\{\s*(?:\[\[)?embed(?:\]\])?\s*:\s*\(\([^\)]+\)\)\s*\}\}/iu', $content);
 
