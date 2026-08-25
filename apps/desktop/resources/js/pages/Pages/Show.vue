@@ -70,7 +70,7 @@ const editorKey = ref(0);
 const pagePinned = computed(() => isNodePinned(props.page.id));
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
-    { title: 'Pages', href: '/pages' },
+    { title: 'All Pages', href: '/pages' },
     {
         title: titleContent.value || '[untitled]',
         href: `/pages/${props.page.id}`,

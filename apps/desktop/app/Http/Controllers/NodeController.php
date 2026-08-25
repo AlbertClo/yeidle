@@ -81,7 +81,7 @@ class NodeController extends Controller
 
     public function reference(Node $node): JsonResponse
     {
-        abort_unless($node->isReachable() && ! $node->isPinSystemNode(), 404);
+        abort_unless($node->isReachable() && ! $node->isSystemNode(), 404);
 
         $page = $node;
         while ($page->parent_id !== null) {

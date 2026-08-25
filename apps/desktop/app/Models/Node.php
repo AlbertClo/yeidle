@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Support\PinNodes;
+use App\Support\SystemNodes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -70,7 +70,7 @@ class Node extends Model
     {
         return $query
             ->whereNull('parent_id')
-            ->whereKeyNot(PinNodes::ROOT_ID);
+            ->whereNotIn('id', SystemNodes::ROOT_IDS);
     }
 
     public function scopeOrderedByModification(Builder $query): Builder
@@ -83,14 +83,14 @@ class Node extends Model
         return $this->parent_id === null;
     }
 
-    /** Whether this node belongs to Yeidle's hidden pin subtree. */
-    public function isPinSystemNode(): bool
+    /** Whether this node belongs to one of Yeidle's hidden system subtrees. */
+    public function isSystemNode(): bool
     {
         $node = $this;
         $visited = [];
 
         while (true) {
-            if ($node->id === PinNodes::ROOT_ID) {
+            if (SystemNodes::isRoot($node->id)) {
                 return true;
             }
 

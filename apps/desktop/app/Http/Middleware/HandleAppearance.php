@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\PreferenceNodes;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\View;
@@ -16,7 +17,14 @@ class HandleAppearance
      */
     public function handle(Request $request, Closure $next): Response
     {
-        View::share('appearance', $request->cookie('appearance') ?? 'system');
+        $appearance = $request->cookie('appearance');
+
+        View::share(
+            'appearance',
+            in_array($appearance, PreferenceNodes::THEMES, true)
+                ? $appearance
+                : PreferenceNodes::DEFAULT_THEME,
+        );
 
         return $next($request);
     }

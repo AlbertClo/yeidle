@@ -5,6 +5,7 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PinController;
+use App\Http\Controllers\PreferenceController;
 use App\Http\Controllers\RoamImportController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SyncController;
@@ -40,6 +41,8 @@ Route::get('pins', [PinController::class, 'index']);
 Route::put('pins/order', [PinController::class, 'reorder']);
 Route::put('nodes/{node}/pin', [PinController::class, 'store']);
 Route::delete('nodes/{node}/pin', [PinController::class, 'destroy']);
+Route::get('preferences', [PreferenceController::class, 'show']);
+Route::put('preferences/theme', [PreferenceController::class, 'updateTheme']);
 // Before pages/{node} so "title-exists" isn't captured as a node id
 Route::get('pages/title-exists', [PageController::class, 'titleExists']);
 Route::get('pages/{node}', [PageController::class, 'show']);

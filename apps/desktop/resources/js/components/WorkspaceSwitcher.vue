@@ -28,6 +28,7 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
+import { loadPreferences } from '@/stores/preferences';
 import {
     loadWorkspaceState,
     workspaceState as state,
@@ -101,6 +102,7 @@ async function activate(workspace: Workspace): Promise<void> {
             ? { ...state.value, active_workspace_id: workspace.id }
             : state.value;
 
+        await loadPreferences(true).catch(() => undefined);
         visitPages();
     } catch (reason) {
         error.value =

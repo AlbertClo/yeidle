@@ -13,7 +13,7 @@ defineProps<{
     pages: Node[];
 }>();
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pages', href: '/pages' }];
+const breadcrumbs: BreadcrumbItem[] = [{ title: 'All Pages', href: '/pages' }];
 const reloadScheduler = createMaxWaitScheduler(
     () => {
         router.reload({ only: ['pages'] });
@@ -53,12 +53,12 @@ function modifiedDate(page: Node): string {
 </script>
 
 <template>
-    <Head title="Pages" />
+    <Head title="All Pages" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="mx-auto w-full max-w-2xl p-6">
             <div class="mb-6">
-                <h1 class="text-2xl font-bold">Pages</h1>
+                <h1 class="text-2xl font-bold">All Pages</h1>
             </div>
 
             <div

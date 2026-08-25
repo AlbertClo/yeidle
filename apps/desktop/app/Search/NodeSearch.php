@@ -3,7 +3,7 @@
 namespace App\Search;
 
 use App\Models\Node;
-use App\Support\PinNodes;
+use App\Support\SystemNodes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -206,7 +206,7 @@ final class NodeSearch
             $current = $node;
 
             while (true) {
-                if ($current->id === PinNodes::ROOT_ID) {
+                if (SystemNodes::isRoot($current->id)) {
                     return false;
                 }
 

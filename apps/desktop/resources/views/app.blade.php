@@ -1,5 +1,9 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}"  @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+<html
+    lang="{{ str_replace('_', '-', app()->getLocale()) }}"
+    data-theme="{{ $appearance ?? \App\Support\PreferenceNodes::DEFAULT_THEME }}"
+    @class(['dark' => in_array(($appearance ?? \App\Support\PreferenceNodes::DEFAULT_THEME), \App\Support\PreferenceNodes::DARK_THEMES, true)])
+>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,14 +11,13 @@
         {{-- Inline script to detect system dark mode preference and apply it immediately --}}
         <script>
             (function() {
-                const appearance = '{{ $appearance ?? "system" }}';
+                const appearance = @json($appearance ?? \App\Support\PreferenceNodes::DEFAULT_THEME);
 
                 if (appearance === 'system') {
                     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-                    if (prefersDark) {
-                        document.documentElement.classList.add('dark');
-                    }
+                    document.documentElement.dataset.theme = prefersDark ? 'dark' : 'light';
+                    document.documentElement.classList.toggle('dark', prefersDark);
                 }
             })();
         </script>
@@ -28,6 +31,15 @@
             html.dark {
                 background-color: oklch(0.145 0 0);
             }
+
+            html[data-theme='catppuccin-mocha'] { background-color: #1e1e2e; }
+            html[data-theme='catppuccin-latte'] { background-color: #eff1f5; }
+            html[data-theme='gruvbox-dark'] { background-color: #282828; }
+            html[data-theme='gruvbox-light'] { background-color: #fbf1c7; }
+            html[data-theme='tokyo-night'] { background-color: #1a1b26; }
+            html[data-theme='nord'] { background-color: #2e3440; }
+            html[data-theme='solarized-dark'] { background-color: #002b36; }
+            html[data-theme='solarized-light'] { background-color: #fdf6e3; }
         </style>
 
         <title inertia>{{ config('app.name', 'Laravel') }}</title>

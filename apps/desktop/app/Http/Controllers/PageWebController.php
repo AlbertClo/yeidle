@@ -28,7 +28,7 @@ class PageWebController extends Controller
 
     public function show(Node $node): Response
     {
-        abort_if($node->isPinSystemNode(), 404);
+        abort_if($node->isSystemNode(), 404);
 
         // Pull cursor for the live-sync poll. Read BEFORE loading nodes: an
         // op landing between the two reads is then re-pulled and re-applied

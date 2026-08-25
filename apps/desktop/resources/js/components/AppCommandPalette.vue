@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { FileText, LayoutGrid, Pin, Search } from 'lucide-vue-next';
+import { FileText, Palette, Pin, Search } from 'lucide-vue-next';
 import type { LucideIcon } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
@@ -16,6 +16,7 @@ import {
 import { isNodePinned, toggleNodePin } from '@/stores/pins';
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/ui/commandPalette';
 import { openPageSearch } from '@/ui/pageSearch';
+import { openThemeSelector } from '@/ui/themeSelector';
 
 const props = defineProps<{
     currentPageId?: string;
@@ -25,7 +26,7 @@ type PaletteCommand = {
     id: string;
     label: string;
     icon: LucideIcon;
-    shortcut: string;
+    shortcut?: string;
     run: () => void | Promise<void>;
 };
 
@@ -33,17 +34,10 @@ const isOpen = ref(false);
 const query = ref('');
 const commands = computed<PaletteCommand[]>(() => [
     {
-        id: 'dashboard',
-        label: 'Go to Dashboard',
-        icon: LayoutGrid,
-        shortcut: 'Alt+1',
-        run: () => router.visit('/dashboard'),
-    },
-    {
         id: 'pages',
-        label: 'Go to Pages',
+        label: 'Go to All Pages',
         icon: FileText,
-        shortcut: 'Alt+2',
+        shortcut: 'Alt+1',
         run: () => router.visit('/pages'),
     },
     {
@@ -52,6 +46,12 @@ const commands = computed<PaletteCommand[]>(() => [
         icon: Search,
         shortcut: 'Alt+E',
         run: openPageSearch,
+    },
+    {
+        id: 'theme',
+        label: 'Change Theme',
+        icon: Palette,
+        run: openThemeSelector,
     },
     ...(props.currentPageId
         ? [
@@ -156,7 +156,9 @@ onBeforeUnmount(() => {
                 >
                     <component :is="command.icon" class="mr-2 h-4 w-4" />
                     <span>{{ command.label }}</span>
-                    <CommandShortcut>{{ command.shortcut }}</CommandShortcut>
+                    <CommandShortcut v-if="command.shortcut">
+                        {{ command.shortcut }}
+                    </CommandShortcut>
                 </CommandItem>
             </CommandGroup>
         </CommandList>

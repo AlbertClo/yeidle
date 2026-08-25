@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { LayoutGrid, List, SquareTerminal } from 'lucide-vue-next';
+import { List, SquareTerminal } from 'lucide-vue-next';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import AppCommandPalette from '@/components/AppCommandPalette.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavPinned from '@/components/NavPinned.vue';
+import ThemeSelectorDialog from '@/components/ThemeSelectorDialog.vue';
 import {
     Dialog,
     DialogContent,
     DialogDescription,
     DialogHeader,
-    DialogTitle,
 } from '@/components/ui/dialog';
 import {
     Sidebar,
@@ -21,7 +21,6 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import YeidleWordmark from '@/components/YeidleWordmark.vue';
-import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 import { openCommandPalette } from '@/ui/commandPalette';
 
@@ -33,16 +32,10 @@ defineProps<{
 
 const mainNavItems: NavItem[] = [
     {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-        shortcut: 'Alt+1',
-    },
-    {
-        title: 'Pages',
+        title: 'All Pages',
         href: '/pages',
         icon: List,
-        shortcut: 'Alt+2',
+        shortcut: 'Alt+1',
     },
 ];
 
@@ -51,8 +44,7 @@ function handleNavigationShortcut(event: KeyboardEvent): void {
         return;
     }
 
-    const path =
-        event.key === '1' ? '/dashboard' : event.key === '2' ? '/pages' : null;
+    const path = event.key === '1' ? '/pages' : null;
 
     if (path === null) {
         return;
@@ -82,7 +74,7 @@ onBeforeUnmount(() => {
                 <SidebarMenuItem>
                     <SidebarMenuButton
                         tooltip="Command Palette"
-                        class="pr-16"
+                        class="cursor-pointer pr-16"
                         @click="openCommandPalette"
                     >
                         <SquareTerminal />
@@ -99,7 +91,7 @@ onBeforeUnmount(() => {
             <button
                 type="button"
                 aria-label="About Yeidle"
-                class="block w-fit cursor-pointer text-sidebar-foreground opacity-20 transition-[color,opacity] duration-300 hover:text-white hover:opacity-100 focus-visible:text-white focus-visible:opacity-100 focus-visible:outline-none"
+                class="block w-fit cursor-pointer text-sidebar-foreground opacity-20 transition-[color,opacity] duration-300 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
                 @click="aboutOpen = true"
             >
                 <YeidleWordmark class="h-auto w-18" />
@@ -108,6 +100,7 @@ onBeforeUnmount(() => {
     </Sidebar>
 
     <AppCommandPalette :current-page-id="currentPageId" />
+    <ThemeSelectorDialog />
 
     <Dialog v-model:open="aboutOpen">
         <DialogContent class="sm:max-w-sm">

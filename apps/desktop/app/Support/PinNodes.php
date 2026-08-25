@@ -24,7 +24,7 @@ use Ramsey\Uuid\Uuid;
  */
 final class PinNodes
 {
-    public const ROOT_ID = '3a647fbb-04a3-512d-bc50-88214e6e14aa';
+    public const ROOT_ID = SystemNodes::PINS_ROOT_ID;
 
     public function __construct(
         private SyncService $sync,
@@ -47,7 +47,7 @@ final class PinNodes
                 ->map(fn (Node $entry): ?Node => $itemsById->get($entry->content))
                 ->filter(fn (?Node $item): bool => $item?->isPage() === true
                     && $item->isReachable()
-                    && ! $item->isPinSystemNode())
+                    && ! $item->isSystemNode())
                 ->values(),
         ];
     }
@@ -65,7 +65,7 @@ final class PinNodes
     public function add(Node $node): void
     {
         abort_unless($node->isPage() && $node->isReachable()
-            && ! $node->isPinSystemNode(), 404);
+            && ! $node->isSystemNode(), 404);
 
         DB::transaction(function () use ($node): void {
             $rootId = $this->activeRootId();

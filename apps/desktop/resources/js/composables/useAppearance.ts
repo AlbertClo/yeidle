@@ -1,6 +1,7 @@
 import type { ComputedRef, Ref } from 'vue';
-import { computed, onMounted, ref } from 'vue';
-import type { Appearance, ResolvedAppearance } from '@/types';
+import { computed, ref } from 'vue';
+import type { Appearance, ResolvedAppearance, Theme } from '@/types';
+import { DEFAULT_THEME, isDarkTheme, isTheme } from '../types/theme';
 
 export type { Appearance, ResolvedAppearance };
 
@@ -15,19 +16,22 @@ export function updateTheme(value: Appearance): void {
         return;
     }
 
+    let resolvedTheme: Theme;
+
     if (value === 'system') {
         const mediaQueryList = window.matchMedia(
             '(prefers-color-scheme: dark)',
         );
-        const systemTheme = mediaQueryList.matches ? 'dark' : 'light';
-
-        document.documentElement.classList.toggle(
-            'dark',
-            systemTheme === 'dark',
-        );
+        resolvedTheme = mediaQueryList.matches ? 'dark' : 'light';
     } else {
-        document.documentElement.classList.toggle('dark', value === 'dark');
+        resolvedTheme = value;
     }
+
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.classList.toggle(
+        'dark',
+        isDarkTheme(resolvedTheme),
+    );
 }
 
 const setCookie = (name: string, value: string, days = 365) => {
@@ -48,12 +52,14 @@ const mediaQuery = () => {
     return window.matchMedia('(prefers-color-scheme: dark)');
 };
 
-const getStoredAppearance = () => {
+const getStoredAppearance = (): Appearance | null => {
     if (typeof window === 'undefined') {
         return null;
     }
 
-    return localStorage.getItem('appearance') as Appearance | null;
+    const stored = localStorage.getItem('appearance');
+
+    return stored === 'system' || isTheme(stored) ? stored : null;
 };
 
 const prefersDark = (): boolean => {
@@ -67,7 +73,7 @@ const prefersDark = (): boolean => {
 const handleSystemThemeChange = () => {
     const currentAppearance = getStoredAppearance();
 
-    updateTheme(currentAppearance || 'system');
+    updateTheme(currentAppearance || DEFAULT_THEME);
 };
 
 export function initializeTheme(): void {
@@ -75,47 +81,35 @@ export function initializeTheme(): void {
         return;
     }
 
-    // Initialize theme from saved preference or default to system...
+    // Initialize theme from the saved preference or the workspace default.
     const savedAppearance = getStoredAppearance();
-    updateTheme(savedAppearance || 'system');
+    updateTheme(savedAppearance || DEFAULT_THEME);
 
     // Set up system theme change listener...
     mediaQuery()?.addEventListener('change', handleSystemThemeChange);
 }
 
-const appearance = ref<Appearance>('system');
-
-export function useAppearance(): UseAppearanceReturn {
-    onMounted(() => {
-        const savedAppearance = localStorage.getItem(
-            'appearance',
-        ) as Appearance | null;
-
-        if (savedAppearance) {
-            appearance.value = savedAppearance;
-        }
-    });
-
-    const resolvedAppearance = computed<ResolvedAppearance>(() => {
-        if (appearance.value === 'system') {
-            return prefersDark() ? 'dark' : 'light';
-        }
-
-        return appearance.value;
-    });
-
-    function updateAppearance(value: Appearance) {
-        appearance.value = value;
-
-        // Store in localStorage for client-side persistence...
-        localStorage.setItem('appearance', value);
-
-        // Store in cookie for SSR...
-        setCookie('appearance', value);
-
-        updateTheme(value);
+const appearance = ref<Appearance>(getStoredAppearance() ?? DEFAULT_THEME);
+const resolvedAppearance = computed<ResolvedAppearance>(() => {
+    if (appearance.value === 'system') {
+        return prefersDark() ? 'dark' : 'light';
     }
 
+    return isDarkTheme(appearance.value) ? 'dark' : 'light';
+});
+
+export function updateAppearance(value: Appearance): void {
+    appearance.value = value;
+
+    if (typeof window !== 'undefined') {
+        localStorage.setItem('appearance', value);
+    }
+
+    setCookie('appearance', value);
+    updateTheme(value);
+}
+
+export function useAppearance(): UseAppearanceReturn {
     return {
         appearance,
         resolvedAppearance,

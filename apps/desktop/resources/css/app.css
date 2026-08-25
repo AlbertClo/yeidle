@@ -173,6 +173,148 @@
     --link: #93bbfc;
 }
 
+/*
+ * Named themes only define the small palette Yeidle actually uses. The
+ * semantic variables below keep components independent from any IDE theme's
+ * larger token set.
+ */
+:root:is(
+    [data-theme='catppuccin-mocha'],
+    [data-theme='catppuccin-latte'],
+    [data-theme='gruvbox-dark'],
+    [data-theme='gruvbox-light'],
+    [data-theme='tokyo-night'],
+    [data-theme='nord'],
+    [data-theme='solarized-dark'],
+    [data-theme='solarized-light']
+) {
+    --background: var(--theme-background);
+    --foreground: var(--theme-foreground);
+    --card: var(--theme-background);
+    --card-foreground: var(--theme-foreground);
+    --popover: var(--theme-background);
+    --popover-foreground: var(--theme-foreground);
+    --primary: var(--theme-foreground);
+    --primary-foreground: var(--theme-background);
+    --secondary: var(--theme-surface);
+    --secondary-foreground: var(--theme-foreground);
+    --muted: var(--theme-muted);
+    --muted-foreground: var(--theme-muted-foreground);
+    --accent: var(--theme-surface);
+    --accent-foreground: var(--theme-foreground);
+    --destructive: var(--theme-destructive);
+    --destructive-foreground: var(--theme-background);
+    --border: var(--theme-border);
+    --input: var(--theme-border);
+    --ring: var(--theme-accent);
+    --sidebar-background: var(--theme-sidebar);
+    --sidebar-foreground: var(--theme-foreground);
+    --sidebar-primary: var(--theme-foreground);
+    --sidebar-primary-foreground: var(--theme-background);
+    --sidebar-accent: var(--theme-surface);
+    --sidebar-accent-foreground: var(--theme-foreground);
+    --sidebar-border: var(--theme-border);
+    --sidebar-ring: var(--theme-accent);
+    --sidebar: var(--theme-sidebar);
+    --link: var(--theme-accent);
+}
+
+:root[data-theme='catppuccin-mocha'] {
+    --theme-background: #1e1e2e;
+    --theme-foreground: #cdd6f4;
+    --theme-surface: #313244;
+    --theme-muted: #181825;
+    --theme-muted-foreground: #a6adc8;
+    --theme-border: #45475a;
+    --theme-accent: #89b4fa;
+    --theme-destructive: #f38ba8;
+    --theme-sidebar: #181825;
+}
+
+:root[data-theme='catppuccin-latte'] {
+    --theme-background: #eff1f5;
+    --theme-foreground: #4c4f69;
+    --theme-surface: #e6e9ef;
+    --theme-muted: #dce0e8;
+    --theme-muted-foreground: #6c6f85;
+    --theme-border: #ccd0da;
+    --theme-accent: #1e66f5;
+    --theme-destructive: #d20f39;
+    --theme-sidebar: #e6e9ef;
+}
+
+:root[data-theme='gruvbox-dark'] {
+    --theme-background: #282828;
+    --theme-foreground: #ebdbb2;
+    --theme-surface: #3c3836;
+    --theme-muted: #32302f;
+    --theme-muted-foreground: #a89984;
+    --theme-border: #504945;
+    --theme-accent: #83a598;
+    --theme-destructive: #fb4934;
+    --theme-sidebar: #1d2021;
+}
+
+:root[data-theme='gruvbox-light'] {
+    --theme-background: #fbf1c7;
+    --theme-foreground: #3c3836;
+    --theme-surface: #ebdbb2;
+    --theme-muted: #f2e5bc;
+    --theme-muted-foreground: #7c6f64;
+    --theme-border: #d5c4a1;
+    --theme-accent: #076678;
+    --theme-destructive: #cc241d;
+    --theme-sidebar: #f2e5bc;
+}
+
+:root[data-theme='tokyo-night'] {
+    --theme-background: #1a1b26;
+    --theme-foreground: #c0caf5;
+    --theme-surface: #24283b;
+    --theme-muted: #1f2335;
+    --theme-muted-foreground: #a9b1d6;
+    --theme-border: #414868;
+    --theme-accent: #7aa2f7;
+    --theme-destructive: #f7768e;
+    --theme-sidebar: #16161e;
+}
+
+:root[data-theme='nord'] {
+    --theme-background: #2e3440;
+    --theme-foreground: #eceff4;
+    --theme-surface: #3b4252;
+    --theme-muted: #353b49;
+    --theme-muted-foreground: #d8dee9;
+    --theme-border: #4c566a;
+    --theme-accent: #88c0d0;
+    --theme-destructive: #bf616a;
+    --theme-sidebar: #272c36;
+}
+
+:root[data-theme='solarized-dark'] {
+    --theme-background: #002b36;
+    --theme-foreground: #839496;
+    --theme-surface: #073642;
+    --theme-muted: #073642;
+    --theme-muted-foreground: #586e75;
+    --theme-border: #335d63;
+    --theme-accent: #268bd2;
+    --theme-destructive: #dc322f;
+    --theme-sidebar: #00252d;
+}
+
+:root[data-theme='solarized-light'] {
+    --theme-background: #fdf6e3;
+    --theme-foreground: #657b83;
+    --theme-surface: #eee8d5;
+    --theme-muted: #f5efdc;
+    --theme-muted-foreground: #839496;
+    --theme-border: #d8d2c0;
+    --theme-accent: #268bd2;
+    --theme-destructive: #dc322f;
+    --theme-sidebar: #eee8d5;
+}
+
 @layer base {
     * {
         @apply border-border outline-ring/50;

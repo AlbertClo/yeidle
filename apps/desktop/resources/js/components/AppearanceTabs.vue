@@ -1,14 +1,32 @@
 <script setup lang="ts">
-import { Monitor, Moon, Sun } from 'lucide-vue-next';
-import { useAppearance } from '@/composables/useAppearance';
+import { Moon, Sun } from 'lucide-vue-next';
+import { ref } from 'vue';
+import { toast } from 'vue-sonner';
+import { saveThemePreference, themePreference } from '@/stores/preferences';
+import type { Theme } from '@/types';
 
-const { appearance, updateAppearance } = useAppearance();
+const saving = ref(false);
 
 const tabs = [
     { value: 'light', Icon: Sun, label: 'Light' },
     { value: 'dark', Icon: Moon, label: 'Dark' },
-    { value: 'system', Icon: Monitor, label: 'System' },
 ] as const;
+
+async function selectTheme(theme: Theme): Promise<void> {
+    if (saving.value || themePreference.value === theme) {
+        return;
+    }
+
+    saving.value = true;
+
+    try {
+        await saveThemePreference(theme);
+    } catch {
+        toast.error('Could not save the theme.');
+    } finally {
+        saving.value = false;
+    }
+}
 </script>
 
 <template>
@@ -18,10 +36,12 @@ const tabs = [
         <button
             v-for="{ value, Icon, label } in tabs"
             :key="value"
-            @click="updateAppearance(value)"
+            type="button"
+            :disabled="saving"
+            @click="selectTheme(value)"
             :class="[
                 'flex items-center rounded-md px-3.5 py-1.5 transition-colors',
-                appearance === value
+                themePreference === value
                     ? 'bg-white shadow-xs dark:bg-neutral-700 dark:text-neutral-100'
                     : 'text-neutral-500 hover:bg-neutral-200/60 hover:text-black dark:text-neutral-400 dark:hover:bg-neutral-700/60',
             ]"
