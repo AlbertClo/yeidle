@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { FileText, LayoutGrid } from 'lucide-vue-next';
 import NavMain from '@/components/NavMain.vue';
-import {
-    Sidebar,
-    SidebarContent,
-    SidebarHeader,
-    SidebarMenu,
-} from '@/components/ui/sidebar';
-import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue';
+import { Sidebar, SidebarContent } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 
@@ -26,13 +20,11 @@ const mainNavItems: NavItem[] = [
 </script>
 
 <template>
-    <Sidebar collapsible="icon" variant="inset">
-        <SidebarHeader class="window-drag-region">
-            <SidebarMenu class="window-no-drag">
-                <WorkspaceSwitcher />
-            </SidebarMenu>
-        </SidebarHeader>
-
+    <Sidebar
+        collapsible="icon"
+        variant="inset"
+        class="!top-12 !bottom-0 !h-auto"
+    >
         <SidebarContent>
             <NavMain :items="mainNavItems" />
         </SidebarContent>

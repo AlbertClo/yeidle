@@ -23,10 +23,16 @@ php artisan native:migrate
 ## Development
 
 ```bash
-php artisan native:run
+composer run native:dev
 ```
 
-This launches the Electron app with hot reload. No need to run `npm run dev` or `php artisan serve` separately.
+This launches the NativePHP Electron app and the Laravel Vite development
+server together. Changes under `resources/js` and `resources/css` are then
+updated through Vite hot reload.
+
+Running `php artisan native:run` by itself only watches the Electron process
+and serves the most recently built frontend assets. Changes to the Electron
+preload or main process still require restarting the development command.
 
 ## Architecture
 

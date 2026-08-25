@@ -30,6 +30,22 @@ initializeTheme();
 initializeRealtimeSync();
 
 document.addEventListener('keydown', (e) => {
+    if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === 'r'
+    ) {
+        e.preventDefault();
+
+        if (window.Native?.windowControls) {
+            window.Native.windowControls.reload();
+        } else {
+            window.location.reload();
+        }
+
+        return;
+    }
+
     // Prevent Ctrl+Q from closing the app (Electron default)
     if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
         e.preventDefault();

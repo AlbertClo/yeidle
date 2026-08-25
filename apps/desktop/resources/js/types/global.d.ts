@@ -1,5 +1,25 @@
 import type { Auth } from '@/types/auth';
 
+interface NativeWindowControls {
+    minimize: () => void;
+    reload: () => void;
+    toggleMaximize: () => boolean;
+    close: () => void;
+    isMaximized: () => boolean;
+    subscribeMaximizedChange: (
+        callback: (maximized: boolean) => void,
+    ) => number;
+    unsubscribeMaximizedChange: (id: number) => void;
+}
+
+declare global {
+    interface Window {
+        Native?: {
+            windowControls?: NativeWindowControls;
+        };
+    }
+}
+
 // Extend ImportMeta interface for Vite...
 declare module 'vite/client' {
     interface ImportMetaEnv {

@@ -42,6 +42,15 @@ type WorkspaceState = {
     workspaces: Workspace[];
 };
 
+const props = withDefaults(
+    defineProps<{
+        placement?: 'sidebar' | 'header';
+    }>(),
+    {
+        placement: 'sidebar',
+    },
+);
+
 const { isMobile, state: sidebarState } = useSidebar();
 const state = ref<WorkspaceState | null>(null);
 const createDialogOpen = ref(false);
@@ -212,7 +221,7 @@ onMounted(() => {
             <DropdownMenuContent
                 class="w-(--reka-dropdown-menu-trigger-width) min-w-56 rounded-lg"
                 :side="
-                    isMobile
+                    isMobile || props.placement === 'header'
                         ? 'bottom'
                         : sidebarState === 'collapsed'
                           ? 'left'

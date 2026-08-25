@@ -100,7 +100,9 @@ function handleTitleKeydown(e: KeyboardEvent) {
         finishEditingTitle();
         pageEditorRef.value?.focusStart();
     } else if (e.key === 'ArrowUp') {
-        window.scrollTo({ top: 0 });
+        document
+            .querySelector<HTMLElement>('[data-main-scroll]')
+            ?.scrollTo({ top: 0 });
     }
 }
 

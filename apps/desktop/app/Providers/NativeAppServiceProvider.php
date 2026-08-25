@@ -18,7 +18,8 @@ class NativeAppServiceProvider implements ProvidesPhpIni
 
         Window::open()
             ->frameless()
-            ->hideMenu();
+            ->hideMenu()
+            ->maximized();
     }
 
     /**

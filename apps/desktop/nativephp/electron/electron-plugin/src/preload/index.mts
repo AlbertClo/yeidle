@@ -1,6 +1,15 @@
 import remote from '@electron/remote';
 import { contextBridge, ipcRenderer } from 'electron';
 
+let nextWindowControlSubscriptionId = 1;
+const windowControlSubscriptions = new Map<
+    number,
+    {
+        window: Electron.BrowserWindow;
+        listener: () => void;
+    }
+>();
+
 // -------------------------------------------------------------------
 // The Native helper
 // -------------------------------------------------------------------
@@ -19,6 +28,48 @@ const Native = {
     contextMenu: (template) => {
         const menu = remote.Menu.buildFromTemplate(template);
         menu.popup({ window: remote.getCurrentWindow() });
+    },
+    windowControls: {
+        minimize: () => remote.getCurrentWindow().minimize(),
+        reload: () => remote.getCurrentWindow().reload(),
+        toggleMaximize: () => {
+            const currentWindow = remote.getCurrentWindow();
+
+            if (currentWindow.isMaximized()) {
+                currentWindow.unmaximize();
+            } else {
+                currentWindow.maximize();
+            }
+
+            return currentWindow.isMaximized();
+        },
+        close: () => remote.getCurrentWindow().close(),
+        isMaximized: () => remote.getCurrentWindow().isMaximized(),
+        subscribeMaximizedChange: (callback: (maximized: boolean) => void) => {
+            const id = nextWindowControlSubscriptionId++;
+            const currentWindow = remote.getCurrentWindow();
+            const listener = () => callback(currentWindow.isMaximized());
+
+            currentWindow.on('maximize', listener);
+            currentWindow.on('unmaximize', listener);
+            windowControlSubscriptions.set(id, {
+                window: currentWindow,
+                listener,
+            });
+
+            return id;
+        },
+        unsubscribeMaximizedChange: (id: number) => {
+            const subscription = windowControlSubscriptions.get(id);
+
+            if (!subscription) {
+                return;
+            }
+
+            subscription.window.removeListener('maximize', subscription.listener);
+            subscription.window.removeListener('unmaximize', subscription.listener);
+            windowControlSubscriptions.delete(id);
+        },
     },
 };
 
