@@ -28,19 +28,13 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
+import {
+    loadWorkspaceState,
+    workspaceState as state,
+} from '@/stores/workspaces';
 import { requestCloudExchange } from '@/sync/cloud';
 import { refreshRealtimeSync } from '@/sync/realtime';
-
-type Workspace = {
-    id: string;
-    name: string;
-    database: string;
-};
-
-type WorkspaceState = {
-    active_workspace_id: string;
-    workspaces: Workspace[];
-};
+import type { Workspace } from '@/types/workspace';
 
 const props = withDefaults(
     defineProps<{
@@ -52,7 +46,6 @@ const props = withDefaults(
 );
 
 const { isMobile, state: sidebarState } = useSidebar();
-const state = ref<WorkspaceState | null>(null);
 const createDialogOpen = ref(false);
 const importDialogOpen = ref(false);
 const workspaceName = ref('');
@@ -77,18 +70,6 @@ function visitPages(): void {
             loading.value = false;
         },
     });
-}
-
-async function loadWorkspaces(): Promise<void> {
-    const response = await fetch('/api/workspaces', {
-        headers: { Accept: 'application/json' },
-    });
-
-    if (!response.ok) {
-        throw new Error('Could not load local workspaces.');
-    }
-
-    state.value = (await response.json()) as WorkspaceState;
 }
 
 async function activate(workspace: Workspace): Promise<void> {
@@ -196,7 +177,7 @@ function openImportedWorkspace(workspace: Workspace): void {
 }
 
 onMounted(() => {
-    loadWorkspaces().catch((reason: unknown) => {
+    loadWorkspaceState().catch((reason: unknown) => {
         error.value =
             reason instanceof Error
                 ? reason.message
@@ -217,7 +198,7 @@ onMounted(() => {
                     ]"
                     :disabled="loading"
                 >
-                    <AppLogo :name="activeWorkspace?.name ?? 'Personal'" />
+                    <AppLogo :name="activeWorkspace?.name" />
                     <ChevronsUpDown class="ml-auto size-4" />
                 </SidebarMenuButton>
             </DropdownMenuTrigger>
