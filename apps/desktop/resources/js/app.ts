@@ -8,6 +8,33 @@ import { initializeRealtimeSync } from '@/sync/realtime';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
+function initializeNativeWindowFrame(): void {
+    const windowControls = window.Native?.windowControls;
+
+    if (!windowControls) {
+        return;
+    }
+
+    const root = document.documentElement;
+    const updateMaximizedState = (maximized: boolean) => {
+        root.classList.toggle('native-window-maximized', maximized);
+    };
+
+    root.classList.add('native-window');
+    updateMaximizedState(windowControls.isMaximized());
+
+    const subscriptionId =
+        windowControls.subscribeMaximizedChange(updateMaximizedState);
+
+    window.addEventListener(
+        'beforeunload',
+        () => windowControls.unsubscribeMaximizedChange(subscriptionId),
+        { once: true },
+    );
+}
+
+initializeNativeWindowFrame();
+
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
     resolve: (name) =>

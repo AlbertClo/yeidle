@@ -187,6 +187,22 @@ body {
     margin-right: 0 !important;
 }
 
+html.native-window,
+html.native-window body {
+    background: transparent;
+}
+
+html.native-window #app {
+    height: 100svh;
+    overflow: hidden;
+    background: var(--background);
+    clip-path: inset(0 round 8px);
+}
+
+html.native-window.native-window-maximized #app {
+    clip-path: none;
+}
+
 .ProseMirror .ProseMirror-gapcursor {
     position: relative;
 }
