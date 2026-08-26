@@ -99,6 +99,7 @@
 }
 
 :root {
+    --app-scrollbar-width: 8px;
     --background: hsl(0 0% 100%);
     --foreground: hsl(0 0% 3.9%);
     --card: hsl(0 0% 100%);
@@ -448,7 +449,7 @@ html.native-window.native-window-maximized #app {
 }
 
 ::-webkit-scrollbar {
-    width: 8px;
+    width: var(--app-scrollbar-width);
 }
 ::-webkit-scrollbar-track {
     background: transparent;
@@ -459,4 +460,12 @@ html.native-window.native-window-maximized #app {
 }
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(128, 128, 128, 0.5);
+}
+
+[data-main-scroll] {
+    scrollbar-gutter: stable;
+}
+
+[data-main-scroll-content] {
+    width: calc(100% + var(--app-scrollbar-width));
 }

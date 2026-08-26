@@ -32,7 +32,9 @@ withDefaults(defineProps<Props>(), {
                 data-main-scroll
                 class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
             >
-                <slot />
+                <div data-main-scroll-content class="min-h-full">
+                    <slot />
+                </div>
             </div>
         </AppContent>
         <div class="window-no-drag fixed right-1 bottom-1 z-40">
