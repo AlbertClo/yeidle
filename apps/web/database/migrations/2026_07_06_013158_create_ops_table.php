@@ -20,7 +20,7 @@ return new class extends Migration
             $table->uuid('op_id')->unique();
             $table->string('client_id');
             $table->foreignId('user_id')->constrained();
-            $table->string('hlc', 64);
+            $table->text('hlc');
             $table->string('type', 32);
             $table->jsonb('payload');
             $table->dateTime('created_at');

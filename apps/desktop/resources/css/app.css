@@ -8,10 +8,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
-        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Noto Color Emoji';
+    --font-sans: var(--app-font-family);
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -80,14 +77,6 @@
 }
 
 @layer utilities {
-    body,
-    html {
-        --font-sans:
-            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
-            'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-            'Noto Color Emoji';
-    }
-
     .window-drag-region {
         -webkit-app-region: drag;
         user-select: none;
@@ -100,6 +89,11 @@
 
 :root {
     --app-scrollbar-width: 8px;
+    --app-font-family:
+        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
+    --app-font-size: 16px;
     --background: hsl(0 0% 100%);
     --foreground: hsl(0 0% 3.9%);
     --card: hsl(0 0% 100%);
@@ -135,6 +129,10 @@
     --sidebar-ring: hsl(217.2 91.2% 59.8%);
     --sidebar: hsl(0 0% 98%);
     --link: #93bbfc;
+}
+
+html {
+    font-size: var(--app-font-size);
 }
 
 .dark {
@@ -403,14 +401,19 @@ html.native-window body {
     background: transparent;
 }
 
+html.native-window body {
+    height: 100svh;
+    overflow: hidden;
+    clip-path: inset(0 round 8px);
+}
+
 html.native-window #app {
     height: 100svh;
     overflow: hidden;
     background: var(--background);
-    clip-path: inset(0 round 8px);
 }
 
-html.native-window.native-window-maximized #app {
+html.native-window.native-window-maximized body {
     clip-path: none;
 }
 

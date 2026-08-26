@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { FileText, Keyboard, Palette, Pin, Search } from 'lucide-vue-next';
+import {
+    FileText,
+    Keyboard,
+    Palette,
+    PanelLeft,
+    Pin,
+    Search,
+    Type,
+} from 'lucide-vue-next';
 import type { LucideIcon } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
@@ -13,12 +21,14 @@ import {
     CommandList,
     CommandShortcut,
 } from '@/components/ui/command';
+import { useSidebar } from '@/components/ui/sidebar';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import { isNodePinned, toggleNodePin } from '@/stores/pins';
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/ui/commandPalette';
 import { openKeyBindings } from '@/ui/keyBindings';
 import { openPageSearch } from '@/ui/pageSearch';
 import { openThemeSelector } from '@/ui/themeSelector';
+import { openTypographySelector } from '@/ui/typographySelector';
 
 const props = defineProps<{
     currentPageId?: string;
@@ -34,6 +44,7 @@ type PaletteCommand = {
 
 const isOpen = ref(false);
 const query = ref('');
+const { toggleSidebar } = useSidebar();
 const commands = computed<PaletteCommand[]>(() => [
     {
         id: 'pages',
@@ -41,6 +52,13 @@ const commands = computed<PaletteCommand[]>(() => [
         icon: FileText,
         shortcut: bindingLabel('all-pages'),
         run: () => router.visit('/pages'),
+    },
+    {
+        id: 'toggle-left-sidebar',
+        label: 'Toggle Left Sidebar',
+        icon: PanelLeft,
+        shortcut: bindingLabel('toggle-left-sidebar'),
+        run: toggleSidebar,
     },
     {
         id: 'find-page',
@@ -60,6 +78,12 @@ const commands = computed<PaletteCommand[]>(() => [
         label: 'Change Theme',
         icon: Palette,
         run: openThemeSelector,
+    },
+    {
+        id: 'typography',
+        label: 'Change Font and Size',
+        icon: Type,
+        run: openTypographySelector,
     },
     ...(props.currentPageId
         ? [

@@ -10,6 +10,11 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Alt+A',
     },
     {
+        id: 'toggle-left-sidebar',
+        label: 'Toggle Left Sidebar',
+        defaultBinding: 'Mod+Backslash',
+    },
+    {
         id: 'find-page',
         label: 'Find or Create Page',
         defaultBinding: 'Mod+U',
@@ -204,6 +209,9 @@ export function formatKeyBinding(binding: string | null): string {
     const isMac =
         typeof navigator !== 'undefined' &&
         /Mac|iPhone|iPad/.test(navigator.platform);
+    const displayKeys: Record<string, string> = {
+        Backslash: '\\',
+    };
 
     return binding
         .split('+')
@@ -220,7 +228,7 @@ export function formatKeyBinding(binding: string | null): string {
                 return isMac ? '⇧' : 'Shift';
             }
 
-            return part.replace('Arrow', '');
+            return displayKeys[part] ?? part.replace('Arrow', '');
         })
         .join('+');
 }

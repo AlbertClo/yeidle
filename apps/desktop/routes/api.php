@@ -44,6 +44,7 @@ Route::put('nodes/{node}/pin', [PinController::class, 'store']);
 Route::delete('nodes/{node}/pin', [PinController::class, 'destroy']);
 Route::get('preferences', [PreferenceController::class, 'show']);
 Route::put('preferences/theme', [PreferenceController::class, 'updateTheme']);
+Route::put('preferences/typography', [PreferenceController::class, 'updateTypography']);
 Route::get('key-bindings', [KeyBindingController::class, 'show']);
 Route::put('key-bindings', [KeyBindingController::class, 'update']);
 // Before pages/{node} so "title-exists" isn't captured as a node id

@@ -1,9 +1,16 @@
+import '@fontsource-variable/atkinson-hyperlegible-next';
+import '@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css';
+import '@fontsource-variable/jetbrains-mono';
+import '@fontsource-variable/jetbrains-mono/wght-italic.css';
+import '@fontsource-variable/source-serif-4';
+import '@fontsource-variable/source-serif-4/wght-italic.css';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import type { DefineComponent } from 'vue';
 import { createApp, h } from 'vue';
 import '../css/app.css';
 import { initializeTheme } from '@/composables/useAppearance';
+import { initializeTypography } from '@/composables/useTypography';
 import { eventMatchesCommand, loadKeyBindings } from '@/stores/keyBindings';
 import { initializeRealtimeSync } from '@/sync/realtime';
 
@@ -35,6 +42,7 @@ function initializeNativeWindowFrame(): void {
 }
 
 initializeNativeWindowFrame();
+initializeTypography();
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),

@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('nodes', function (Blueprint $table) {
-            $table->string('modified_hlc', 64)->default('');
+            $table->text('modified_hlc')->default('');
             $table->index(
                 ['parent_id', 'deleted_at', 'modified_hlc', 'id'],
                 'nodes_page_order_index',

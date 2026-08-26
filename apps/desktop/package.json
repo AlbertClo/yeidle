@@ -36,6 +36,9 @@
         "vue-tsc": "^2.2.4"
     },
     "dependencies": {
+        "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+        "@fontsource-variable/jetbrains-mono": "^5.3.0",
+        "@fontsource-variable/source-serif-4": "^5.3.0",
         "@inertiajs/vue3": "^2.3.7",
         "@tiptap/extension-bullet-list": "^3.24.0",
         "@tiptap/extension-document": "^3.24.0",

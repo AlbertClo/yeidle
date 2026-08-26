@@ -9,16 +9,21 @@ vi.mock('../sync/cloud', () => ({
 }));
 
 import {
+    fontFamilyPreference,
+    fontSizePreference,
     loadPreferences,
     opsAffectPreferences,
     preferenceRootId,
     saveThemePreference,
+    saveTypographyPreference,
     themePreference,
 } from './preferences';
 
 describe('preferences store', () => {
     beforeEach(() => {
         themePreference.value = 'dark';
+        fontFamilyPreference.value = 'instrument-sans';
+        fontSizePreference.value = 16;
         preferenceRootId.value = '00000000-0000-7000-8000-000000000099';
         requestCloudExchangeMock.mockClear();
         vi.restoreAllMocks();
@@ -38,6 +43,8 @@ describe('preferences store', () => {
         await loadPreferences(true);
 
         expect(themePreference.value).toBe('light');
+        expect(fontFamilyPreference.value).toBe('instrument-sans');
+        expect(fontSizePreference.value).toBe(16);
     });
 
     it('persists the selected theme and requests a cloud exchange', async () => {
@@ -85,6 +92,37 @@ describe('preferences store', () => {
                 body: JSON.stringify({ theme: 'catppuccin-mocha' }),
             }),
         );
+    });
+
+    it('persists font family and size and requests a cloud exchange', async () => {
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    root_id: preferenceRootId.value,
+                    theme: 'light',
+                    font_family: 'jetbrains-mono',
+                    font_size: 18,
+                }),
+                { status: 200 },
+            ),
+        );
+
+        await saveTypographyPreference('jetbrains-mono', 18);
+
+        expect(fontFamilyPreference.value).toBe('jetbrains-mono');
+        expect(fontSizePreference.value).toBe(18);
+        expect(fetchMock).toHaveBeenCalledWith('/api/preferences/typography', {
+            method: 'PUT',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                font_family: 'jetbrains-mono',
+                font_size: 18,
+            }),
+        });
+        expect(requestCloudExchangeMock).toHaveBeenCalledOnce();
     });
 
     it('refreshes only for the active user preference root', () => {

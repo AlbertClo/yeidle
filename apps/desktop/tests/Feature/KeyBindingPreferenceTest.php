@@ -38,6 +38,7 @@ class KeyBindingPreferenceTest extends TestCase
         $this->getJson('/api/key-bindings')
             ->assertSuccessful()
             ->assertJsonPath('bindings.command-palette', 'Mod+P')
+            ->assertJsonPath('bindings.toggle-left-sidebar', 'Mod+Backslash')
             ->assertJsonPath('bindings.toggle-checkbox', 'Mod+Enter')
             ->assertJsonPath('bindings.pinned-item-1', 'Alt+1')
             ->assertJsonPath('bindings.pinned-item-10', 'Alt+0');

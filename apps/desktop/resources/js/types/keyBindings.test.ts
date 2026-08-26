@@ -43,6 +43,9 @@ describe('key bindings', () => {
         expect(keyBindingFromEvent(keyboardEvent('/', { ctrlKey: true }))).toBe(
             'Mod+Slash',
         );
+        expect(
+            keyBindingFromEvent(keyboardEvent('\\', { ctrlKey: true })),
+        ).toBe('Mod+Backslash');
     });
 
     it('rejects unmodified typing keys and matches exact modifiers', () => {
@@ -63,6 +66,7 @@ describe('key bindings', () => {
 
     it('formats bindings for display', () => {
         expect(formatKeyBinding('Mod+Shift+ArrowLeft')).toBe('Ctrl+Shift+Left');
+        expect(formatKeyBinding('Mod+Backslash')).toBe('Ctrl+\\');
         expect(formatKeyBinding(null)).toBe('Unassigned');
     });
 

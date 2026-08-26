@@ -49,6 +49,34 @@ class PreferenceTest extends TestCase
             ->assertJsonPath('theme', 'light');
     }
 
+    public function test_typography_is_stored_in_synced_preference_nodes(): void
+    {
+        $empty = $this->getJson('/api/preferences')->assertSuccessful();
+        $empty->assertJsonPath('font_family', null);
+        $empty->assertJsonPath('font_size', null);
+        $rootId = $empty->json('root_id');
+
+        $this->putJson('/api/preferences/typography', [
+            'font_family' => 'source-serif-4',
+            'font_size' => 18,
+        ])
+            ->assertSuccessful()
+            ->assertJsonPath('font_family', 'source-serif-4')
+            ->assertJsonPath('font_size', 18);
+
+        $this->assertDatabaseHas('nodes', [
+            'parent_id' => $rootId,
+            'content' => 'source-serif-4',
+            'position' => 'a1',
+        ]);
+        $this->assertDatabaseHas('nodes', [
+            'parent_id' => $rootId,
+            'content' => '18',
+            'position' => 'a2',
+        ]);
+        $this->assertGreaterThan(0, Op::whereNull('server_seq')->count());
+    }
+
     public function test_theme_is_scoped_to_the_active_cloud_user(): void
     {
         $state = SyncState::create([
@@ -108,6 +136,35 @@ class PreferenceTest extends TestCase
         $this->get('/pages/'.PreferenceNodes::ROOT_ID)->assertNotFound();
         $this->getJson('/api/search?q=light')
             ->assertJsonMissing(['content' => 'light']);
+    }
+
+    public function test_typography_validation(): void
+    {
+        $this->putJson('/api/preferences/typography', [
+            'font_family' => 'comic-sans',
+            'font_size' => 16,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('font_family');
+
+        $this->putJson('/api/preferences/typography', [
+            'font_family' => 'instrument-sans',
+            'font_size' => PreferenceNodes::MAX_FONT_SIZE + 1,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('font_size');
+    }
+
+    public function test_bundled_font_families_are_available(): void
+    {
+        foreach (['source-serif-4', 'atkinson-hyperlegible', 'jetbrains-mono'] as $fontFamily) {
+            $this->putJson('/api/preferences/typography', [
+                'font_family' => $fontFamily,
+                'font_size' => 16,
+            ])
+                ->assertSuccessful()
+                ->assertJsonPath('font_family', $fontFamily);
+        }
     }
 
     public function test_named_themes_are_accepted_and_returned(): void

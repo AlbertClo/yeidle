@@ -26,7 +26,26 @@ final class PreferenceNodes
 
     public const THEME_KEY = 'theme';
 
+    public const FONT_FAMILY_KEY = 'font-family';
+
+    public const FONT_SIZE_KEY = 'font-size';
+
     public const DEFAULT_THEME = 'light';
+
+    public const DEFAULT_FONT_FAMILY = 'instrument-sans';
+
+    public const DEFAULT_FONT_SIZE = 16;
+
+    public const MIN_FONT_SIZE = 12;
+
+    public const MAX_FONT_SIZE = 22;
+
+    public const FONT_FAMILIES = [
+        'instrument-sans',
+        'atkinson-hyperlegible',
+        'source-serif-4',
+        'jetbrains-mono',
+    ];
 
     public const THEMES = [
         'dark',
@@ -64,41 +83,65 @@ final class PreferenceNodes
         private CloudSyncService $cloud,
     ) {}
 
-    /** @return array{root_id: string, theme: ?string} */
+    /** @return array{root_id: string, theme: ?string, font_family: ?string, font_size: ?int} */
     public function listing(): array
     {
         $rootId = $this->activeRootId();
         $theme = Node::query()->find($this->entryId($rootId, self::THEME_KEY))?->content;
+        $fontFamily = Node::query()->find($this->entryId($rootId, self::FONT_FAMILY_KEY))?->content;
+        $fontSize = Node::query()->find($this->entryId($rootId, self::FONT_SIZE_KEY))?->content;
+        $validFontSize = filter_var($fontSize, FILTER_VALIDATE_INT, [
+            'options' => [
+                'min_range' => self::MIN_FONT_SIZE,
+                'max_range' => self::MAX_FONT_SIZE,
+            ],
+        ]);
 
         return [
             'root_id' => $rootId,
             'theme' => in_array($theme, self::THEMES, true) ? $theme : null,
+            'font_family' => in_array($fontFamily, self::FONT_FAMILIES, true) ? $fontFamily : null,
+            'font_size' => $validFontSize === false ? null : $validFontSize,
         ];
     }
 
     public function setTheme(string $theme): void
     {
-        $this->set(self::THEME_KEY, $theme, 0);
+        $this->set([
+            [self::THEME_KEY, $theme, 0],
+        ]);
     }
 
-    private function set(string $key, string $value, int $position): void
+    public function setTypography(string $fontFamily, int $fontSize): void
     {
-        DB::transaction(function () use ($key, $value, $position): void {
+        $this->set([
+            [self::FONT_FAMILY_KEY, $fontFamily, 1],
+            [self::FONT_SIZE_KEY, (string) $fontSize, 2],
+        ]);
+    }
+
+    /** @param list<array{string, string, int}> $entries */
+    private function set(array $entries): void
+    {
+        DB::transaction(function () use ($entries): void {
             $rootId = $this->activeRootId();
             $clock = $this->clock();
             $ops = $this->containerOps($rootId, $clock);
-            $ops[] = $this->setOp(
-                $this->entryId($rootId, $key),
-                $rootId,
-                $clock->now(),
-                [
-                    'parent_id' => $rootId,
-                    'position' => RoamPosition::at($position),
-                    'content' => $value,
-                    'tiptap_content' => null,
-                    'is_checked' => null,
-                ],
-            );
+
+            foreach ($entries as [$key, $value, $position]) {
+                $ops[] = $this->setOp(
+                    $this->entryId($rootId, $key),
+                    $rootId,
+                    $clock->now(),
+                    [
+                        'parent_id' => $rootId,
+                        'position' => RoamPosition::at($position),
+                        'content' => $value,
+                        'tiptap_content' => null,
+                        'is_checked' => null,
+                    ],
+                );
+            }
 
             $this->sync->push($ops);
         });
@@ -152,7 +195,7 @@ final class PreferenceNodes
         $hlc = $clock->now();
         $ops = $this->containerOps($cloudRootId, $clock);
 
-        foreach ([self::THEME_KEY] as $position => $key) {
+        foreach ([self::THEME_KEY, self::FONT_FAMILY_KEY, self::FONT_SIZE_KEY] as $position => $key) {
             $localEntry = Node::query()->find($this->entryId($localRootId, $key));
             $cloudEntry = Node::query()->find($this->entryId($cloudRootId, $key));
 

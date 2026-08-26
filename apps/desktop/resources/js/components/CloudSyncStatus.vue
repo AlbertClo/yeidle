@@ -40,7 +40,7 @@ const realtimeAppearance = computed(() => {
                 label: 'Live',
                 topLabel: 'Synced',
                 detail: 'Realtime delivery is connected.',
-                color: 'text-emerald-600 dark:text-emerald-400',
+                color: 'text-[var(--link)]',
                 icon: Cloud,
             };
         case 'connecting':
@@ -178,7 +178,7 @@ const appearance = computed(() => {
         label: 'Synced',
         detail: 'Cloud sync is healthy.',
         icon: Cloud,
-        color: 'text-emerald-600 dark:text-emerald-400',
+        color: 'text-[var(--link)]',
     };
 });
 
@@ -350,11 +350,12 @@ onBeforeUnmount(() => {
                     :aria-label="`Cloud sync: ${triggerLabel}`"
                     :title="triggerLabel"
                 >
-                    <Cloud
+                    <component
+                        :is="triggerOnline ? Cloud : CloudOff"
                         class="size-4"
                         :class="
                             triggerOnline
-                                ? 'text-emerald-600 dark:text-emerald-400'
+                                ? 'text-[var(--link)]'
                                 : 'text-muted-foreground'
                         "
                     />

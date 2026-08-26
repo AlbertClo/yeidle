@@ -14,7 +14,7 @@ return new class extends Migration
             $table->uuid('op_id')->unique();
             $table->unsignedBigInteger('server_seq')->nullable()->index();
             $table->uuid('client_id');
-            $table->string('hlc', 64)->index();
+            $table->text('hlc')->index();
             $table->string('type', 32);
             $table->json('payload');
             $table->dateTime('created_at');

@@ -7,6 +7,7 @@ import KeyBindingsDialog from '@/components/KeyBindingsDialog.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavPinned from '@/components/NavPinned.vue';
 import ThemeSelectorDialog from '@/components/ThemeSelectorDialog.vue';
+import TypographySelectorDialog from '@/components/TypographySelectorDialog.vue';
 import {
     Dialog,
     DialogContent,
@@ -20,6 +21,7 @@ import {
     SidebarMenuBadge,
     SidebarMenuButton,
     SidebarMenuItem,
+    useSidebar,
 } from '@/components/ui/sidebar';
 import YeidleWordmark from '@/components/YeidleWordmark.vue';
 import {
@@ -33,6 +35,7 @@ import { PINNED_ITEM_COMMANDS } from '@/types/keyBindings';
 import { openCommandPalette } from '@/ui/commandPalette';
 
 const aboutOpen = ref(false);
+const { toggleSidebar } = useSidebar();
 
 defineProps<{
     currentPageId?: string;
@@ -48,6 +51,13 @@ const mainNavItems = computed<NavItem[]>(() => [
 ]);
 
 function handleNavigationShortcut(event: KeyboardEvent): void {
+    if (eventMatchesCommand(event, 'toggle-left-sidebar')) {
+        event.preventDefault();
+        toggleSidebar();
+
+        return;
+    }
+
     if (eventMatchesCommand(event, 'all-pages')) {
         event.preventDefault();
         router.visit('/pages');
@@ -118,6 +128,7 @@ onBeforeUnmount(() => {
     <AppCommandPalette :current-page-id="currentPageId" />
     <KeyBindingsDialog />
     <ThemeSelectorDialog />
+    <TypographySelectorDialog />
 
     <Dialog v-model:open="aboutOpen">
         <DialogContent

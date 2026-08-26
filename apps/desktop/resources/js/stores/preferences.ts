@@ -1,9 +1,21 @@
 import { ref } from 'vue';
 import type { Appearance, Theme } from '@/types';
 import { updateAppearance, useAppearance } from '../composables/useAppearance';
+import {
+    activeFontFamily,
+    activeFontSize,
+    updateTypography,
+} from '../composables/useTypography';
 import { requestCloudExchange } from '../sync/cloud';
 import type { CommittedOp } from '../sync/localOps';
 import { DEFAULT_THEME, isTheme } from '../types/theme';
+import {
+    DEFAULT_FONT_FAMILY,
+    DEFAULT_FONT_SIZE,
+    isFontFamily,
+    isFontSize,
+} from '../types/typography';
+import type { FontFamily } from '../types/typography';
 
 const { appearance, resolvedAppearance } = useAppearance();
 const initialAppearance = appearance.value;
@@ -13,6 +25,8 @@ export const themePreference = ref<Theme>(
         ? resolvedAppearance.value
         : initialAppearance,
 );
+export const fontFamilyPreference = activeFontFamily;
+export const fontSizePreference = activeFontSize;
 export const preferenceRootId = ref<string | null>(null);
 
 let loaded = false;
@@ -21,6 +35,8 @@ let loadRequest: Promise<void> | null = null;
 type PreferenceResponse = {
     root_id: string;
     theme: Theme | null;
+    font_family: FontFamily | null;
+    font_size: number | null;
 };
 
 export async function loadPreferences(force = false): Promise<void> {
@@ -57,6 +73,15 @@ export async function loadPreferences(force = false): Promise<void> {
                 updateAppearance(DEFAULT_THEME);
             }
 
+            updateTypography(
+                isFontFamily(payload.font_family)
+                    ? payload.font_family
+                    : DEFAULT_FONT_FAMILY,
+                isFontSize(payload.font_size)
+                    ? payload.font_size
+                    : DEFAULT_FONT_SIZE,
+            );
+
             loaded = true;
         })
         .finally(() => {
@@ -64,6 +89,43 @@ export async function loadPreferences(force = false): Promise<void> {
         });
 
     return loadRequest;
+}
+
+export async function saveTypographyPreference(
+    fontFamily: FontFamily,
+    fontSize: number,
+): Promise<void> {
+    const previousFontFamily = fontFamilyPreference.value;
+    const previousFontSize = fontSizePreference.value;
+
+    updateTypography(fontFamily, fontSize);
+
+    try {
+        const response = await fetch('/api/preferences/typography', {
+            method: 'PUT',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                font_family: fontFamily,
+                font_size: fontSize,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not save the typography preference.');
+        }
+
+        const payload = (await response.json()) as PreferenceResponse;
+        preferenceRootId.value = payload.root_id;
+        loaded = true;
+        void requestCloudExchange();
+    } catch (error) {
+        updateTypography(previousFontFamily, previousFontSize);
+
+        throw error;
+    }
 }
 
 export async function saveThemePreference(theme: Theme): Promise<void> {

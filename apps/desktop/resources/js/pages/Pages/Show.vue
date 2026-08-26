@@ -687,7 +687,7 @@ onBeforeUnmount(() => {
 
     <AppLayout :breadcrumbs="breadcrumbs" :current-page-id="page.id">
         <div class="relative">
-            <div class="absolute top-4 right-4">
+            <div class="sticky top-4 z-30 flex h-0 justify-end pr-4">
                 <DropdownMenu>
                     <DropdownMenuTrigger as-child>
                         <Button variant="outline" size="icon" class="shrink-0">

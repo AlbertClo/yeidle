@@ -28,4 +28,23 @@ class PreferenceController extends Controller
 
         return response()->json($this->preferences->listing());
     }
+
+    public function updateTypography(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'font_family' => ['required', 'string', Rule::in(PreferenceNodes::FONT_FAMILIES)],
+            'font_size' => [
+                'required',
+                'integer',
+                'between:'.PreferenceNodes::MIN_FONT_SIZE.','.PreferenceNodes::MAX_FONT_SIZE,
+            ],
+        ]);
+
+        $this->preferences->setTypography(
+            $validated['font_family'],
+            $validated['font_size'],
+        );
+
+        return response()->json($this->preferences->listing());
+    }
 }
