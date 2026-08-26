@@ -3,6 +3,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { FileText } from 'lucide-vue-next';
 import { onBeforeUnmount, onMounted } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { bindingLabel } from '@/stores/keyBindings';
 import { LOCAL_OPS_AVAILABLE_EVENT, opsAffectPageIndex } from '@/sync/localOps';
 import type { LocalOpsAvailableEvent } from '@/sync/localOps';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
@@ -66,7 +67,11 @@ function modifiedDate(page: Node): string {
                 class="py-12 text-center text-muted-foreground"
             >
                 <FileText class="mx-auto mb-3 h-12 w-12 opacity-50" />
-                <p>No pages yet. Use the search bar (Alt+E) to create one.</p>
+                <p>
+                    No pages yet. Use the search bar ({{
+                        bindingLabel('find-page')
+                    }}) to create one.
+                </p>
             </div>
 
             <div v-else class="flex flex-col gap-1">

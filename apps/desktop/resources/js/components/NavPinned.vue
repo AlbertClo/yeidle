@@ -8,10 +8,12 @@ import {
     SidebarGroupLabel,
     SidebarMenu,
     SidebarMenuAction,
+    SidebarMenuBadge,
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
+import { bindingLabel } from '@/stores/keyBindings';
 import {
     loadPins,
     opsAffectPins,
@@ -20,6 +22,7 @@ import {
 } from '@/stores/pins';
 import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
 import type { LocalOpsAvailableEvent } from '@/sync/localOps';
+import { PINNED_ITEM_COMMANDS } from '@/types/keyBindings';
 
 const { isCurrentUrl } = useCurrentUrl();
 const draggedNodeId = ref<string | null>(null);
@@ -98,6 +101,12 @@ function handleLocalOps(event: Event): void {
     }
 }
 
+function pinnedShortcutLabel(index: number): string | null {
+    const command = PINNED_ITEM_COMMANDS[index];
+
+    return command ? bindingLabel(command) : null;
+}
+
 onMounted(() => {
     void loadPins(true);
     window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOps);
@@ -113,7 +122,7 @@ onBeforeUnmount(() => {
         <SidebarGroupLabel>Pinned</SidebarGroupLabel>
         <SidebarMenu>
             <SidebarMenuItem
-                v-for="item in pinnedItems"
+                v-for="(item, index) in pinnedItems"
                 :key="item.id"
                 draggable="true"
                 class="cursor-grab active:cursor-grabbing"
@@ -127,12 +136,19 @@ onBeforeUnmount(() => {
                     as-child
                     :is-active="isCurrentUrl(`/pages/${item.id}`)"
                     :tooltip="item.content || '[untitled]'"
+                    :class="index < 10 ? 'pr-16' : undefined"
                 >
                     <Link :href="`/pages/${item.id}`">
                         <FileText />
                         <span>{{ item.content || '[untitled]' }}</span>
                     </Link>
                 </SidebarMenuButton>
+                <SidebarMenuBadge
+                    v-if="pinnedShortcutLabel(index)"
+                    class="font-normal text-muted-foreground transition-opacity group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0"
+                >
+                    <kbd>{{ pinnedShortcutLabel(index) }}</kbd>
+                </SidebarMenuBadge>
                 <SidebarMenuAction as="span" show-on-hover aria-hidden="true">
                     <GripVertical />
                 </SidebarMenuAction>

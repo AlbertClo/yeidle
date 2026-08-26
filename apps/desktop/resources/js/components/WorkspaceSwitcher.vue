@@ -28,6 +28,7 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
+import { loadKeyBindings } from '@/stores/keyBindings';
 import { loadPreferences } from '@/stores/preferences';
 import {
     loadWorkspaceState,
@@ -102,7 +103,9 @@ async function activate(workspace: Workspace): Promise<void> {
             ? { ...state.value, active_workspace_id: workspace.id }
             : state.value;
 
-        await loadPreferences(true).catch(() => undefined);
+        await Promise.all([loadPreferences(true), loadKeyBindings(true)]).catch(
+            () => undefined,
+        );
         visitPages();
     } catch (reason) {
         error.value =

@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { Clock, FileText, Plus, Search } from 'lucide-vue-next';
+import {
+    ref,
+    computed,
+    watch,
+    nextTick,
+    onMounted,
+    onBeforeUnmount,
+} from 'vue';
 import {
     CommandDialog,
     CommandEmpty,
@@ -10,6 +17,7 @@ import {
     CommandItem,
     CommandList,
 } from '@/components/ui/command';
+import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import type { Node } from '@/types/node';
 import { OPEN_PAGE_SEARCH_EVENT } from '@/ui/pageSearch';
 
@@ -26,30 +34,33 @@ let lastSearch: string | null = null;
 watch(isOpen, (open) => {
     if (open) {
         lastSearch = null;
-        Promise.all([
-            fetchRecentPages(),
-            fetchInitialResults(),
-        ]).then(() => {
+        Promise.all([fetchRecentPages(), fetchInitialResults()]).then(() => {
             autoHighlightFirst();
         });
     }
 });
 
 function fetchRecentPages() {
-    return fetch('/api/recent-pages', { headers: { Accept: 'application/json' } })
+    return fetch('/api/recent-pages', {
+        headers: { Accept: 'application/json' },
+    })
         .then((res) => res.json())
         .then((data) => {
-            recentPages.value = data.filter((p: Node) => p.id !== props.currentPageId);
+            recentPages.value = data.filter(
+                (p: Node) => p.id !== props.currentPageId,
+            );
         });
 }
 
 function fetchInitialResults() {
     lastSearch = '';
     searchQuery.value = '';
+
     return fetch('/api/pages', { headers: { Accept: 'application/json' } })
         .then((res) => res.json())
         .then((data) => {
             const pageMap = new Map<string, Node>();
+
             for (const node of data) {
                 if (!node.parent_id) {
                     pageMap.set(node.id, node);
@@ -57,37 +68,58 @@ function fetchInitialResults() {
                     pageMap.set(node.id, node);
                 }
             }
+
             results.value = [...pageMap.values()].slice(0, 60);
         });
 }
 
 function autoHighlightFirst() {
     nextTick(() => {
-        const input = document.querySelector('[data-slot="command-input"]') as HTMLElement;
+        const input = document.querySelector(
+            '[data-slot="command-input"]',
+        ) as HTMLElement;
+
         if (input) {
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+            input.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'ArrowDown',
+                    bubbles: true,
+                }),
+            );
+            input.dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+            );
         }
     });
 }
 
 const exactPageMatch = computed(() =>
-    results.value.some(r => !r.parent_id && r.content.toLowerCase() === searchQuery.value.toLowerCase()),
+    results.value.some(
+        (r) =>
+            !r.parent_id &&
+            r.content.toLowerCase() === searchQuery.value.toLowerCase(),
+    ),
 );
 
 function doSearch(val: string) {
     searchQuery.value = val;
-    if (val === lastSearch) return;
+
+    if (val === lastSearch) {
+        return;
+    }
+
     lastSearch = val;
-    const url = val.length > 0
-        ? `/api/search?q=${encodeURIComponent(val)}`
-        : '/api/pages';
+    const url =
+        val.length > 0
+            ? `/api/search?q=${encodeURIComponent(val)}`
+            : '/api/pages';
     fetch(url, {
         headers: { Accept: 'application/json' },
     })
         .then((res) => res.json())
         .then((data) => {
             const pageMap = new Map<string, Node>();
+
             for (const node of data) {
                 if (!node.parent_id) {
                     pageMap.set(node.id, node);
@@ -97,10 +129,14 @@ function doSearch(val: string) {
                     }
                 }
             }
+
             const sorted = [...pageMap.values()].sort((a, b) => {
                 const q = lastSearch?.toLowerCase() ?? '';
-                const aExact = !a.parent_id && a.content.toLowerCase() === q ? -1 : 0;
-                const bExact = !b.parent_id && b.content.toLowerCase() === q ? -1 : 0;
+                const aExact =
+                    !a.parent_id && a.content.toLowerCase() === q ? -1 : 0;
+                const bExact =
+                    !b.parent_id && b.content.toLowerCase() === q ? -1 : 0;
+
                 return aExact - bExact;
             });
             results.value = sorted.slice(0, 60);
@@ -115,7 +151,10 @@ function createPage() {
     results.value = [];
     fetch('/api/nodes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+        },
         body: JSON.stringify({ content: title }),
     })
         .then((res) => res.json())
@@ -137,7 +176,7 @@ function openSearch() {
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
-    if (e.altKey && e.key === 'e') {
+    if (eventMatchesCommand(e, 'find-page')) {
         e.preventDefault();
         openSearch();
     }
@@ -156,12 +195,15 @@ onBeforeUnmount(() => {
 
 <template>
     <button
-        class="bg-sidebar-accent/50 text-muted-foreground ml-auto flex h-8 w-64 items-center gap-2 rounded-md px-3 text-sm"
+        class="ml-auto flex h-8 w-64 items-center gap-2 rounded-md bg-sidebar-accent/50 px-3 text-sm text-muted-foreground"
         @click="openSearch"
     >
         <Search class="h-4 w-4" />
         <span>Find or Create Page</span>
-        <kbd class="bg-muted text-muted-foreground ml-auto rounded px-1.5 py-0.5 text-xs">Alt+E</kbd>
+        <kbd
+            class="ml-auto rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+            >{{ bindingLabel('find-page') }}</kbd
+        >
     </button>
 
     <CommandDialog
@@ -177,10 +219,15 @@ onBeforeUnmount(() => {
                     @select="createPage"
                 >
                     <Plus class="mr-2 h-4 w-4 shrink-0" />
-                    <span>Create page: <strong>{{ searchQuery }}</strong></span>
+                    <span
+                        >Create page: <strong>{{ searchQuery }}</strong></span
+                    >
                 </CommandItem>
             </CommandGroup>
-            <CommandGroup v-if="searchQuery.length === 0 && recentPages.length > 0" heading="Recent">
+            <CommandGroup
+                v-if="searchQuery.length === 0 && recentPages.length > 0"
+                heading="Recent"
+            >
                 <CommandItem
                     v-for="page in recentPages"
                     :key="`recent-${page.id}`"
@@ -188,7 +235,9 @@ onBeforeUnmount(() => {
                     @select="navigate(page)"
                 >
                     <Clock class="mr-2 h-4 w-4 shrink-0" />
-                    <span class="truncate">{{ page.content || '[untitled]' }}</span>
+                    <span class="truncate">{{
+                        page.content || '[untitled]'
+                    }}</span>
                 </CommandItem>
             </CommandGroup>
             <CommandEmpty>No results found.</CommandEmpty>
@@ -199,11 +248,21 @@ onBeforeUnmount(() => {
                     :value="result.content || '[untitled]'"
                     @select="navigate(result)"
                 >
-                    <FileText v-if="!result.parent_id" class="mr-2 h-4 w-4 shrink-0" />
-                    <div v-else class="mr-2 flex h-4 w-4 shrink-0 items-center justify-center">
-                        <div class="bg-foreground/50 h-1.5 w-1.5 rounded-full" />
+                    <FileText
+                        v-if="!result.parent_id"
+                        class="mr-2 h-4 w-4 shrink-0"
+                    />
+                    <div
+                        v-else
+                        class="mr-2 flex h-4 w-4 shrink-0 items-center justify-center"
+                    >
+                        <div
+                            class="h-1.5 w-1.5 rounded-full bg-foreground/50"
+                        />
                     </div>
-                    <span class="truncate">{{ result.content || '[untitled]' }}</span>
+                    <span class="truncate">{{
+                        result.content || '[untitled]'
+                    }}</span>
                 </CommandItem>
             </CommandGroup>
         </CommandList>

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Preferences\UserKeyBindings;
 use App\Workspaces\WorkspaceIndex;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Foundation\Application;
@@ -33,6 +34,13 @@ class AppServiceProvider extends ServiceProvider
             return new WorkspaceIndex(
                 $databasePath,
                 is_string($storagePath) ? $storagePath : null,
+            );
+        });
+
+        $this->app->singleton(UserKeyBindings::class, function (Application $app): UserKeyBindings {
+            return new UserKeyBindings(
+                $app->make(WorkspaceIndex::class)->appDataDirectory()
+                    .DIRECTORY_SEPARATOR.'user-preferences.json',
             );
         });
     }

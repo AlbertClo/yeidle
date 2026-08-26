@@ -56,6 +56,7 @@ import { FileNode } from '@/extensions/filenode';
 import { SlashCommand } from '@/extensions/slashcommand';
 import { WebLink } from '@/extensions/weblink';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
+import { eventMatchesCommand } from '@/stores/keyBindings';
 
 function openExternal(url: string) {
     fetch('/api/open-external', {
@@ -597,69 +598,6 @@ const AlwaysSplitListItem = Extension.create({
     name: 'alwaysSplitListItem',
     addKeyboardShortcuts() {
         return {
-            'Mod-Enter': ({ editor }) => {
-                const { from, to } = editor.state.selection;
-                const listItems: { node: any; pos: number }[] = [];
-
-                if (from === to) {
-                    // Single cursor — find deepest listItem only
-                    const $pos = editor.state.doc.resolve(from);
-
-                    for (let d = $pos.depth; d >= 0; d--) {
-                        if ($pos.node(d).type.name === 'listItem') {
-                            listItems.push({
-                                node: $pos.node(d),
-                                pos: $pos.before(d),
-                            });
-                            break;
-                        }
-                    }
-                } else {
-                    // Selection — only items whose direct text content overlaps
-                    editor.state.doc.descendants((node, pos) => {
-                        if (node.type.name === 'listItem') {
-                            const firstChild = node.firstChild;
-
-                            if (firstChild) {
-                                const textStart = pos + 1;
-                                const textEnd = textStart + firstChild.nodeSize;
-
-                                if (from < textEnd && to > textStart) {
-                                    listItems.push({ node, pos });
-                                }
-                            }
-                        }
-                    });
-                }
-
-                if (listItems.length === 0) {
-                    return false;
-                }
-
-                // Determine next state based on the first item
-                const currentChecked = listItems[0].node.attrs.checked;
-                let nextChecked: boolean | null;
-
-                if (currentChecked === null) {
-                    nextChecked = false;
-                } else if (currentChecked === false) {
-                    nextChecked = true;
-                } else {
-                    nextChecked = null;
-                }
-
-                // Apply to all items in selection
-                const tr = editor.state.tr;
-                listItems.forEach(({ node, pos }) => {
-                    tr.setNodeMarkup(pos, undefined, {
-                        ...node.attrs,
-                        checked: nextChecked,
-                    });
-                });
-                editor.view.dispatch(tr);
-
-                return true;
-            },
             Tab: ({ editor }) => {
                 if (isInCodeBlock(editor)) {
                     return false;
@@ -1810,6 +1748,125 @@ function moveAcrossAtomOnlyTextblock(
     return true;
 }
 
+function handleCheckboxMouseDown(view: EditorView, event: MouseEvent): boolean {
+    if (event.button !== 0 || !(event.target instanceof Element)) {
+        return false;
+    }
+
+    const listItem = event.target.closest<HTMLLIElement>(
+        '.page-editor-list li[data-checked]',
+    );
+
+    if (!listItem || !view.dom.contains(listItem)) {
+        return false;
+    }
+
+    const itemStyle = getComputedStyle(listItem);
+    const checkboxStyle = getComputedStyle(listItem, '::before');
+    const itemRect = listItem.getBoundingClientRect();
+    const checkboxLeft =
+        itemRect.left +
+        Number.parseFloat(itemStyle.paddingLeft) +
+        Number.parseFloat(checkboxStyle.marginLeft);
+    const checkboxTop =
+        itemRect.top +
+        Number.parseFloat(itemStyle.paddingTop) +
+        Number.parseFloat(checkboxStyle.marginTop);
+    const checkboxWidth = Number.parseFloat(checkboxStyle.width);
+    const checkboxHeight = Number.parseFloat(checkboxStyle.height);
+    const hitSlop = 4;
+
+    if (
+        event.clientX < checkboxLeft - hitSlop ||
+        event.clientX > checkboxLeft + checkboxWidth + hitSlop ||
+        event.clientY < checkboxTop - hitSlop ||
+        event.clientY > checkboxTop + checkboxHeight + hitSlop
+    ) {
+        return false;
+    }
+
+    const itemPos = view.posAtDOM(listItem, 0) - 1;
+    const itemNode = view.state.doc.nodeAt(itemPos);
+
+    if (
+        itemNode?.type.name !== 'listItem' ||
+        typeof itemNode.attrs.checked !== 'boolean'
+    ) {
+        return false;
+    }
+
+    event.preventDefault();
+    userHasInteracted = true;
+    view.focus();
+    view.dispatch(
+        view.state.tr.setNodeMarkup(itemPos, undefined, {
+            ...itemNode.attrs,
+            checked: !itemNode.attrs.checked,
+        }),
+    );
+
+    return true;
+}
+
+function cycleChecklistState(view: EditorView): boolean {
+    const { from, to } = view.state.selection;
+    const listItems: { node: PmNode; pos: number }[] = [];
+
+    if (from === to) {
+        const $pos = view.state.doc.resolve(from);
+
+        for (let depth = $pos.depth; depth >= 0; depth--) {
+            if ($pos.node(depth).type.name === 'listItem') {
+                listItems.push({
+                    node: $pos.node(depth),
+                    pos: $pos.before(depth),
+                });
+                break;
+            }
+        }
+    } else {
+        view.state.doc.descendants((node, pos) => {
+            if (node.type.name !== 'listItem') {
+                return;
+            }
+
+            const firstChild = node.firstChild;
+
+            if (firstChild) {
+                const textStart = pos + 1;
+                const textEnd = textStart + firstChild.nodeSize;
+
+                if (from < textEnd && to > textStart) {
+                    listItems.push({ node, pos });
+                }
+            }
+        });
+    }
+
+    if (listItems.length === 0) {
+        return false;
+    }
+
+    const currentChecked = listItems[0].node.attrs.checked;
+    const nextChecked =
+        currentChecked === null
+            ? false
+            : currentChecked === false
+              ? true
+              : null;
+    const transaction = view.state.tr;
+
+    listItems.forEach(({ node, pos }) => {
+        transaction.setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            checked: nextChecked,
+        });
+    });
+    view.dispatch(transaction);
+
+    return true;
+}
+
 const editor = useEditor({
     content: nodesToTiptap(props.nodes),
     extensions: [
@@ -2029,7 +2086,16 @@ const editor = useEditor({
         attributes: {
             class: 'outline-none',
         },
+        handleDOMEvents: {
+            mousedown: (view, event) => handleCheckboxMouseDown(view, event),
+        },
         handleKeyDown: (view, event) => {
+            if (eventMatchesCommand(event, 'toggle-checkbox')) {
+                event.preventDefault();
+
+                return cycleChecklistState(view);
+            }
+
             if (moveAcrossAtomOnlyTextblock(view, event)) {
                 return true;
             }
@@ -3043,12 +3109,15 @@ onBeforeUnmount(() => {
     margin-top: 3px;
     border: 1.5px solid rgba(128, 128, 128, 0.5);
     border-radius: 3px;
+    cursor: pointer;
 }
 
 .page-editor-list li[data-checked='true']::before {
     background: var(--link);
     border-color: var(--link);
     content: '✓';
+    cursor: pointer !important;
+    user-select: none;
     font-size: 11px;
     font-weight: 900;
     line-height: 14px;

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CloudController;
+use App\Http\Controllers\KeyBindingController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
@@ -43,6 +44,8 @@ Route::put('nodes/{node}/pin', [PinController::class, 'store']);
 Route::delete('nodes/{node}/pin', [PinController::class, 'destroy']);
 Route::get('preferences', [PreferenceController::class, 'show']);
 Route::put('preferences/theme', [PreferenceController::class, 'updateTheme']);
+Route::get('key-bindings', [KeyBindingController::class, 'show']);
+Route::put('key-bindings', [KeyBindingController::class, 'update']);
 // Before pages/{node} so "title-exists" isn't captured as a node id
 Route::get('pages/title-exists', [PageController::class, 'titleExists']);
 Route::get('pages/{node}', [PageController::class, 'show']);

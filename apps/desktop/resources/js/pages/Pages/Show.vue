@@ -22,6 +22,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { bindingLabel } from '@/stores/keyBindings';
 import {
     getCachedPage,
     invalidateCachedPage,
@@ -700,7 +701,9 @@ onBeforeUnmount(() => {
                                 :class="{ 'fill-current': pagePinned }"
                             />
                             {{ pagePinned ? 'Unpin page' : 'Pin page' }}
-                            <DropdownMenuShortcut>Alt+P</DropdownMenuShortcut>
+                            <DropdownMenuShortcut>
+                                {{ bindingLabel('toggle-pin') }}
+                            </DropdownMenuShortcut>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem

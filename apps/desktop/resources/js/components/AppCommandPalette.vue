@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { FileText, Palette, Pin, Search } from 'lucide-vue-next';
+import { FileText, Keyboard, Palette, Pin, Search } from 'lucide-vue-next';
 import type { LucideIcon } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
@@ -13,8 +13,10 @@ import {
     CommandList,
     CommandShortcut,
 } from '@/components/ui/command';
+import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import { isNodePinned, toggleNodePin } from '@/stores/pins';
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/ui/commandPalette';
+import { openKeyBindings } from '@/ui/keyBindings';
 import { openPageSearch } from '@/ui/pageSearch';
 import { openThemeSelector } from '@/ui/themeSelector';
 
@@ -37,15 +39,21 @@ const commands = computed<PaletteCommand[]>(() => [
         id: 'pages',
         label: 'Go to All Pages',
         icon: FileText,
-        shortcut: 'Alt+1',
+        shortcut: bindingLabel('all-pages'),
         run: () => router.visit('/pages'),
     },
     {
         id: 'find-page',
         label: 'Find or Create Page',
         icon: Search,
-        shortcut: 'Alt+E',
+        shortcut: bindingLabel('find-page'),
         run: openPageSearch,
+    },
+    {
+        id: 'key-bindings',
+        label: 'Change Keyboard Shortcuts',
+        icon: Keyboard,
+        run: openKeyBindings,
     },
     {
         id: 'theme',
@@ -61,7 +69,7 @@ const commands = computed<PaletteCommand[]>(() => [
                       ? 'Unpin Current Page'
                       : 'Pin Current Page',
                   icon: Pin,
-                  shortcut: 'Alt+P',
+                  shortcut: bindingLabel('toggle-pin'),
                   run: toggleCurrentPagePin,
               },
           ]
@@ -102,26 +110,14 @@ async function toggleCurrentPagePin(): Promise<void> {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent): void {
-    if (
-        props.currentPageId &&
-        event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        event.key.toLowerCase() === 'p'
-    ) {
+    if (props.currentPageId && eventMatchesCommand(event, 'toggle-pin')) {
         event.preventDefault();
         void toggleCurrentPagePin();
 
         return;
     }
 
-    if (
-        (event.ctrlKey || event.metaKey) &&
-        !event.altKey &&
-        !event.shiftKey &&
-        event.key.toLowerCase() === 'k'
-    ) {
+    if (eventMatchesCommand(event, 'command-palette')) {
         event.preventDefault();
         openPalette();
     }

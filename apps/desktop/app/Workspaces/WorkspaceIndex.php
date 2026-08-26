@@ -188,6 +188,11 @@ final class WorkspaceIndex
             .DIRECTORY_SEPARATOR.'storage';
     }
 
+    public function appDataDirectory(): string
+    {
+        return dirname($this->baseDatabasePath);
+    }
+
     /**
      * @return array{version: int, active_workspace_id: string, workspaces: list<array{id: string, name: string, database: string}>}
      */

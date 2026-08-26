@@ -16,6 +16,7 @@ import {
     cloudSyncStatusUnavailable as statusUnavailable,
     loadCloudSyncStatus as loadStatus,
 } from '@/stores/cloudSyncStatus';
+import { loadKeyBindings } from '@/stores/keyBindings';
 import { realtimeHealth, refreshRealtimeSync } from '@/sync/realtime';
 
 interface CloudWorkspace {
@@ -249,6 +250,7 @@ async function connectCloud(): Promise<void> {
         }
 
         await refreshRealtimeSync();
+        await loadKeyBindings(true);
     } catch (error) {
         connectError.value =
             error instanceof Error

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
 import { List, SquareTerminal } from 'lucide-vue-next';
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppCommandPalette from '@/components/AppCommandPalette.vue';
+import KeyBindingsDialog from '@/components/KeyBindingsDialog.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavPinned from '@/components/NavPinned.vue';
 import ThemeSelectorDialog from '@/components/ThemeSelectorDialog.vue';
@@ -21,7 +22,14 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import YeidleWordmark from '@/components/YeidleWordmark.vue';
+import {
+    bindingLabel,
+    eventMatchesCommand,
+    loadKeyBindings,
+} from '@/stores/keyBindings';
+import { loadPins, pinnedItems } from '@/stores/pins';
 import type { NavItem } from '@/types';
+import { PINNED_ITEM_COMMANDS } from '@/types/keyBindings';
 import { openCommandPalette } from '@/ui/commandPalette';
 
 const aboutOpen = ref(false);
@@ -30,31 +38,39 @@ defineProps<{
     currentPageId?: string;
 }>();
 
-const mainNavItems: NavItem[] = [
+const mainNavItems = computed<NavItem[]>(() => [
     {
         title: 'All Pages',
         href: '/pages',
         icon: List,
-        shortcut: 'Alt+1',
+        shortcut: bindingLabel('all-pages'),
     },
-];
+]);
 
 function handleNavigationShortcut(event: KeyboardEvent): void {
-    if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    if (eventMatchesCommand(event, 'all-pages')) {
+        event.preventDefault();
+        router.visit('/pages');
+
         return;
     }
 
-    const path = event.key === '1' ? '/pages' : null;
+    const pinnedIndex = PINNED_ITEM_COMMANDS.findIndex((command) =>
+        eventMatchesCommand(event, command),
+    );
+    const pinnedItem = pinnedItems.value[pinnedIndex];
 
-    if (path === null) {
+    if (pinnedIndex === -1 || !pinnedItem) {
         return;
     }
 
     event.preventDefault();
-    router.visit(path);
+    router.visit(`/pages/${pinnedItem.id}`);
 }
 
 onMounted(() => {
+    void loadKeyBindings().catch(() => undefined);
+    void loadPins().catch(() => undefined);
     document.addEventListener('keydown', handleNavigationShortcut);
 });
 
@@ -81,7 +97,7 @@ onBeforeUnmount(() => {
                         <span>Command Palette</span>
                     </SidebarMenuButton>
                     <SidebarMenuBadge class="font-normal text-muted-foreground">
-                        <kbd>Ctrl+K</kbd>
+                        <kbd>{{ bindingLabel('command-palette') }}</kbd>
                     </SidebarMenuBadge>
                 </SidebarMenuItem>
             </NavMain>
@@ -100,10 +116,14 @@ onBeforeUnmount(() => {
     </Sidebar>
 
     <AppCommandPalette :current-page-id="currentPageId" />
+    <KeyBindingsDialog />
     <ThemeSelectorDialog />
 
     <Dialog v-model:open="aboutOpen">
-        <DialogContent class="sm:max-w-sm">
+        <DialogContent
+            class="sm:max-w-sm"
+            @open-auto-focus="$event.preventDefault()"
+        >
             <DialogHeader class="items-center text-center">
                 <YeidleWordmark class="mb-4 h-auto w-28 text-foreground" />
                 <DialogDescription class="text-center">

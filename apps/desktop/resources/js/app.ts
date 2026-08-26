@@ -4,6 +4,7 @@ import type { DefineComponent } from 'vue';
 import { createApp, h } from 'vue';
 import '../css/app.css';
 import { initializeTheme } from '@/composables/useAppearance';
+import { eventMatchesCommand, loadKeyBindings } from '@/stores/keyBindings';
 import { initializeRealtimeSync } from '@/sync/realtime';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -55,13 +56,22 @@ createInertiaApp({
 // This will set light / dark mode on page load...
 initializeTheme();
 initializeRealtimeSync();
+void loadKeyBindings().catch(() => undefined);
+
+function isTextEditingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+
+    return (
+        target.matches('input, textarea, select') ||
+        target.isContentEditable ||
+        target.closest('[contenteditable="true"]') !== null
+    );
+}
 
 document.addEventListener('keydown', (e) => {
-    if (
-        (e.ctrlKey || e.metaKey) &&
-        !e.shiftKey &&
-        e.key.toLowerCase() === 'r'
-    ) {
+    if (eventMatchesCommand(e, 'reload')) {
         e.preventDefault();
 
         if (window.Native?.windowControls) {
@@ -78,13 +88,13 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
     }
 
-    // Alt+Left/Right for browser history navigation
-    if (e.altKey && e.key === 'ArrowLeft') {
+    // Leave text-navigation keys alone while a user is editing content.
+    if (!isTextEditingTarget(e.target) && eventMatchesCommand(e, 'back')) {
         e.preventDefault();
         window.history.back();
     }
 
-    if (e.altKey && e.key === 'ArrowRight') {
+    if (!isTextEditingTarget(e.target) && eventMatchesCommand(e, 'forward')) {
         e.preventDefault();
         window.history.forward();
     }
