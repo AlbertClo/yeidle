@@ -22,6 +22,7 @@ npm-debug.log
 yarn-error.log
 /auth.json
 /database/user-preferences.json
+/database/cloud-account.json
 /.fleet
 /.idea
 /.nova

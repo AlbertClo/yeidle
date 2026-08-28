@@ -47,4 +47,19 @@ class PreferenceController extends Controller
 
         return response()->json($this->preferences->listing());
     }
+
+    public function updateWorkspaceStorage(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'workspace_storage' => [
+                'required',
+                'string',
+                Rule::in(PreferenceNodes::WORKSPACE_STORAGE_OPTIONS),
+            ],
+        ]);
+
+        $this->preferences->setWorkspaceStorage($validated['workspace_storage']);
+
+        return response()->json($this->preferences->listing());
+    }
 }

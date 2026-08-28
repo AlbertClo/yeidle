@@ -76,7 +76,7 @@ final class TwoReplicaHarness
                     'last_server_seq' => 0,
                     'cloud_url' => 'https://cloud.test',
                     'cloud_token' => 'test-token',
-                    'cloud_workspace_id' => 'workspace-1',
+                    'workspace_id' => 'workspace-1',
                     'cloud_seed_pending' => false,
                 ]);
             });

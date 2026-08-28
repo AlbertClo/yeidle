@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { FileText, GripVertical } from 'lucide-vue-next';
+import { FileText } from 'lucide-vue-next';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import {
     SidebarGroup,
     SidebarGroupLabel,
     SidebarMenu,
-    SidebarMenuAction,
     SidebarMenuBadge,
     SidebarMenuButton,
     SidebarMenuItem,
@@ -122,6 +121,13 @@ onBeforeUnmount(() => {
         <SidebarGroupLabel>Pinned</SidebarGroupLabel>
         <SidebarMenu>
             <SidebarMenuItem
+                v-if="pinnedItems.length === 0"
+                class="px-2 py-1 text-xs leading-relaxed text-muted-foreground group-data-[collapsible=icon]:hidden"
+            >
+                Press <kbd>{{ bindingLabel('toggle-pin') }}</kbd> on a page to
+                pin it.
+            </SidebarMenuItem>
+            <SidebarMenuItem
                 v-for="(item, index) in pinnedItems"
                 :key="item.id"
                 draggable="true"
@@ -145,13 +151,10 @@ onBeforeUnmount(() => {
                 </SidebarMenuButton>
                 <SidebarMenuBadge
                     v-if="pinnedShortcutLabel(index)"
-                    class="font-normal text-muted-foreground transition-opacity group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0"
+                    class="font-normal text-muted-foreground"
                 >
                     <kbd>{{ pinnedShortcutLabel(index) }}</kbd>
                 </SidebarMenuBadge>
-                <SidebarMenuAction as="span" show-on-hover aria-hidden="true">
-                    <GripVertical />
-                </SidebarMenuAction>
             </SidebarMenuItem>
         </SidebarMenu>
     </SidebarGroup>

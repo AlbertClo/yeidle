@@ -190,7 +190,7 @@ html {
     [data-theme='solarized-light'],
     [data-theme='cobalt2'],
     [data-theme='monokai'],
-    [data-theme='oxblood']
+    [data-theme='paper']
 ) {
     --background: var(--theme-background);
     --foreground: var(--theme-foreground);
@@ -370,16 +370,17 @@ html {
     --theme-sidebar: #1e1f1c;
 }
 
-:root[data-theme='oxblood'] {
-    --theme-background: #190d10;
-    --theme-foreground: #f3e7e9;
-    --theme-surface: #291419;
-    --theme-muted: #211014;
-    --theme-muted-foreground: #b99ba1;
-    --theme-border: #572631;
-    --theme-accent: #d85a72;
-    --theme-destructive: #ff334f;
-    --theme-sidebar: #110709;
+:root[data-theme='paper'] {
+    --theme-background: #f7f3ea;
+    --theme-foreground: #282a26;
+    --theme-surface: #e7eadf;
+    --theme-muted: #eee8dc;
+    --theme-muted-foreground: #6f7168;
+    --theme-border: #d5d0c4;
+    --theme-accent: #66735a;
+    --theme-link: #a44a2f;
+    --theme-destructive: #b13d36;
+    --theme-sidebar: #eeeadf;
 }
 
 @layer base {

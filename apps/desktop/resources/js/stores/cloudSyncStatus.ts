@@ -11,7 +11,7 @@ export interface CloudStatus {
     configured: boolean;
     health: SyncHealth;
     cloud_url: string | null;
-    cloud_workspace_id: string | null;
+    workspace_id: string | null;
     cloud_seed_pending: boolean;
     last_server_seq: number;
     local_log_seq: number;

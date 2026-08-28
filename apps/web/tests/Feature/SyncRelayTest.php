@@ -1,6 +1,7 @@
 <?php
 
 use App\Events\WorkspaceOpsCommitted;
+use App\Workspaces\CreateWorkspace;
 use App\Models\Node;
 use App\Models\Op;
 use App\Models\User;
@@ -38,7 +39,8 @@ function syncUrl(string $endpoint, ?Workspace $workspace = null): string
             throw new RuntimeException('An authenticated user is required to infer a workspace.');
         }
 
-        $workspace = $user->workspaces()->firstOrCreate([], ['name' => 'Personal']);
+        $workspace = $user->workspaces()->first()
+            ?? app(CreateWorkspace::class)->create($user, 'Personal');
     }
 
     return "/api/workspaces/{$workspace->id}/sync/{$endpoint}";

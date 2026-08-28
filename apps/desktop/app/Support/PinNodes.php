@@ -158,7 +158,7 @@ final class PinNodes
             ]);
         }
 
-        if ($state->cloud_url && $state->cloud_workspace_id && ! $state->cloud_user_id) {
+        if ($state->cloud_url && $state->workspace_id && ! $state->cloud_user_id) {
             try {
                 $this->cloud->refreshCloudUserId();
                 $state->refresh();

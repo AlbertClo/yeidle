@@ -35,11 +35,12 @@ class CloudSyncService
     /**
      * Pair this installation with a cloud workspace. Fresh cloud + local
      * data seeds the cloud; fresh local + cloud data bootstraps from its
-     * snapshot; both non-empty on first pairing is refused.
+     * snapshot; two populated operation histories merge through the normal
+     * outbox push and full cursor pull.
      *
      * @return array{seeded: bool, bootstrapped: bool, pushed: int, pulled: int, ok: bool, error: ?string}
      *
-     * @throws \RuntimeException on unreachable/unauthorized cloud or refused pairing
+     * @throws \RuntimeException on unreachable/unauthorized cloud or invalid pairing
      */
     public function connect(
         string $url,
@@ -50,7 +51,11 @@ class CloudSyncService
         $url = rtrim($url, '/');
 
         if ($newWorkspaceName !== null) {
-            $workspaceId = $this->createCloudWorkspace($url, $token, $newWorkspaceName)['id'];
+            if ($workspaceId === null) {
+                throw new \RuntimeException('A workspace ID is required to create a cloud workspace.');
+            }
+
+            $this->createCloudWorkspace($url, $token, $workspaceId, $newWorkspaceName);
         } elseif ($workspaceId === null) {
             throw new \RuntimeException('Choose which cloud workspace to connect.');
         }
@@ -78,22 +83,15 @@ class CloudSyncService
         $localHasData = Node::withTrashed()->exists();
         $state = SyncState::current();
         $legacyPairing = $state !== null
-            && $state->cloud_workspace_id === null
+            && $state->workspace_id === null
             && rtrim((string) $state->cloud_url, '/') === $url
             && (int) $state->last_server_seq > 0;
         $sameWorkspace = $state !== null
-            && ($state->cloud_workspace_id === $workspaceId || $legacyPairing);
+            && ($state->workspace_id === $workspaceId || $legacyPairing);
 
-        if ($state?->cloud_workspace_id !== null && ! $sameWorkspace) {
+        if ($state?->workspace_id !== null && ! $sameWorkspace) {
             throw new \RuntimeException(
                 'This installation is already connected to a different cloud workspace.'
-            );
-        }
-
-        if (! $sameWorkspace && $cloudSeq > 0 && $localHasData) {
-            throw new \RuntimeException(
-                'Both this device and the cloud workspace already contain data. '
-                .'Connect a fresh install, or use an empty cloud workspace.'
             );
         }
 
@@ -106,7 +104,7 @@ class CloudSyncService
 
         $state->cloud_url = $url;
         $state->cloud_token = $token;
-        $state->cloud_workspace_id = $workspaceId;
+        $state->workspace_id = $workspaceId;
         if (is_string($cloudUserId) && $cloudUserId !== '') {
             $state->cloud_user_id = $cloudUserId;
         }
@@ -299,7 +297,7 @@ class CloudSyncService
     {
         $state = SyncState::current();
 
-        if ($state === null || ! $state->cloud_url || ! $state->cloud_workspace_id) {
+        if ($state === null || ! $state->cloud_url || ! $state->workspace_id) {
             return ['enabled' => false];
         }
 
@@ -309,7 +307,7 @@ class CloudSyncService
         $workspaceId = $response->json('workspace_id');
         $realtime = $response->json('realtime');
 
-        if ($workspaceId !== $state->cloud_workspace_id || ! is_array($realtime)) {
+        if ($workspaceId !== $state->workspace_id || ! is_array($realtime)) {
             throw new CloudSyncProtocolException(
                 'Cloud realtime protocol error: workspace or connection settings are invalid.'
             );
@@ -354,7 +352,7 @@ class CloudSyncService
     {
         $state = SyncState::current();
 
-        if ($state === null || ! $state->cloud_url || ! $state->cloud_workspace_id) {
+        if ($state === null || ! $state->cloud_url || ! $state->workspace_id) {
             return null;
         }
 
@@ -366,7 +364,7 @@ class CloudSyncService
             ->get($this->workspaceUrl($state, 'sync/status'))
             ->throw();
 
-        if ($response->json('workspace_id') !== $state->cloud_workspace_id) {
+        if ($response->json('workspace_id') !== $state->workspace_id) {
             throw new CloudSyncProtocolException(
                 'Cloud identity protocol error: workspace does not match this installation.'
             );
@@ -394,11 +392,11 @@ class CloudSyncService
     {
         $state = SyncState::current();
 
-        if ($state === null || ! $state->cloud_url || ! $state->cloud_workspace_id) {
+        if ($state === null || ! $state->cloud_url || ! $state->workspace_id) {
             throw new \RuntimeException('Cloud sync is not configured.');
         }
 
-        $expectedChannel = "private-workspaces.{$state->cloud_workspace_id}.sync";
+        $expectedChannel = "private-workspaces.{$state->workspace_id}.sync";
 
         if (! hash_equals($expectedChannel, $channelName)) {
             throw new \RuntimeException('The realtime channel is not allowed.');
@@ -460,7 +458,7 @@ class CloudSyncService
         ) {
             $state = SyncState::query()->lockForUpdate()->first();
 
-            if ($state === null || $state->cloud_workspace_id !== $workspaceId) {
+            if ($state === null || $state->workspace_id !== $workspaceId) {
                 throw new CloudSyncProtocolException(
                     'Cloud realtime protocol error: workspace does not match this installation.'
                 );
@@ -988,12 +986,19 @@ class CloudSyncService
     }
 
     /** @return array{id: string, name: string} */
-    private function createCloudWorkspace(string $url, string $token, string $name): array
-    {
+    private function createCloudWorkspace(
+        string $url,
+        string $token,
+        string $workspaceId,
+        string $name,
+    ): array {
         try {
             $response = Http::withToken($token)->acceptJson()
                 ->connectTimeout(5)->timeout(15)
-                ->post(rtrim($url, '/').'/api/workspaces', ['name' => $name]);
+                ->post(rtrim($url, '/').'/api/workspaces', [
+                    'id' => $workspaceId,
+                    'name' => $name,
+                ]);
         } catch (ConnectionException) {
             throw new \RuntimeException('Could not connect to the cloud server.');
         }
@@ -1006,7 +1011,7 @@ class CloudSyncService
 
         if (! is_array($workspace)
             || ! is_string($workspace['id'] ?? null)
-            || $workspace['id'] === ''
+            || $workspace['id'] !== $workspaceId
             || ! is_string($workspace['name'] ?? null)
             || $workspace['name'] === '') {
             throw new \RuntimeException('The cloud server returned an invalid workspace.');
@@ -1017,10 +1022,10 @@ class CloudSyncService
 
     private function workspaceUrl(SyncState $state, string $path): string
     {
-        if (! $state->cloud_url || ! $state->cloud_workspace_id) {
+        if (! $state->cloud_url || ! $state->workspace_id) {
             throw new \RuntimeException('Cloud sync is not configured.');
         }
 
-        return "{$state->cloud_url}/api/workspaces/{$state->cloud_workspace_id}/{$path}";
+        return "{$state->cloud_url}/api/workspaces/{$state->workspace_id}/{$path}";
     }
 }

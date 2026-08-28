@@ -11,6 +11,15 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class WorkspaceFactory extends Factory
 {
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Workspace $workspace): void {
+            $workspace->members()->syncWithoutDetaching([
+                $workspace->user_id => ['role' => 'owner'],
+            ]);
+        });
+    }
+
     /**
      * Define the model's default state.
      *

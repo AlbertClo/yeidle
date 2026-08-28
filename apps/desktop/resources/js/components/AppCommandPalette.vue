@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
 import {
+    Cloud,
+    CloudUpload,
     FileText,
     Keyboard,
     Palette,
@@ -22,13 +24,17 @@ import {
     CommandShortcut,
 } from '@/components/ui/command';
 import { useSidebar } from '@/components/ui/sidebar';
+import { cloudAccount } from '@/stores/cloudAccount';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import { isNodePinned, toggleNodePin } from '@/stores/pins';
+import { workspaceState } from '@/stores/workspaces';
+import { openCloudAccount } from '@/ui/cloudAccount';
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/ui/commandPalette';
 import { openKeyBindings } from '@/ui/keyBindings';
 import { openPageSearch } from '@/ui/pageSearch';
 import { openThemeSelector } from '@/ui/themeSelector';
 import { openTypographySelector } from '@/ui/typographySelector';
+import { openWorkspaceSync } from '@/ui/workspaceSync';
 
 const props = defineProps<{
     currentPageId?: string;
@@ -45,6 +51,13 @@ type PaletteCommand = {
 const isOpen = ref(false);
 const query = ref('');
 const { toggleSidebar } = useSidebar();
+const activeWorkspace = computed(
+    () =>
+        workspaceState.value?.workspaces.find(
+            (workspace) =>
+                workspace.id === workspaceState.value?.active_workspace_id,
+        ) ?? null,
+);
 const commands = computed<PaletteCommand[]>(() => [
     {
         id: 'pages',
@@ -67,6 +80,22 @@ const commands = computed<PaletteCommand[]>(() => [
         shortcut: bindingLabel('find-page'),
         run: openPageSearch,
     },
+    {
+        id: 'account',
+        label: cloudAccount.value?.signed_in ? 'Yeidle Account' : 'Sign in',
+        icon: Cloud,
+        run: openCloudAccount,
+    },
+    ...(activeWorkspace.value?.cloud_status === 'local'
+        ? [
+              {
+                  id: 'sync-workspace',
+                  label: 'Sync This Workspace',
+                  icon: CloudUpload,
+                  run: openWorkspaceSync,
+              },
+          ]
+        : []),
     {
         id: 'key-bindings',
         label: 'Change Keyboard Shortcuts',

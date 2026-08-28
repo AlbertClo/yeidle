@@ -114,9 +114,16 @@ class RoamImportController extends Controller
             // malformed file cannot leave an empty workspace behind.
             RoamExport::fromPath($exportPath, 'validation');
 
-            $workspace = $workspaceId !== null
-                ? $this->workspaces->find($workspaceId)
-                : $this->workspaces->create($newWorkspaceName);
+            if ($workspaceId !== null) {
+                $workspace = $this->workspaces->find($workspaceId);
+            } else {
+                $workspace = $this->workspaces->create($newWorkspaceName);
+            }
+
+            if (! is_array($workspace)) {
+                throw new RuntimeException('The import workspace could not be created.');
+            }
+
             $this->workspaces->configureActiveConnection($workspace['id']);
 
             $report = $this->importer->import(

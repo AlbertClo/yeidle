@@ -324,15 +324,18 @@ remote transactions are marked `addToHistory: false`.
 A new Laravel app (`apps/web`), which will eventually also serve the web
 client. For sync it provides:
 
-- `workspaces` (multiple owner-only personal workspaces initially; the schema
-  carries `workspace_id` from day one so sharing is additive later).
+- `workspaces` plus `workspace_memberships`. Owners and members receive the
+  same workspace catalog; membership gates every sync, blob, and realtime
+  endpoint.
 - `ops` log table per workspace (`server_seq` = per-workspace monotonic).
 - **Projection tables** (`nodes`, `media`) maintained transactionally as ops
   are accepted — the same apply logic the desktop uses, shared as a package
   or duplicated deliberately. Used for snapshot bootstrap, and later for the
   web client and server-side search.
-- Auth: personal access token in the desktop app's settings (Sanctum).
-  Multi-user/sharing is out of scope until the collaboration phase.
+- Auth: browser-approved desktop sign-in backed by a revocable Sanctum token.
+  The desktop never asks users to copy a token. It opens a short-lived device
+  authorization page, waits for approval, then stores the resulting token in
+  the NativePHP app-data directory with owner-only permissions.
 - Realtime: Laravel Reverb broadcasting `workspace.{id}.ops` events
   (Phase 2).
 - Blob storage: S3-compatible, keyed `blobs/{workspace_id}/{sha256}` (§9).
@@ -356,6 +359,27 @@ Not a one-way door: the op log is the source of truth, so a workspace's
 SQLite file can be rehydrated at any time (see snapshot bootstrap, §6).
 Sheets don't change this calculus — they multiply row counts, which
 favors Postgres if anything.
+
+### Account onboarding and workspace discovery
+
+- Registration creates a `Personal` cloud workspace and its owner membership.
+- A signed-in desktop refreshes the account catalog at startup, so all owned
+  and shared workspace names appear in the switcher without downloading their
+  contents.
+- A discovered workspace starts as an empty migrated SQLite placeholder with
+  status `available`. Opening it changes the status to `syncing`, runs the
+  normal bootstrap/push/pull exchange, and marks it `ready`; errors remain
+  visible and retry when the workspace is opened again.
+- A workspace has one client-generated UUID across local storage, cloud
+  storage, API routes, and every device. Catalog entries are matched only by
+  UUID; workspace names are never used to infer identity.
+- Signing in never uploads or links a local-only workspace automatically.
+  Enabling cloud sync creates the server workspace with the UUID the local
+  workspace already has, after which its op log seeds normally.
+- Keyboard shortcut overrides are account preferences, not workspace ops.
+  They use a small last-write-wins JSON API and a durable local dirty copy for
+  offline changes. Themes and typography remain workspace-scoped node
+  preferences.
 
 ## 9. Media sync
 

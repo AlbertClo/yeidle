@@ -4,6 +4,7 @@ namespace App\Workspaces;
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use JsonException;
@@ -12,11 +13,13 @@ use Throwable;
 
 final class WorkspaceIndex
 {
-    private const VERSION = 1;
+    private const VERSION = 3;
 
     private string $indexPath;
 
     private readonly string $baseStoragePath;
+
+    private bool $recoveredMissingDatabase = false;
 
     public function __construct(
         private readonly string $baseDatabasePath,
@@ -60,7 +63,7 @@ final class WorkspaceIndex
     }
 
     /** @return array{id: string, name: string, database: string} */
-    public function create(string $name): array
+    public function create(string $name, ?string $workspaceId = null): array
     {
         $name = trim($name);
 
@@ -68,38 +71,140 @@ final class WorkspaceIndex
             throw new RuntimeException('Workspace name cannot be empty.');
         }
 
-        $workspaceId = (string) Str::uuid7();
-        $relativeDatabasePath = 'workspaces'.DIRECTORY_SEPARATOR.$workspaceId.'.sqlite';
-        $databasePath = $this->resolveDatabasePath($relativeDatabasePath);
+        $workspaceId ??= (string) Str::uuid7();
 
-        if (! is_dir(dirname($databasePath)) && ! mkdir(dirname($databasePath), 0700, true) && ! is_dir(dirname($databasePath))) {
-            throw new RuntimeException('The workspace directory could not be created.');
+        if (! Str::isUuid($workspaceId)) {
+            throw new RuntimeException('Workspace ID must be a UUID.');
         }
 
-        if (! touch($databasePath)) {
-            throw new RuntimeException('The workspace database could not be created.');
-        }
-
-        try {
-            $this->migrate($databasePath);
-        } catch (Throwable $exception) {
-            @unlink($databasePath);
-            @unlink($databasePath.'-shm');
-            @unlink($databasePath.'-wal');
-
-            throw $exception;
-        }
-
-        $workspace = [
-            'id' => $workspaceId,
-            'name' => $name,
-            'database' => $relativeDatabasePath,
-        ];
         $state = $this->read();
+
+        if (collect($state['workspaces'])->contains('id', $workspaceId)) {
+            throw new RuntimeException("Workspace [{$workspaceId}] already exists.");
+        }
+
+        $workspace = $this->createWorkspaceRecord($workspaceId, $name);
         $state['workspaces'][] = $workspace;
         $this->write($state);
 
         return $workspace;
+    }
+
+    /** @return array{id: string, name: string, database: string} */
+    public function rename(string $workspaceId, string $name): array
+    {
+        $name = trim($name);
+
+        if ($name === '') {
+            throw new RuntimeException('Workspace name cannot be empty.');
+        }
+
+        $state = $this->read();
+        $index = collect($state['workspaces'])->search(
+            fn (array $workspace): bool => $workspace['id'] === $workspaceId,
+        );
+
+        if ($index === false) {
+            throw new RuntimeException("Local workspace [{$workspaceId}] was not found.");
+        }
+
+        $state['workspaces'][$index]['name'] = $name;
+        $this->write($state);
+
+        return $state['workspaces'][$index];
+    }
+
+    public function delete(string $workspaceId): array
+    {
+        $state = $this->read();
+        $workspace = $this->findInState($state, $workspaceId);
+        $state['workspaces'] = array_values(array_filter(
+            $state['workspaces'],
+            fn (array $candidate): bool => $candidate['id'] !== $workspaceId,
+        ));
+
+        if ($state['workspaces'] === []) {
+            $replacementId = (string) Str::uuid7();
+            $state['workspaces'][] = $this->createWorkspaceRecord(
+                $replacementId,
+                'Personal',
+            );
+        }
+
+        if ($state['active_workspace_id'] === $workspaceId) {
+            $state['active_workspace_id'] = $state['workspaces'][0]['id'];
+        }
+
+        $this->write($state);
+        $this->deleteWorkspaceFiles($workspace);
+
+        return $this->state();
+    }
+
+    /**
+     * Make every cloud workspace visible locally without downloading its
+     * contents. A workspace has one UUID everywhere, so catalog entries are
+     * matched only by ID and never by name or whichever workspace is active.
+     *
+     * @param  list<array{id: string, name: string, role?: string, owned?: bool}>  $cloudWorkspaces
+     */
+    public function syncCloudCatalog(string $accountId, array $cloudWorkspaces): array
+    {
+        $state = $this->read();
+
+        foreach ($cloudWorkspaces as $cloudWorkspace) {
+            if (! is_string($cloudWorkspace['id'] ?? null)
+                || ! Str::isUuid($cloudWorkspace['id'])
+                || ! is_string($cloudWorkspace['name'] ?? null)
+                || trim($cloudWorkspace['name']) === '') {
+                throw new RuntimeException('The cloud workspace catalog is invalid.');
+            }
+
+            $index = collect($state['workspaces'])->search(
+                fn (array $workspace): bool => $workspace['id'] === $cloudWorkspace['id'],
+            );
+
+            if ($index === false) {
+                $state['workspaces'][] = $this->createWorkspaceRecord(
+                    $cloudWorkspace['id'],
+                    trim($cloudWorkspace['name']),
+                );
+                $index = array_key_last($state['workspaces']);
+            }
+
+            $state['workspaces'][$index]['name'] = trim($cloudWorkspace['name']);
+            $state['workspaces'][$index]['cloud_account_id'] = $accountId;
+            $state['workspaces'][$index]['cloud_status'] = $state['workspaces'][$index]['cloud_status'] === 'ready'
+                ? 'ready'
+                : 'available';
+            $state['workspaces'][$index]['cloud_role'] = $cloudWorkspace['role'] ?? 'member';
+            $state['workspaces'][$index]['cloud_owned'] = $cloudWorkspace['owned'] ?? false;
+            $state['workspaces'][$index]['cloud_error'] = null;
+        }
+
+        $this->write($state);
+
+        return $this->state();
+    }
+
+    public function markCloudStatus(string $workspaceId, string $status, ?string $error = null): void
+    {
+        if (! in_array($status, ['available', 'syncing', 'ready', 'error'], true)) {
+            throw new RuntimeException('The cloud workspace status is invalid.');
+        }
+
+        $state = $this->read();
+        $index = collect($state['workspaces'])->search(
+            fn (array $workspace): bool => $workspace['id'] === $workspaceId,
+        );
+
+        if ($index === false) {
+            throw new RuntimeException("Local workspace [{$workspaceId}] was not found.");
+        }
+
+        $state['workspaces'][$index]['cloud_status'] = $status;
+        $state['workspaces'][$index]['cloud_error'] = $error;
+        $this->write($state);
     }
 
     /** @return array{id: string, name: string, database: string} */
@@ -122,11 +227,17 @@ final class WorkspaceIndex
             throw new RuntimeException('The active database connection is not configured.');
         }
 
-        config(["database.connections.{$connection}.database" => $this->databasePath($workspace)]);
+        $databasePath = $this->databasePath($workspace);
+
+        if ($this->ensureDatabaseExists($databasePath)) {
+            $this->recoveredMissingDatabase = true;
+        }
+
+        config(["database.connections.{$connection}.database" => $databasePath]);
         $this->connect($connection);
 
         if ($this->needsMigration($connection)) {
-            $this->migrate($this->databasePath($workspace));
+            $this->migrate($databasePath);
             $this->connect($connection);
         }
 
@@ -145,6 +256,25 @@ final class WorkspaceIndex
         DB::purge($connection);
         DB::connection($connection)->statement('PRAGMA journal_mode=WAL;');
         DB::connection($connection)->statement('PRAGMA busy_timeout=5000;');
+    }
+
+    private function ensureDatabaseExists(string $databasePath): bool
+    {
+        if (is_file($databasePath)) {
+            return false;
+        }
+
+        $directory = dirname($databasePath);
+
+        if (! is_dir($directory) && ! mkdir($directory, 0700, true) && ! is_dir($directory)) {
+            throw new RuntimeException('The workspace database directory could not be created.');
+        }
+
+        if (! touch($databasePath)) {
+            throw new RuntimeException('The workspace database could not be recreated.');
+        }
+
+        return true;
     }
 
     private function needsMigration(string $connection): bool
@@ -193,6 +323,11 @@ final class WorkspaceIndex
         return dirname($this->baseDatabasePath);
     }
 
+    public function recoveredMissingDatabase(): bool
+    {
+        return $this->recoveredMissingDatabase;
+    }
+
     /**
      * @return array{version: int, active_workspace_id: string, workspaces: list<array{id: string, name: string, database: string}>}
      */
@@ -209,10 +344,31 @@ final class WorkspaceIndex
         }
 
         if (! is_array($state)
-            || ($state['version'] ?? null) !== self::VERSION
+            || ! in_array($state['version'] ?? null, [1, 2, self::VERSION], true)
             || ! is_string($state['active_workspace_id'] ?? null)
             || ! is_array($state['workspaces'] ?? null)) {
             throw new RuntimeException('The local workspace index is invalid.');
+        }
+
+        if ($state['version'] === 1) {
+            $state['version'] = 2;
+            $state['workspaces'] = array_map(
+                fn (array $workspace): array => [
+                    ...$workspace,
+                    'cloud_workspace_id' => null,
+                    'cloud_account_id' => null,
+                    'cloud_status' => 'local',
+                    'cloud_role' => null,
+                    'cloud_owned' => null,
+                    'cloud_error' => null,
+                ],
+                $state['workspaces'],
+            );
+        }
+
+        if ($state['version'] === 2) {
+            $state = $this->upgradeUniversalWorkspaceIds($state);
+            $this->write($state);
         }
 
         foreach ($state['workspaces'] as $workspace) {
@@ -220,6 +376,11 @@ final class WorkspaceIndex
                 || ! is_string($workspace['id'] ?? null)
                 || ! is_string($workspace['name'] ?? null)
                 || ! is_string($workspace['database'] ?? null)
+                || ($workspace['cloud_account_id'] !== null && ! is_string($workspace['cloud_account_id']))
+                || ! in_array($workspace['cloud_status'] ?? null, ['local', 'available', 'syncing', 'ready', 'error'], true)
+                || ($workspace['cloud_role'] !== null && ! is_string($workspace['cloud_role']))
+                || ($workspace['cloud_owned'] !== null && ! is_bool($workspace['cloud_owned']))
+                || ($workspace['cloud_error'] !== null && ! is_string($workspace['cloud_error']))
                 || ! Str::isUuid($workspace['id'])
                 || trim($workspace['name']) === ''
                 || ! $this->isManagedDatabase($workspace['id'], $workspace['database'])) {
@@ -247,6 +408,11 @@ final class WorkspaceIndex
                 'id' => $workspaceId,
                 'name' => 'Personal',
                 'database' => basename($this->baseDatabasePath),
+                'cloud_account_id' => null,
+                'cloud_status' => 'local',
+                'cloud_role' => null,
+                'cloud_owned' => null,
+                'cloud_error' => null,
             ]],
         ];
     }
@@ -326,6 +492,120 @@ final class WorkspaceIndex
             || $database === 'workspaces'.DIRECTORY_SEPARATOR.$workspaceId.'.sqlite';
     }
 
+    /**
+     * @return array{id: string, name: string, database: string, cloud_account_id: null, cloud_status: string, cloud_role: null, cloud_owned: null, cloud_error: null}
+     */
+    private function createWorkspaceRecord(string $workspaceId, string $name): array
+    {
+        $relativeDatabasePath = 'workspaces'.DIRECTORY_SEPARATOR.$workspaceId.'.sqlite';
+        $databasePath = $this->resolveDatabasePath($relativeDatabasePath);
+
+        if (! is_dir(dirname($databasePath)) && ! mkdir(dirname($databasePath), 0700, true) && ! is_dir(dirname($databasePath))) {
+            throw new RuntimeException('The workspace directory could not be created.');
+        }
+
+        if (! touch($databasePath)) {
+            throw new RuntimeException('The workspace database could not be created.');
+        }
+
+        try {
+            $this->migrate($databasePath);
+        } catch (Throwable $exception) {
+            @unlink($databasePath);
+            @unlink($databasePath.'-shm');
+            @unlink($databasePath.'-wal');
+
+            throw $exception;
+        }
+
+        return [
+            'id' => $workspaceId,
+            'name' => $name,
+            'database' => $relativeDatabasePath,
+            'cloud_account_id' => null,
+            'cloud_status' => 'local',
+            'cloud_role' => null,
+            'cloud_owned' => null,
+            'cloud_error' => null,
+        ];
+    }
+
+    /** @param array{version: int, active_workspace_id: string, workspaces: list<array>} $state */
+    private function upgradeUniversalWorkspaceIds(array $state): array
+    {
+        foreach ($state['workspaces'] as $index => $workspace) {
+            $localId = $workspace['id'] ?? null;
+            $cloudId = $workspace['cloud_workspace_id'] ?? null;
+
+            if (! is_string($localId) || ! Str::isUuid($localId)) {
+                throw new RuntimeException('The local workspace index contains an invalid workspace.');
+            }
+
+            if (is_string($cloudId) && $cloudId !== $localId) {
+                if (! Str::isUuid($cloudId)) {
+                    throw new RuntimeException('The local workspace index contains an invalid cloud workspace.');
+                }
+
+                $this->moveWorkspaceFiles($workspace, $localId, $cloudId);
+                $workspace['id'] = $cloudId;
+                $workspace['database'] = $workspace['database'] === basename($this->baseDatabasePath)
+                    ? $workspace['database']
+                    : 'workspaces'.DIRECTORY_SEPARATOR.$cloudId.'.sqlite';
+
+                if ($state['active_workspace_id'] === $localId) {
+                    $state['active_workspace_id'] = $cloudId;
+                }
+            }
+
+            unset($workspace['cloud_workspace_id']);
+            $state['workspaces'][$index] = $workspace;
+        }
+
+        if (collect($state['workspaces'])->pluck('id')->duplicates()->isNotEmpty()) {
+            throw new RuntimeException('The local workspace index contains duplicate workspace IDs.');
+        }
+
+        $state['version'] = self::VERSION;
+
+        return $state;
+    }
+
+    /** @param array{id: string, database: string} $workspace */
+    private function moveWorkspaceFiles(array $workspace, string $localId, string $cloudId): void
+    {
+        if ($workspace['database'] === basename($this->baseDatabasePath)) {
+            return;
+        }
+
+        if (! $this->isManagedDatabase($localId, $workspace['database'])) {
+            throw new RuntimeException('The local workspace index contains an invalid workspace database.');
+        }
+
+        $oldDatabasePath = $this->resolveDatabasePath($workspace['database']);
+        $newDatabasePath = $this->resolveDatabasePath(
+            'workspaces'.DIRECTORY_SEPARATOR.$cloudId.'.sqlite',
+        );
+
+        if ($oldDatabasePath !== $newDatabasePath && file_exists($oldDatabasePath)) {
+            if (file_exists($newDatabasePath) || ! rename($oldDatabasePath, $newDatabasePath)) {
+                throw new RuntimeException('The workspace database could not adopt its cloud ID.');
+            }
+
+            foreach (['-shm', '-wal'] as $suffix) {
+                if (file_exists($oldDatabasePath.$suffix)) {
+                    rename($oldDatabasePath.$suffix, $newDatabasePath.$suffix);
+                }
+            }
+        }
+
+        $oldStoragePath = dirname($oldDatabasePath).DIRECTORY_SEPARATOR.$localId;
+        $newStoragePath = dirname($newDatabasePath).DIRECTORY_SEPARATOR.$cloudId;
+
+        if (is_dir($oldStoragePath) && ! file_exists($newStoragePath) && ! rename($oldStoragePath, $newStoragePath)) {
+            throw new RuntimeException('The workspace storage could not adopt its cloud ID.');
+        }
+    }
+
     private function migrate(string $databasePath): void
     {
         $connection = 'workspace_setup';
@@ -351,5 +631,45 @@ final class WorkspaceIndex
             DB::purge($connection);
             config()->offsetUnset("database.connections.{$connection}");
         }
+    }
+
+    /** @param array{id: string, database: string} $workspace */
+    private function deleteWorkspaceFiles(array $workspace): void
+    {
+        $databasePath = $this->databasePath($workspace);
+        $connection = config('database.default');
+
+        if (is_string($connection)
+            && config("database.connections.{$connection}.database") === $databasePath) {
+            DB::purge($connection);
+        }
+
+        File::delete([
+            $databasePath,
+            $databasePath.'-shm',
+            $databasePath.'-wal',
+        ]);
+
+        $storagePath = $this->storagePath($workspace);
+
+        if (! $this->isInsideAppDataDirectory($storagePath)) {
+            return;
+        }
+
+        $workspaceStoragePath = $workspace['database'] === basename($this->baseDatabasePath)
+            ? $storagePath
+            : dirname($storagePath);
+        File::deleteDirectory($workspaceStoragePath);
+    }
+
+    private function isInsideAppDataDirectory(string $path): bool
+    {
+        $appDataDirectory = realpath($this->appDataDirectory());
+        $resolvedPath = realpath($path);
+
+        return $appDataDirectory !== false
+            && $resolvedPath !== false
+            && $resolvedPath !== $appDataDirectory
+            && str_starts_with($resolvedPath, $appDataDirectory.DIRECTORY_SEPARATOR);
     }
 }

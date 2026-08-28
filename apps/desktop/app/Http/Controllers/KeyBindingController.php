@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Accounts\CloudAccountService;
 use App\Preferences\UserKeyBindings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -10,7 +11,9 @@ use InvalidArgumentException;
 
 final class KeyBindingController extends Controller
 {
-    public function __construct(private readonly UserKeyBindings $keyBindings) {}
+    public function __construct(
+        private readonly UserKeyBindings $keyBindings,
+    ) {}
 
     public function show(): JsonResponse
     {
@@ -25,7 +28,16 @@ final class KeyBindingController extends Controller
         ]);
 
         try {
-            return response()->json($this->keyBindings->replace($validated['bindings']));
+            $listing = $this->keyBindings->replace($validated['bindings']);
+
+            try {
+                app(CloudAccountService::class)
+                    ->saveKeyBindings($this->keyBindings->overrides());
+            } catch (\Throwable) {
+                // Saving a local shortcut must keep working while cloud is unavailable.
+            }
+
+            return response()->json($listing);
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages([
                 'bindings' => $exception->getMessage(),

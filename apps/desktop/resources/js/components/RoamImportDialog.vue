@@ -13,12 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
-type Workspace = {
-    id: string;
-    name: string;
-    database: string;
-};
+import type { Workspace } from '@/types/workspace';
 
 type ImportResult = {
     workspace: Workspace;
@@ -26,6 +21,16 @@ type ImportResult = {
     warnings: string[];
     has_failures: boolean;
 };
+
+type ImportSource = 'obsidian' | 'notion' | 'roam' | 'logseq' | 'markdown';
+
+const importSources: { id: ImportSource; label: string }[] = [
+    { id: 'obsidian', label: 'Obsidian' },
+    { id: 'notion', label: 'Notion' },
+    { id: 'roam', label: 'Roam Research' },
+    { id: 'logseq', label: 'Logseq' },
+    { id: 'markdown', label: 'Markdown' },
+];
 
 const props = defineProps<{
     open: boolean;
@@ -40,6 +45,7 @@ const emit = defineEmits<{
 }>();
 
 const file = ref<File | null>(null);
+const importSource = ref<ImportSource>('roam');
 const destination = ref('__new__');
 const newWorkspaceName = ref('');
 const downloadAttachments = ref(true);
@@ -47,6 +53,11 @@ const phase = ref<'idle' | 'uploading' | 'importing' | 'complete'>('idle');
 const uploadProgress = ref(0);
 const error = ref<string | null>(null);
 const result = ref<ImportResult | null>(null);
+const selectedImportSource = computed(
+    () =>
+        importSources.find((source) => source.id === importSource.value) ??
+        importSources[0],
+);
 
 const busy = computed(
     () => phase.value === 'uploading' || phase.value === 'importing',
@@ -88,6 +99,7 @@ watch(
         }
 
         file.value = null;
+        importSource.value = 'roam';
         destination.value = '__new__';
         newWorkspaceName.value = '';
         downloadAttachments.value = true;
@@ -265,202 +277,301 @@ function openImportedWorkspace(): void {
 <template>
     <Dialog :open="open" @update:open="updateOpen">
         <DialogContent
-            class="sm:max-w-xl"
+            class="overflow-hidden p-0 sm:max-w-3xl"
             :show-close-button="!busy"
             @escape-key-down="preventClose"
             @interact-outside="preventClose"
         >
-            <template v-if="phase !== 'complete'">
-                <DialogHeader>
-                    <DialogTitle>Import Roam Research database</DialogTitle>
-                    <DialogDescription>
-                        Import a Roam JSON export into an existing local
-                        workspace or create a separate workspace for it.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogHeader class="sr-only">
+                <DialogTitle>Import workspace</DialogTitle>
+                <DialogDescription>
+                    Import a workspace from another application.
+                </DialogDescription>
+            </DialogHeader>
 
-                <form class="grid gap-5" @submit.prevent="importRoam">
-                    <div class="grid gap-2">
-                        <Label for="roam-export">Roam JSON export</Label>
-                        <Input
-                            id="roam-export"
-                            type="file"
-                            accept="application/json,.json"
-                            :disabled="busy"
-                            @change="selectFile"
-                        />
-                        <p v-if="file" class="text-xs text-muted-foreground">
-                            {{ file.name }} ·
-                            {{ (file.size / 1024 / 1024).toFixed(1) }} MB
-                        </p>
-                    </div>
-
-                    <div class="grid gap-2">
-                        <Label for="roam-destination">Destination</Label>
-                        <select
-                            id="roam-destination"
-                            v-model="destination"
-                            class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                            :disabled="busy"
-                        >
-                            <option value="__new__">
-                                Create a new workspace
-                            </option>
-                            <option
-                                v-for="workspace in workspaces"
-                                :key="workspace.id"
-                                :value="workspace.id"
-                            >
-                                {{ workspace.name }}
-                                {{
-                                    workspace.id === activeWorkspaceId
-                                        ? '(current)'
-                                        : ''
-                                }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <div v-if="destination === '__new__'" class="grid gap-2">
-                        <Label for="roam-workspace-name">Workspace name</Label>
-                        <Input
-                            id="roam-workspace-name"
-                            v-model="newWorkspaceName"
-                            maxlength="100"
-                            placeholder="My Roam database"
-                            :disabled="busy"
-                        />
-                    </div>
-
+            <div
+                class="grid sm:min-h-[32rem] sm:grid-cols-[11rem_minmax(0,1fr)]"
+            >
+                <aside
+                    class="border-b bg-muted/30 p-4 sm:border-r sm:border-b-0"
+                >
+                    <p class="mb-3 px-2 text-sm font-medium">Import from</p>
                     <div
-                        v-else
-                        class="rounded-md bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200"
+                        class="flex gap-1 sm:grid"
+                        role="tablist"
+                        aria-label="Import source"
                     >
-                        Imported pages will be merged into this workspace.
-                        Reimporting the same export is safe and will not create
-                        duplicates.
-                    </div>
-
-                    <div class="flex items-start gap-2">
-                        <Checkbox
-                            id="roam-download-attachments"
-                            v-model="downloadAttachments"
-                            :disabled="busy"
-                        />
-                        <div class="grid gap-0.5">
-                            <Label for="roam-download-attachments">
-                                Import file uploads
-                            </Label>
-                            <p class="text-xs text-muted-foreground">
-                                Download Roam-hosted images and files into
-                                Yeidle’s media storage.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div v-if="busy" class="grid gap-2">
-                        <div class="flex items-center gap-2 text-sm">
-                            <LoaderCircle class="size-4 animate-spin" />
-                            <span v-if="phase === 'uploading'">
-                                Uploading export… {{ uploadProgress }}%
-                            </span>
-                            <span v-else>
-                                Importing pages and attachments…
-                            </span>
-                        </div>
-                        <div
-                            class="h-1.5 overflow-hidden rounded-full bg-muted"
-                        >
-                            <div
-                                v-if="phase === 'uploading'"
-                                class="h-full bg-primary transition-[width]"
-                                :style="{ width: `${uploadProgress}%` }"
-                            />
-                            <div
-                                v-else
-                                class="import-progress h-full rounded-full bg-primary"
-                            />
-                        </div>
-                        <p class="text-xs text-muted-foreground">
-                            Keep this window open. Large databases and file
-                            downloads can take several minutes.
-                        </p>
-                    </div>
-
-                    <div
-                        v-if="error"
-                        class="flex gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
-                        role="alert"
-                    >
-                        <TriangleAlert class="mt-0.5 size-4 shrink-0" />
-                        <span>{{ error }}</span>
-                    </div>
-
-                    <DialogFooter>
-                        <Button
+                        <button
+                            v-for="source in importSources"
+                            :key="source.id"
                             type="button"
-                            variant="outline"
+                            role="tab"
+                            :aria-selected="importSource === source.id"
                             :disabled="busy"
-                            @click="updateOpen(false)"
+                            class="rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                            :class="{
+                                'bg-accent font-medium text-accent-foreground':
+                                    importSource === source.id,
+                            }"
+                            @click="importSource = source.id"
                         >
-                            Cancel
-                        </Button>
-                        <Button type="submit" :disabled="!canImport">
-                            <LoaderCircle v-if="busy" class="animate-spin" />
-                            <FileUp v-else />
-                            {{ busy ? 'Importing…' : 'Import database' }}
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </template>
-
-            <template v-else-if="result">
-                <DialogHeader>
-                    <DialogTitle>Import complete</DialogTitle>
-                    <DialogDescription>
-                        Roam was imported into {{ result.workspace.name }}.
-                    </DialogDescription>
-                </DialogHeader>
-
-                <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                    <div
-                        v-for="row in reportRows"
-                        :key="row.label"
-                        class="contents"
-                    >
-                        <span class="text-muted-foreground">
-                            {{ row.label }}
-                        </span>
-                        <span class="text-right tabular-nums">
-                            {{ row.value.toLocaleString() }}
-                        </span>
+                            {{ source.label }}
+                        </button>
                     </div>
-                </div>
+                </aside>
 
-                <div
-                    v-if="result.has_failures"
-                    class="rounded-md bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200"
-                >
-                    The import completed with unresolved references or file
-                    download failures. The original text and links were
-                    preserved where possible.
-                </div>
+                <div class="grid gap-5 p-6">
+                    <template v-if="importSource === 'roam'">
+                        <template v-if="phase !== 'complete'">
+                            <DialogHeader>
+                                <DialogTitle>Roam Research</DialogTitle>
+                                <DialogDescription>
+                                    Import a Roam JSON export into an existing
+                                    local workspace or create a separate
+                                    workspace for it.
+                                </DialogDescription>
+                            </DialogHeader>
 
-                <div
-                    v-if="result.warnings.length > 0"
-                    class="max-h-32 overflow-y-auto rounded-md border p-3 text-xs text-muted-foreground"
-                >
-                    <p v-for="(warning, index) in result.warnings" :key="index">
-                        {{ warning }}
-                    </p>
-                </div>
+                            <form
+                                class="grid gap-5"
+                                @submit.prevent="importRoam"
+                            >
+                                <div class="grid gap-2">
+                                    <Label for="roam-export"
+                                        >Roam JSON export</Label
+                                    >
+                                    <Input
+                                        id="roam-export"
+                                        type="file"
+                                        accept="application/json,.json"
+                                        :disabled="busy"
+                                        @change="selectFile"
+                                    />
+                                    <p
+                                        v-if="file"
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        {{ file.name }} ·
+                                        {{
+                                            (file.size / 1024 / 1024).toFixed(1)
+                                        }}
+                                        MB
+                                    </p>
+                                </div>
 
-                <DialogFooter>
-                    <Button @click="openImportedWorkspace">
-                        Open workspace
-                    </Button>
-                </DialogFooter>
-            </template>
+                                <div class="grid gap-2">
+                                    <Label for="roam-destination"
+                                        >Destination</Label
+                                    >
+                                    <select
+                                        id="roam-destination"
+                                        v-model="destination"
+                                        class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        :disabled="busy"
+                                    >
+                                        <option value="__new__">
+                                            Create a new workspace
+                                        </option>
+                                        <option
+                                            v-for="workspace in workspaces"
+                                            :key="workspace.id"
+                                            :value="workspace.id"
+                                        >
+                                            {{ workspace.name }}
+                                            {{
+                                                workspace.id ===
+                                                activeWorkspaceId
+                                                    ? '(current)'
+                                                    : ''
+                                            }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div
+                                    v-if="destination === '__new__'"
+                                    class="grid gap-2"
+                                >
+                                    <Label for="roam-workspace-name"
+                                        >Workspace name</Label
+                                    >
+                                    <Input
+                                        id="roam-workspace-name"
+                                        v-model="newWorkspaceName"
+                                        maxlength="100"
+                                        placeholder="My Roam database"
+                                        :disabled="busy"
+                                    />
+                                </div>
+
+                                <div
+                                    v-else
+                                    class="rounded-md bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200"
+                                >
+                                    Imported pages will be merged into this
+                                    workspace. Reimporting the same export is
+                                    safe and will not create duplicates.
+                                </div>
+
+                                <div class="flex items-start gap-2">
+                                    <Checkbox
+                                        id="roam-download-attachments"
+                                        v-model="downloadAttachments"
+                                        :disabled="busy"
+                                    />
+                                    <div class="grid gap-0.5">
+                                        <Label for="roam-download-attachments">
+                                            Import file uploads
+                                        </Label>
+                                        <p
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            Download Roam-hosted images and
+                                            files into Yeidle’s media storage.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div v-if="busy" class="grid gap-2">
+                                    <div
+                                        class="flex items-center gap-2 text-sm"
+                                    >
+                                        <LoaderCircle
+                                            class="size-4 animate-spin"
+                                        />
+                                        <span v-if="phase === 'uploading'">
+                                            Uploading export…
+                                            {{ uploadProgress }}%
+                                        </span>
+                                        <span v-else>
+                                            Importing pages and attachments…
+                                        </span>
+                                    </div>
+                                    <div
+                                        class="h-1.5 overflow-hidden rounded-full bg-muted"
+                                    >
+                                        <div
+                                            v-if="phase === 'uploading'"
+                                            class="h-full bg-primary transition-[width]"
+                                            :style="{
+                                                width: `${uploadProgress}%`,
+                                            }"
+                                        />
+                                        <div
+                                            v-else
+                                            class="import-progress h-full rounded-full bg-primary"
+                                        />
+                                    </div>
+                                    <p class="text-xs text-muted-foreground">
+                                        Keep this window open. Large databases
+                                        and file downloads can take several
+                                        minutes.
+                                    </p>
+                                </div>
+
+                                <div
+                                    v-if="error"
+                                    class="flex gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+                                    role="alert"
+                                >
+                                    <TriangleAlert
+                                        class="mt-0.5 size-4 shrink-0"
+                                    />
+                                    <span>{{ error }}</span>
+                                </div>
+
+                                <DialogFooter>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        :disabled="busy"
+                                        @click="updateOpen(false)"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        :disabled="!canImport"
+                                    >
+                                        <LoaderCircle
+                                            v-if="busy"
+                                            class="animate-spin"
+                                        />
+                                        <FileUp v-else />
+                                        {{ busy ? 'Importing…' : 'Import' }}
+                                    </Button>
+                                </DialogFooter>
+                            </form>
+                        </template>
+
+                        <template v-else-if="result">
+                            <DialogHeader>
+                                <DialogTitle>Import complete</DialogTitle>
+                                <DialogDescription>
+                                    Roam was imported into
+                                    {{ result.workspace.name }}.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div
+                                class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm"
+                            >
+                                <div
+                                    v-for="row in reportRows"
+                                    :key="row.label"
+                                    class="contents"
+                                >
+                                    <span class="text-muted-foreground">
+                                        {{ row.label }}
+                                    </span>
+                                    <span class="text-right tabular-nums">
+                                        {{ row.value.toLocaleString() }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="result.has_failures"
+                                class="rounded-md bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200"
+                            >
+                                The import completed with unresolved references
+                                or file download failures. The original text and
+                                links were preserved where possible.
+                            </div>
+
+                            <div
+                                v-if="result.warnings.length > 0"
+                                class="max-h-32 overflow-y-auto rounded-md border p-3 text-xs text-muted-foreground"
+                            >
+                                <p
+                                    v-for="(warning, index) in result.warnings"
+                                    :key="index"
+                                >
+                                    {{ warning }}
+                                </p>
+                            </div>
+
+                            <DialogFooter>
+                                <Button @click="openImportedWorkspace">
+                                    Open workspace
+                                </Button>
+                            </DialogFooter>
+                        </template>
+                    </template>
+
+                    <template v-else>
+                        <DialogHeader>
+                            <DialogTitle>
+                                {{ selectedImportSource.label }}
+                            </DialogTitle>
+                            <DialogDescription>
+                                Importing from {{ selectedImportSource.label }}
+                                is not available yet.
+                            </DialogDescription>
+                        </DialogHeader>
+                    </template>
+                </div>
+            </div>
         </DialogContent>
     </Dialog>
 </template>

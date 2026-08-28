@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Accounts\CloudAccountStore;
 use App\Preferences\UserKeyBindings;
 use App\Workspaces\WorkspaceIndex;
 use Carbon\CarbonImmutable;
@@ -37,10 +38,18 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
+        $this->app->singleton(CloudAccountStore::class, function (Application $app): CloudAccountStore {
+            return new CloudAccountStore(
+                $app->make(WorkspaceIndex::class)->appDataDirectory()
+                    .DIRECTORY_SEPARATOR.'cloud-account.json',
+            );
+        });
+
         $this->app->singleton(UserKeyBindings::class, function (Application $app): UserKeyBindings {
             return new UserKeyBindings(
                 $app->make(WorkspaceIndex::class)->appDataDirectory()
                     .DIRECTORY_SEPARATOR.'user-preferences.json',
+                $app->make(CloudAccountStore::class),
             );
         });
     }

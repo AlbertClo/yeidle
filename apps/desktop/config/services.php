@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'yeidle' => [
+        'url' => env('YEIDLE_CLOUD_URL', 'http://localhost:8200'),
+    ],
+
 ];

@@ -195,10 +195,10 @@ class CloudBlobService
 
     private function blobUrl(SyncState $state, string $hash, string $suffix = ''): string
     {
-        if (! $state->cloud_url || ! $state->cloud_workspace_id) {
+        if (! $state->cloud_url || ! $state->workspace_id) {
             throw new \RuntimeException('Cloud sync is not configured.');
         }
 
-        return "{$state->cloud_url}/api/workspaces/{$state->cloud_workspace_id}/blobs/{$hash}{$suffix}";
+        return "{$state->cloud_url}/api/workspaces/{$state->workspace_id}/blobs/{$hash}{$suffix}";
     }
 }

@@ -11,12 +11,15 @@ vi.mock('../sync/cloud', () => ({
 import {
     fontFamilyPreference,
     fontSizePreference,
+    hasSavedThemePreference,
     loadPreferences,
     opsAffectPreferences,
     preferenceRootId,
     saveThemePreference,
     saveTypographyPreference,
+    saveWorkspaceStoragePreference,
     themePreference,
+    workspaceStoragePreference,
 } from './preferences';
 
 describe('preferences store', () => {
@@ -24,6 +27,8 @@ describe('preferences store', () => {
         themePreference.value = 'dark';
         fontFamilyPreference.value = 'instrument-sans';
         fontSizePreference.value = 16;
+        hasSavedThemePreference.value = false;
+        workspaceStoragePreference.value = null;
         preferenceRootId.value = '00000000-0000-7000-8000-000000000099';
         requestCloudExchangeMock.mockClear();
         vi.restoreAllMocks();
@@ -43,8 +48,10 @@ describe('preferences store', () => {
         await loadPreferences(true);
 
         expect(themePreference.value).toBe('light');
+        expect(hasSavedThemePreference.value).toBe(false);
         expect(fontFamilyPreference.value).toBe('instrument-sans');
         expect(fontSizePreference.value).toBe(16);
+        expect(workspaceStoragePreference.value).toBeNull();
     });
 
     it('persists the selected theme and requests a cloud exchange', async () => {
@@ -61,6 +68,7 @@ describe('preferences store', () => {
         await saveThemePreference('light');
 
         expect(themePreference.value).toBe('light');
+        expect(hasSavedThemePreference.value).toBe(true);
         expect(fetchMock).toHaveBeenCalledWith('/api/preferences/theme', {
             method: 'PUT',
             headers: {
@@ -122,6 +130,35 @@ describe('preferences store', () => {
                 font_size: 18,
             }),
         });
+        expect(requestCloudExchangeMock).toHaveBeenCalledOnce();
+    });
+
+    it('persists the workspace storage choice', async () => {
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    root_id: preferenceRootId.value,
+                    theme: 'light',
+                    workspace_storage: 'local',
+                }),
+                { status: 200 },
+            ),
+        );
+
+        await saveWorkspaceStoragePreference('local');
+
+        expect(workspaceStoragePreference.value).toBe('local');
+        expect(fetchMock).toHaveBeenCalledWith(
+            '/api/preferences/workspace-storage',
+            {
+                method: 'PUT',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ workspace_storage: 'local' }),
+            },
+        );
         expect(requestCloudExchangeMock).toHaveBeenCalledOnce();
     });
 

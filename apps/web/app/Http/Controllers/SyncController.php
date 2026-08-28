@@ -114,6 +114,9 @@ class SyncController extends Controller
 
     private function authorizeWorkspace(Request $request, Workspace $workspace): void
     {
-        abort_unless($workspace->user_id === $request->user()->id, 404);
+        abort_unless(
+            $request->user()->workspaces()->whereKey($workspace->id)->exists(),
+            404,
+        );
     }
 }

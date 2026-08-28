@@ -104,6 +104,168 @@ class WorkspaceTest extends TestCase
         $this->assertNotSame($initial['active_workspace_id'], $created['id']);
     }
 
+    public function test_local_workspace_can_be_renamed(): void
+    {
+        $workspace = $this->workspaces->create('Old name');
+
+        $this->patchJson("/api/workspaces/{$workspace['id']}", [
+            'name' => '  New name  ',
+        ])
+            ->assertSuccessful()
+            ->assertJsonPath('workspace.name', 'New name')
+            ->assertJsonPath('workspace.cloud_status', 'local');
+
+        $this->assertSame('New name', $this->workspaces->find($workspace['id'])['name']);
+    }
+
+    public function test_local_workspace_can_be_deleted(): void
+    {
+        $workspace = $this->workspaces->create('Temporary');
+        $databasePath = $this->workspaces->databasePath($workspace);
+        $storagePath = $this->workspaces->storagePath($workspace);
+        mkdir($storagePath, 0700, true);
+        file_put_contents($storagePath.'/attachment.txt', 'temporary');
+        $this->workspaces->activate($workspace['id']);
+
+        $state = $this->deleteJson("/api/workspaces/{$workspace['id']}")
+            ->assertSuccessful()
+            ->assertJsonCount(1, 'workspaces')
+            ->json();
+
+        $this->assertNotSame($workspace['id'], $state['active_workspace_id']);
+        $this->assertFileDoesNotExist($databasePath);
+        $this->assertDirectoryDoesNotExist(dirname($storagePath));
+    }
+
+    public function test_deleting_the_only_workspace_creates_a_fresh_personal_workspace(): void
+    {
+        $initial = $this->workspaces->active();
+        $initialDatabasePath = $this->workspaces->databasePath($initial);
+
+        $state = $this->workspaces->delete($initial['id']);
+        $replacement = $state['workspaces'][0];
+
+        $this->assertCount(1, $state['workspaces']);
+        $this->assertNotSame($initial['id'], $replacement['id']);
+        $this->assertSame('Personal', $replacement['name']);
+        $this->assertSame($replacement['id'], $state['active_workspace_id']);
+        $this->assertFileDoesNotExist($initialDatabasePath);
+        $this->assertFileExists($this->workspaces->databasePath($replacement));
+    }
+
+    public function test_cloud_catalog_uses_cloud_ids_for_lazy_placeholders_without_pairing_by_name(): void
+    {
+        $state = $this->workspaces->syncCloudCatalog('user-1', [
+            [
+                'id' => '00000000-0000-7000-8000-000000000111',
+                'name' => 'Personal',
+                'role' => 'owner',
+                'owned' => true,
+            ],
+            [
+                'id' => '00000000-0000-7000-8000-000000000112',
+                'name' => 'Shared Research',
+                'role' => 'editor',
+                'owned' => false,
+            ],
+        ]);
+
+        $this->assertCount(3, $state['workspaces']);
+        $localPersonal = collect($state['workspaces'])->firstWhere('cloud_status', 'local');
+        $personal = collect($state['workspaces'])->firstWhere(
+            'id',
+            '00000000-0000-7000-8000-000000000111',
+        );
+        $shared = collect($state['workspaces'])->firstWhere(
+            'id',
+            '00000000-0000-7000-8000-000000000112',
+        );
+
+        $this->assertSame('Personal', $localPersonal['name']);
+        $this->assertSame('00000000-0000-7000-8000-000000000111', $personal['id']);
+        $this->assertSame('available', $personal['cloud_status']);
+        $this->assertSame('editor', $shared['cloud_role']);
+        $this->assertFalse($shared['cloud_owned']);
+        $this->assertFileExists($this->workspaces->databasePath($shared));
+        $this->assertFalse(
+            DB::connection()->table('nodes')->where('page_id', $shared['id'])->exists(),
+        );
+
+        $refreshed = $this->workspaces->syncCloudCatalog('user-1', [
+            [
+                'id' => '00000000-0000-7000-8000-000000000111',
+                'name' => 'Personal renamed',
+                'role' => 'owner',
+                'owned' => true,
+            ],
+            [
+                'id' => '00000000-0000-7000-8000-000000000112',
+                'name' => 'Shared Research',
+                'role' => 'editor',
+                'owned' => false,
+            ],
+        ]);
+
+        $this->assertCount(3, $refreshed['workspaces']);
+        $this->assertSame(
+            'Personal renamed',
+            collect($refreshed['workspaces'])
+                ->firstWhere('id', '00000000-0000-7000-8000-000000000111')['name'],
+        );
+    }
+
+    public function test_cloud_catalog_links_an_existing_local_workspace_only_by_its_id(): void
+    {
+        $workspaceId = '00000000-0000-7000-8000-000000000121';
+        $this->workspaces->create('Local Draft', $workspaceId);
+
+        $state = $this->workspaces->syncCloudCatalog('user-1', [[
+            'id' => $workspaceId,
+            'name' => 'Cloud Name',
+            'role' => 'owner',
+            'owned' => true,
+        ]]);
+        $workspace = collect($state['workspaces'])->firstWhere('id', $workspaceId);
+
+        $this->assertCount(2, $state['workspaces']);
+        $this->assertSame('Cloud Name', $workspace['name']);
+        $this->assertSame('available', $workspace['cloud_status']);
+        $this->assertArrayNotHasKey('cloud_workspace_id', $workspace);
+    }
+
+    public function test_version_two_registry_adopts_the_cloud_id_without_losing_local_files(): void
+    {
+        $workspace = $this->workspaces->create('Existing Sync');
+        $oldDatabasePath = $this->workspaces->databasePath($workspace);
+        $oldStoragePath = $this->workspaces->storagePath($workspace);
+        mkdir($oldStoragePath, 0700, true);
+        file_put_contents($oldStoragePath.'/kept.txt', 'kept');
+        $cloudId = '00000000-0000-7000-8000-000000000131';
+        $indexPath = $this->directory.'/workspaces.json';
+        $index = json_decode(file_get_contents($indexPath), true, flags: JSON_THROW_ON_ERROR);
+        $index['version'] = 2;
+        $index['active_workspace_id'] = $workspace['id'];
+
+        foreach ($index['workspaces'] as &$entry) {
+            $entry['cloud_workspace_id'] = $entry['id'] === $workspace['id']
+                ? $cloudId
+                : null;
+        }
+        unset($entry);
+
+        file_put_contents($indexPath, json_encode($index, JSON_THROW_ON_ERROR));
+
+        $state = (new WorkspaceIndex($this->directory.'/nativephp.sqlite'))->state();
+        $upgraded = collect($state['workspaces'])->firstWhere('id', $cloudId);
+
+        $this->assertSame($cloudId, $state['active_workspace_id']);
+        $this->assertNotNull($upgraded);
+        $this->assertFileDoesNotExist($oldDatabasePath);
+        $this->assertFileExists($this->directory."/workspaces/{$cloudId}.sqlite");
+        $this->assertFileExists($this->directory."/workspaces/{$cloudId}/storage/kept.txt");
+        $this->assertArrayNotHasKey('cloud_workspace_id', $upgraded);
+    }
+
     public function test_selecting_an_existing_workspace_applies_pending_migrations(): void
     {
         $workspace = $this->workspaces->create('Older Workspace');
@@ -144,6 +306,36 @@ class WorkspaceTest extends TestCase
             DB::purge($activeConnection);
             config()->offsetUnset("database.connections.{$schemaConnection}");
             config()->offsetUnset("database.connections.{$activeConnection}");
+        }
+    }
+
+    public function test_missing_workspace_database_is_recreated_and_migrated(): void
+    {
+        $workspace = $this->workspaces->create('Missing database');
+        $databasePath = $this->workspaces->databasePath($workspace);
+        $connection = 'workspace_missing_database';
+        $originalConnection = DB::getDefaultConnection();
+
+        unlink($databasePath);
+        config(["database.connections.{$connection}" => [
+            'driver' => 'sqlite',
+            'database' => $databasePath,
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+        ]]);
+
+        try {
+            DB::setDefaultConnection($connection);
+            $this->workspaces->configureActiveConnection($workspace['id']);
+
+            $this->assertFileExists($databasePath);
+            $this->assertTrue($this->workspaces->recoveredMissingDatabase());
+            $this->assertTrue(DB::connection($connection)->getSchemaBuilder()->hasTable('nodes'));
+            $this->assertTrue(DB::connection($connection)->getSchemaBuilder()->hasTable('sync_state'));
+        } finally {
+            DB::setDefaultConnection($originalConnection);
+            DB::purge($connection);
+            config()->offsetUnset("database.connections.{$connection}");
         }
     }
 

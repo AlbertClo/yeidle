@@ -21,21 +21,15 @@ class CloudController extends Controller
         $validated = $request->validate([
             'url' => ['required', 'url'],
             'token' => ['required', 'string'],
-            'workspace_id' => ['nullable', 'string'],
+            'workspace_id' => ['required', 'string'],
             'new_workspace_name' => ['nullable', 'string', 'max:100'],
         ]);
-
-        if (isset($validated['workspace_id'], $validated['new_workspace_name'])) {
-            return response()->json([
-                'message' => 'Choose an existing cloud workspace or create a new one, not both.',
-            ], 422);
-        }
 
         try {
             $result = $this->cloud->connect(
                 $validated['url'],
                 $validated['token'],
-                $validated['workspace_id'] ?? null,
+                $validated['workspace_id'],
                 $validated['new_workspace_name'] ?? null,
             );
         } catch (\RuntimeException $e) {
@@ -78,7 +72,7 @@ class CloudController extends Controller
             'configured' => $configured,
             'health' => $health,
             'cloud_url' => $state?->cloud_url,
-            'cloud_workspace_id' => $state?->cloud_workspace_id,
+            'workspace_id' => $state?->workspace_id,
             'cloud_seed_pending' => (bool) ($state?->cloud_seed_pending ?? false),
             'last_server_seq' => (int) ($state?->last_server_seq ?? 0),
             'local_log_seq' => (int) (Op::max('id') ?? 0),

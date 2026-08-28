@@ -28,6 +28,10 @@ export const themePreference = ref<Theme>(
 export const fontFamilyPreference = activeFontFamily;
 export const fontSizePreference = activeFontSize;
 export const preferenceRootId = ref<string | null>(null);
+export const hasSavedThemePreference = ref(false);
+export type WorkspaceStoragePreference = 'local' | 'cloud';
+export const workspaceStoragePreference =
+    ref<WorkspaceStoragePreference | null>(null);
 
 let loaded = false;
 let loadRequest: Promise<void> | null = null;
@@ -37,6 +41,7 @@ type PreferenceResponse = {
     theme: Theme | null;
     font_family: FontFamily | null;
     font_size: number | null;
+    workspace_storage: WorkspaceStoragePreference | null;
 };
 
 export async function loadPreferences(force = false): Promise<void> {
@@ -64,6 +69,12 @@ export async function loadPreferences(force = false): Promise<void> {
 
             const payload = (await response.json()) as PreferenceResponse;
             preferenceRootId.value = payload.root_id;
+            hasSavedThemePreference.value = isTheme(payload.theme);
+            workspaceStoragePreference.value =
+                payload.workspace_storage === 'local' ||
+                payload.workspace_storage === 'cloud'
+                    ? payload.workspace_storage
+                    : null;
 
             if (isTheme(payload.theme)) {
                 themePreference.value = payload.theme;
@@ -131,6 +142,7 @@ export async function saveTypographyPreference(
 export async function saveThemePreference(theme: Theme): Promise<void> {
     const previousAppearance: Appearance = appearance.value;
     const previousTheme = themePreference.value;
+    const previouslySaved = hasSavedThemePreference.value;
 
     themePreference.value = theme;
     updateAppearance(theme);
@@ -151,11 +163,45 @@ export async function saveThemePreference(theme: Theme): Promise<void> {
 
         const payload = (await response.json()) as PreferenceResponse;
         preferenceRootId.value = payload.root_id;
+        hasSavedThemePreference.value = true;
         loaded = true;
         void requestCloudExchange();
     } catch (error) {
         themePreference.value = previousTheme;
+        hasSavedThemePreference.value = previouslySaved;
         updateAppearance(previousAppearance);
+
+        throw error;
+    }
+}
+
+export async function saveWorkspaceStoragePreference(
+    storage: WorkspaceStoragePreference,
+): Promise<void> {
+    const previousStorage = workspaceStoragePreference.value;
+    workspaceStoragePreference.value = storage;
+
+    try {
+        const response = await fetch('/api/preferences/workspace-storage', {
+            method: 'PUT',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ workspace_storage: storage }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not save the workspace storage preference.');
+        }
+
+        const payload = (await response.json()) as PreferenceResponse;
+        preferenceRootId.value = payload.root_id;
+        workspaceStoragePreference.value = payload.workspace_storage;
+        loaded = true;
+        void requestCloudExchange();
+    } catch (error) {
+        workspaceStoragePreference.value = previousStorage;
 
         throw error;
     }

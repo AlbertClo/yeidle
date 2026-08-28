@@ -35,7 +35,7 @@ class CloudSyncTest extends TestCase
             'last_server_seq' => $lastSeq,
             'cloud_url' => self::CLOUD,
             'cloud_token' => 'test-token',
-            'cloud_workspace_id' => 'w',
+            'workspace_id' => 'w',
         ]);
     }
 
@@ -489,22 +489,24 @@ class CloudSyncTest extends TestCase
 
     public function test_connect_can_create_and_pair_a_new_cloud_workspace(): void
     {
-        Http::fake(function ($request) {
+        $workspaceId = '00000000-0000-7000-8000-000000000401';
+
+        Http::fake(function ($request) use ($workspaceId) {
             if ($request->method() === 'POST' && $request->url() === self::CLOUD.'/api/workspaces') {
                 return Http::response([
-                    'workspace' => ['id' => 'knowledge', 'name' => 'Albert Knowledge'],
+                    'workspace' => ['id' => $workspaceId, 'name' => 'Albert Knowledge'],
                 ], 201);
             }
 
-            if ($request->url() === self::CLOUD.'/api/workspaces/knowledge/sync/status') {
+            if ($request->url() === self::CLOUD."/api/workspaces/{$workspaceId}/sync/status") {
                 return Http::response([
-                    'workspace_id' => 'knowledge',
+                    'workspace_id' => $workspaceId,
                     'user_id' => 'cloud-user-7',
                     'latest_seq' => 0,
                 ]);
             }
 
-            if (str_starts_with($request->url(), self::CLOUD.'/api/workspaces/knowledge/sync/pull')) {
+            if (str_starts_with($request->url(), self::CLOUD."/api/workspaces/{$workspaceId}/sync/pull")) {
                 return Http::response(['ops' => [], 'latest_seq' => 0]);
             }
 
@@ -514,14 +516,16 @@ class CloudSyncTest extends TestCase
         $this->postJson('/api/cloud/connect', [
             'url' => self::CLOUD,
             'token' => 'secret-token',
+            'workspace_id' => $workspaceId,
             'new_workspace_name' => 'Albert Knowledge',
         ])->assertSuccessful()
             ->assertJsonPath('ok', true);
 
-        $this->assertSame('knowledge', SyncState::current()->cloud_workspace_id);
+        $this->assertSame($workspaceId, SyncState::current()->workspace_id);
         $this->assertSame('cloud-user-7', SyncState::current()->cloud_user_id);
         Http::assertSent(fn ($request): bool => $request->method() === 'POST'
             && $request->url() === self::CLOUD.'/api/workspaces'
+            && $request['id'] === $workspaceId
             && $request['name'] === 'Albert Knowledge');
     }
 
@@ -730,7 +734,7 @@ class CloudSyncTest extends TestCase
 
         $state = SyncState::current();
         $this->assertTrue($state->cloud_seed_pending);
-        $this->assertSame('w', $state->cloud_workspace_id);
+        $this->assertSame('w', $state->workspace_id);
         $this->assertSame('Cloud seed failed (HTTP 503).', $state->last_sync_error);
 
         $recovering = true;
@@ -785,26 +789,80 @@ class CloudSyncTest extends TestCase
         $this->assertSame(12, (int) SyncState::current()->last_server_seq);
     }
 
-    public function test_connect_refuses_when_both_sides_have_unpaired_data(): void
+    public function test_connect_merges_when_both_sides_have_unpaired_operation_histories(): void
     {
-        $node = new Node;
-        $node->id = fake()->uuid();
-        $node->content = 'local data';
-        $node->position = 'a0';
-        $node->save();
+        $localNodeId = fake()->uuid();
+        $localOp = [
+            'op_id' => fake()->uuid(),
+            'client_id' => 'local-device',
+            'hlc' => HlcGenerator::encode(100, 0, 'local-device'),
+            'type' => 'node.set',
+            'payload' => [
+                'v' => 1,
+                'id' => $localNodeId,
+                'page_id' => $localNodeId,
+                'fields' => ['content' => 'local data'],
+            ],
+        ];
+        $this->postJson('/api/sync/push', [
+            'client_id' => 'local-device',
+            'ops' => [$localOp],
+        ])->assertOk();
 
-        Http::fake([
-            self::cloudSync('status') => Http::response(['workspace_id' => 'w', 'latest_seq' => 5]),
-        ]);
+        $cloudNodeId = fake()->uuid();
+        $cloudOp = $this->remoteOp('node.set', [
+            'v' => 1,
+            'id' => $cloudNodeId,
+            'page_id' => $cloudNodeId,
+            'fields' => ['content' => 'cloud data'],
+        ], 5, 200);
+        $echoedLocalOp = [
+            ...$localOp,
+            'server_seq' => 6,
+        ];
 
-        $this->postJson('/api/cloud/connect', [
+        Http::fake(function ($request) use ($cloudOp, $echoedLocalOp, $localOp) {
+            if ($request->url() === self::cloudSync('status')) {
+                return Http::response([
+                    'workspace_id' => 'w',
+                    'user_id' => 'cloud-user',
+                    'latest_seq' => 5,
+                ]);
+            }
+
+            if ($request->url() === self::cloudSync('push')) {
+                return Http::response(['accepted' => [[
+                    'op_id' => $localOp['op_id'],
+                    'server_seq' => 6,
+                ]]]);
+            }
+
+            if (str_starts_with($request->url(), self::cloudSync('pull'))) {
+                return (int) $request['since'] === 0
+                    ? Http::response([
+                        'ops' => [$cloudOp, $echoedLocalOp],
+                        'latest_seq' => 6,
+                    ])
+                    : Http::response(['ops' => [], 'latest_seq' => 6]);
+            }
+
+            return Http::response(status: 500);
+        });
+
+        $response = $this->postJson('/api/cloud/connect', [
             'url' => self::CLOUD,
             'token' => 't',
             'workspace_id' => 'w',
-        ])
-            ->assertStatus(422);
+        ])->assertOk();
 
-        $this->assertNull(SyncState::current());
+        $this->assertFalse($response->json('seeded'));
+        $this->assertFalse($response->json('bootstrapped'));
+        $this->assertSame(1, $response->json('pushed'));
+        $this->assertSame(1, $response->json('pulled'));
+        $this->assertSame('local data', Node::findOrFail($localNodeId)->content);
+        $this->assertSame('cloud data', Node::findOrFail($cloudNodeId)->content);
+        $this->assertSame(6, Op::where('op_id', $localOp['op_id'])->sole()->server_seq);
+        $this->assertSame(6, (int) SyncState::current()->last_server_seq);
     }
 
     public function test_realtime_config_is_proxied_without_exposing_the_cloud_token(): void

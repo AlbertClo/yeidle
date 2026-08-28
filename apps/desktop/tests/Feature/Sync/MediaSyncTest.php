@@ -151,7 +151,7 @@ class MediaSyncTest extends TestCase
             'size' => strlen($contents),
         ]);
         Storage::disk('local')->put("media/{$hash}", $contents);
-        $blobUrl = "https://cloud.test/api/workspaces/{$state->cloud_workspace_id}/blobs/{$hash}";
+        $blobUrl = "https://cloud.test/api/workspaces/{$state->workspace_id}/blobs/{$hash}";
 
         Http::fake([
             $blobUrl => Http::response(status: 404),
@@ -184,7 +184,7 @@ class MediaSyncTest extends TestCase
             'size' => strlen($contents),
         ]);
         Storage::disk('local')->put("media/{$hash}", $contents);
-        $blobUrl = "https://cloud.test/api/workspaces/{$state->cloud_workspace_id}/blobs/{$hash}";
+        $blobUrl = "https://cloud.test/api/workspaces/{$state->workspace_id}/blobs/{$hash}";
 
         Http::fake([
             $blobUrl => Http::response(status: 204),
@@ -237,7 +237,7 @@ class MediaSyncTest extends TestCase
             'mime_type' => 'text/plain',
             'size' => strlen($contents),
         ]);
-        $blobUrl = 'https://cloud.test/api/workspaces/'.SyncState::current()->cloud_workspace_id."/blobs/{$hash}";
+        $blobUrl = 'https://cloud.test/api/workspaces/'.SyncState::current()->workspace_id."/blobs/{$hash}";
 
         Http::fake([
             $blobUrl.'/download-url' => Http::response([
@@ -264,7 +264,7 @@ class MediaSyncTest extends TestCase
             'mime_type' => 'text/plain',
             'size' => 8,
         ]);
-        $blobUrl = 'https://cloud.test/api/workspaces/'.SyncState::current()->cloud_workspace_id."/blobs/{$hash}";
+        $blobUrl = 'https://cloud.test/api/workspaces/'.SyncState::current()->workspace_id."/blobs/{$hash}";
 
         Http::fake([
             $blobUrl.'/download-url' => Http::response([
@@ -286,7 +286,7 @@ class MediaSyncTest extends TestCase
             'last_server_seq' => 0,
             'cloud_url' => 'https://cloud.test',
             'cloud_token' => 'secret-token',
-            'cloud_workspace_id' => fake()->uuid(),
+            'workspace_id' => fake()->uuid(),
         ]);
     }
 }

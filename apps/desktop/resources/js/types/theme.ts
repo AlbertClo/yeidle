@@ -84,10 +84,10 @@ export const THEME_OPTIONS = [
         preview: ['#272822', '#34352f', '#f8f8f2', '#a6e22e'],
     },
     {
-        value: 'oxblood',
-        label: 'Oxblood',
-        dark: true,
-        preview: ['#190d10', '#291419', '#f3e7e9', '#d85a72'],
+        value: 'paper',
+        label: 'Paper',
+        dark: false,
+        preview: ['#f7f3ea', '#e7eadf', '#282a26', '#a44a2f'],
     },
 ] as const;
 

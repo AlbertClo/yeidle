@@ -3,6 +3,7 @@ import { router } from '@inertiajs/vue3';
 import { List, SquareTerminal } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppCommandPalette from '@/components/AppCommandPalette.vue';
+import CloudAccountDialog from '@/components/CloudAccountDialog.vue';
 import KeyBindingsDialog from '@/components/KeyBindingsDialog.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavPinned from '@/components/NavPinned.vue';
@@ -129,6 +130,7 @@ onBeforeUnmount(() => {
     <KeyBindingsDialog />
     <ThemeSelectorDialog />
     <TypographySelectorDialog />
+    <CloudAccountDialog />
 
     <Dialog v-model:open="aboutOpen">
         <DialogContent

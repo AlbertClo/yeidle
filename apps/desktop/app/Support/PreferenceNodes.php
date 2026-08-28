@@ -30,6 +30,8 @@ final class PreferenceNodes
 
     public const FONT_SIZE_KEY = 'font-size';
 
+    public const WORKSPACE_STORAGE_KEY = 'workspace-storage';
+
     public const DEFAULT_THEME = 'light';
 
     public const DEFAULT_FONT_FAMILY = 'instrument-sans';
@@ -47,6 +49,11 @@ final class PreferenceNodes
         'jetbrains-mono',
     ];
 
+    public const WORKSPACE_STORAGE_OPTIONS = [
+        'local',
+        'cloud',
+    ];
+
     public const THEMES = [
         'dark',
         'light',
@@ -62,7 +69,7 @@ final class PreferenceNodes
         'solarized-light',
         'cobalt2',
         'monokai',
-        'oxblood',
+        'paper',
     ];
 
     public const DARK_THEMES = [
@@ -75,7 +82,6 @@ final class PreferenceNodes
         'solarized-dark',
         'cobalt2',
         'monokai',
-        'oxblood',
     ];
 
     public function __construct(
@@ -83,13 +89,14 @@ final class PreferenceNodes
         private CloudSyncService $cloud,
     ) {}
 
-    /** @return array{root_id: string, theme: ?string, font_family: ?string, font_size: ?int} */
+    /** @return array{root_id: string, theme: ?string, font_family: ?string, font_size: ?int, workspace_storage: ?string} */
     public function listing(): array
     {
         $rootId = $this->activeRootId();
         $theme = Node::query()->find($this->entryId($rootId, self::THEME_KEY))?->content;
         $fontFamily = Node::query()->find($this->entryId($rootId, self::FONT_FAMILY_KEY))?->content;
         $fontSize = Node::query()->find($this->entryId($rootId, self::FONT_SIZE_KEY))?->content;
+        $workspaceStorage = Node::query()->find($this->entryId($rootId, self::WORKSPACE_STORAGE_KEY))?->content;
         $validFontSize = filter_var($fontSize, FILTER_VALIDATE_INT, [
             'options' => [
                 'min_range' => self::MIN_FONT_SIZE,
@@ -102,6 +109,9 @@ final class PreferenceNodes
             'theme' => in_array($theme, self::THEMES, true) ? $theme : null,
             'font_family' => in_array($fontFamily, self::FONT_FAMILIES, true) ? $fontFamily : null,
             'font_size' => $validFontSize === false ? null : $validFontSize,
+            'workspace_storage' => in_array($workspaceStorage, self::WORKSPACE_STORAGE_OPTIONS, true)
+                ? $workspaceStorage
+                : null,
         ];
     }
 
@@ -117,6 +127,13 @@ final class PreferenceNodes
         $this->set([
             [self::FONT_FAMILY_KEY, $fontFamily, 1],
             [self::FONT_SIZE_KEY, (string) $fontSize, 2],
+        ]);
+    }
+
+    public function setWorkspaceStorage(string $storage): void
+    {
+        $this->set([
+            [self::WORKSPACE_STORAGE_KEY, $storage, 3],
         ]);
     }
 
@@ -158,7 +175,7 @@ final class PreferenceNodes
             ]);
         }
 
-        if ($state->cloud_url && $state->cloud_workspace_id && ! $state->cloud_user_id) {
+        if ($state->cloud_url && $state->workspace_id && ! $state->cloud_user_id) {
             try {
                 $this->cloud->refreshCloudUserId();
                 $state->refresh();

@@ -6,6 +6,7 @@ use App\Models\Op;
 use App\Models\SyncState;
 use App\Support\PreferenceNodes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class PreferenceTest extends TestCase
@@ -17,6 +18,37 @@ class PreferenceTest extends TestCase
         $this->get('/pages')
             ->assertSuccessful()
             ->assertSee('data-theme="light"', false);
+    }
+
+    public function test_page_index_requires_setup_until_theme_and_storage_are_saved(): void
+    {
+        $this->get('/pages')
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Pages/Index')
+                ->where('themeSetupRequired', true)
+                ->where('storageSetupRequired', true));
+
+        $this->putJson('/api/preferences/theme', ['theme' => 'light'])
+            ->assertSuccessful();
+
+        $this->get('/pages')
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Pages/Index')
+                ->where('themeSetupRequired', false)
+                ->where('storageSetupRequired', true));
+
+        $this->putJson('/api/preferences/workspace-storage', [
+            'workspace_storage' => 'local',
+        ])->assertSuccessful();
+
+        $this->get('/pages')
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Pages/Index')
+                ->where('themeSetupRequired', false)
+                ->where('storageSetupRequired', false));
     }
 
     public function test_theme_is_stored_in_synced_preference_nodes(): void
@@ -75,6 +107,32 @@ class PreferenceTest extends TestCase
             'position' => 'a2',
         ]);
         $this->assertGreaterThan(0, Op::whereNull('server_seq')->count());
+    }
+
+    public function test_workspace_storage_choice_is_stored_in_synced_preference_nodes(): void
+    {
+        $rootId = $this->getJson('/api/preferences')
+            ->assertSuccessful()
+            ->assertJsonPath('workspace_storage', null)
+            ->json('root_id');
+
+        $this->putJson('/api/preferences/workspace-storage', [
+            'workspace_storage' => 'local',
+        ])
+            ->assertSuccessful()
+            ->assertJsonPath('workspace_storage', 'local');
+
+        $this->assertDatabaseHas('nodes', [
+            'parent_id' => $rootId,
+            'content' => 'local',
+            'position' => 'a3',
+        ]);
+
+        $this->putJson('/api/preferences/workspace-storage', [
+            'workspace_storage' => 'remote',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('workspace_storage');
     }
 
     public function test_theme_is_scoped_to_the_active_cloud_user(): void

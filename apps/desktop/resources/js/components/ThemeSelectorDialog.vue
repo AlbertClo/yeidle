@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import {
     loadPreferences,
+    hasSavedThemePreference,
     opsAffectPreferences,
     saveThemePreference,
     themePreference,
@@ -19,7 +20,10 @@ import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
 import type { LocalOpsAvailableEvent } from '@/sync/localOps';
 import { THEME_OPTIONS } from '@/types';
 import type { Theme } from '@/types';
-import { OPEN_THEME_SELECTOR_EVENT } from '@/ui/themeSelector';
+import {
+    notifyThemeSelected,
+    OPEN_THEME_SELECTOR_EVENT,
+} from '@/ui/themeSelector';
 
 const isOpen = ref(false);
 const saving = ref(false);
@@ -29,7 +33,10 @@ function openDialog(): void {
 }
 
 async function selectTheme(theme: Theme): Promise<void> {
-    if (saving.value || themePreference.value === theme) {
+    if (
+        saving.value ||
+        (hasSavedThemePreference.value && themePreference.value === theme)
+    ) {
         return;
     }
 
@@ -37,6 +44,7 @@ async function selectTheme(theme: Theme): Promise<void> {
 
     try {
         await saveThemePreference(theme);
+        notifyThemeSelected();
     } catch {
         toast.error('Could not save the theme.');
     } finally {

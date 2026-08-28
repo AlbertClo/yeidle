@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -39,9 +40,21 @@ class User extends Authenticatable implements PasskeyUser
     /**
      * @return HasMany<Workspace, $this>
      */
-    public function workspaces(): HasMany
+    public function ownedWorkspaces(): HasMany
     {
         return $this->hasMany(Workspace::class);
+    }
+
+    /**
+     * Every workspace this account can open, including shared workspaces.
+     *
+     * @return BelongsToMany<Workspace, $this>
+     */
+    public function workspaces(): BelongsToMany
+    {
+        return $this->belongsToMany(Workspace::class, 'workspace_memberships')
+            ->withPivot('role')
+            ->withTimestamps();
     }
 
     /**
@@ -54,6 +67,7 @@ class User extends Authenticatable implements PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'preferences' => 'array',
             'two_factor_confirmed_at' => 'datetime',
         ];
     }

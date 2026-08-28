@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CloudAccountController;
 use App\Http\Controllers\CloudController;
 use App\Http\Controllers\KeyBindingController;
 use App\Http\Controllers\MediaController;
@@ -15,7 +16,19 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('workspaces', [WorkspaceController::class, 'index']);
 Route::post('workspaces', [WorkspaceController::class, 'store']);
+Route::patch('workspaces/{workspaceId}', [WorkspaceController::class, 'update']);
+Route::delete('workspaces/{workspaceId}', [WorkspaceController::class, 'destroy']);
+Route::post('workspaces/{workspaceId}/sync', [WorkspaceController::class, 'sync']);
 Route::post('workspaces/{workspaceId}/activate', [WorkspaceController::class, 'activate']);
+
+Route::get('account', [CloudAccountController::class, 'show']);
+Route::post('account/connect', [CloudAccountController::class, 'connect']);
+Route::delete('account/connect', [CloudAccountController::class, 'cancelAuthorization']);
+Route::post('account/complete', [CloudAccountController::class, 'completeAuthorization']);
+Route::post('account/broadcasting-auth', [CloudAccountController::class, 'authorizeRealtime']);
+Route::post('account/refresh', [CloudAccountController::class, 'refresh']);
+Route::post('account/sync-active-workspace', [CloudAccountController::class, 'syncActiveWorkspace']);
+Route::delete('account', [CloudAccountController::class, 'destroy']);
 
 Route::post('imports/roam/init', [RoamImportController::class, 'initialize']);
 Route::post('imports/roam/chunk', [RoamImportController::class, 'uploadChunk']);
@@ -45,6 +58,7 @@ Route::delete('nodes/{node}/pin', [PinController::class, 'destroy']);
 Route::get('preferences', [PreferenceController::class, 'show']);
 Route::put('preferences/theme', [PreferenceController::class, 'updateTheme']);
 Route::put('preferences/typography', [PreferenceController::class, 'updateTypography']);
+Route::put('preferences/workspace-storage', [PreferenceController::class, 'updateWorkspaceStorage']);
 Route::get('key-bindings', [KeyBindingController::class, 'show']);
 Route::put('key-bindings', [KeyBindingController::class, 'update']);
 // Before pages/{node} so "title-exists" isn't captured as a node id

@@ -2,6 +2,7 @@
 
 namespace App\Preferences;
 
+use App\Accounts\CloudAccountStore;
 use App\Models\SyncState;
 use InvalidArgumentException;
 use JsonException;
@@ -63,7 +64,10 @@ final class UserKeyBindings
         'Backquote',
     ];
 
-    public function __construct(private readonly string $path) {}
+    public function __construct(
+        private readonly string $path,
+        private readonly ?CloudAccountStore $cloudAccount = null,
+    ) {}
 
     /** @return array{bindings: array<string, ?string>, defaults: array<string, string>} */
     public function listing(): array
@@ -127,6 +131,39 @@ final class UserKeyBindings
         ];
     }
 
+    /** @return array<string, ?string> */
+    public function overrides(): array
+    {
+        $state = $this->read();
+
+        return $this->profile($state)['key_bindings'] ?? [];
+    }
+
+    /** @param array<string, mixed> $bindings */
+    public function importCloud(array $bindings): array
+    {
+        $state = $this->read();
+        $profileKey = $this->profileKey();
+        $normalized = [];
+
+        foreach ($bindings as $command => $binding) {
+            if (! is_string($command)
+                || ! array_key_exists($command, self::DEFAULTS)
+                || ($binding !== null && ! is_string($binding))) {
+                continue;
+            }
+
+            $normalized[$command] = $binding === null
+                ? null
+                : $this->normalize($binding);
+        }
+
+        $state['profiles'][$profileKey] = ['key_bindings' => $normalized];
+        $this->write($state);
+
+        return $this->listing();
+    }
+
     /** @param array{version: int, profiles: array<string, array{key_bindings?: array<string, ?string>}>} $state */
     private function profile(array &$state): array
     {
@@ -144,6 +181,12 @@ final class UserKeyBindings
 
     private function profileKey(): string
     {
+        $accountUserId = $this->cloudAccount?->account()['user']['id'] ?? null;
+
+        if (is_string($accountUserId) && $accountUserId !== '') {
+            return 'cloud:'.$accountUserId;
+        }
+
         $cloudUserId = SyncState::current()?->cloud_user_id;
 
         return is_string($cloudUserId) && $cloudUserId !== ''

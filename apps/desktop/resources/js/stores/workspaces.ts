@@ -5,8 +5,8 @@ export const workspaceState = ref<WorkspaceState | null>(null);
 
 let stateRequest: Promise<void> | null = null;
 
-export function loadWorkspaceState(): Promise<void> {
-    if (workspaceState.value !== null) {
+export function loadWorkspaceState(force = false): Promise<void> {
+    if (workspaceState.value !== null && !force) {
         return Promise.resolve();
     }
 

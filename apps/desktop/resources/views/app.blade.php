@@ -44,7 +44,7 @@
             html[data-theme='solarized-light'] { background-color: #fdf6e3; }
             html[data-theme='cobalt2'] { background-color: #193549; }
             html[data-theme='monokai'] { background-color: #272822; }
-            html[data-theme='oxblood'] { background-color: #190d10; }
+            html[data-theme='paper'] { background-color: #f7f3ea; }
         </style>
 
         <title inertia>{{ config('app.name', 'Laravel') }}</title>
