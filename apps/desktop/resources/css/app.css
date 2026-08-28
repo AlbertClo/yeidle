@@ -226,7 +226,7 @@ html {
 :root[data-theme='blush'] {
     --theme-background: #fff7fb;
     --theme-foreground: #2a1726;
-    --theme-surface: #ffeaf5;
+    --theme-surface: #f4d9e6;
     --theme-muted: #ffd6ec;
     --theme-muted-foreground: #7d6173;
     --theme-border: #f3b5d6;
@@ -373,7 +373,7 @@ html {
 :root[data-theme='paper'] {
     --theme-background: #f7f3ea;
     --theme-foreground: #282a26;
-    --theme-surface: #e7eadf;
+    --theme-surface: #d9dfcf;
     --theme-muted: #eee8dc;
     --theme-muted-foreground: #6f7168;
     --theme-border: #d5d0c4;

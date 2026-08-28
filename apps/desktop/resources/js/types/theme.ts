@@ -9,7 +9,7 @@ export const THEME_OPTIONS = [
         value: 'blush',
         label: 'Blush',
         dark: false,
-        preview: ['#fff7fb', '#ffeaf5', '#2a1726', '#c2187a'],
+        preview: ['#fff7fb', '#f4d9e6', '#2a1726', '#c2187a'],
     },
     {
         value: 'catppuccin-latte',
@@ -33,7 +33,7 @@ export const THEME_OPTIONS = [
         value: 'paper',
         label: 'Paper',
         dark: false,
-        preview: ['#f7f3ea', '#e7eadf', '#282a26', '#a44a2f'],
+        preview: ['#f7f3ea', '#d9dfcf', '#282a26', '#a44a2f'],
     },
     {
         value: 'dark',
