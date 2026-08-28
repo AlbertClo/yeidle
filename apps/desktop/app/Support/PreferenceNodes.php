@@ -32,7 +32,7 @@ final class PreferenceNodes
 
     public const WORKSPACE_STORAGE_KEY = 'workspace-storage';
 
-    public const DEFAULT_THEME = 'light';
+    public const DEFAULT_THEME = 'system';
 
     public const DEFAULT_FONT_FAMILY = 'instrument-sans';
 

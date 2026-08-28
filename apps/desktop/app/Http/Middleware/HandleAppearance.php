@@ -21,7 +21,8 @@ class HandleAppearance
 
         View::share(
             'appearance',
-            in_array($appearance, PreferenceNodes::THEMES, true)
+            $appearance === PreferenceNodes::DEFAULT_THEME
+                || in_array($appearance, PreferenceNodes::THEMES, true)
                 ? $appearance
                 : PreferenceNodes::DEFAULT_THEME,
         );

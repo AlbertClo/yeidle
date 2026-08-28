@@ -84,6 +84,7 @@ const importDialogOpen = ref(false);
 const manageDialogOpen = ref(false);
 const syncConfirmationOpen = ref(false);
 const deleteConfirmationOpen = ref(false);
+const showOnDiskConfirmationOpen = ref(false);
 const workspaceName = ref('');
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -94,6 +95,7 @@ const manageError = ref<string | null>(null);
 const managedWorkspaceId = ref<string | null>(null);
 const syncWorkspaceId = ref<string | null>(null);
 const deleteWorkspaceId = ref<string | null>(null);
+const showOnDiskWorkspaceId = ref<string | null>(null);
 
 const activeWorkspace = computed(
     () =>
@@ -120,6 +122,13 @@ const workspaceToDelete = computed(
     () =>
         state.value?.workspaces.find(
             (workspace) => workspace.id === deleteWorkspaceId.value,
+        ) ?? null,
+);
+
+const workspaceToShowOnDisk = computed(
+    () =>
+        state.value?.workspaces.find(
+            (workspace) => workspace.id === showOnDiskWorkspaceId.value,
         ) ?? null,
 );
 
@@ -331,6 +340,26 @@ function requestWorkspaceDeletion(workspace: Workspace): void {
     deleteConfirmationOpen.value = true;
 }
 
+function requestShowWorkspaceOnDisk(workspace: Workspace): void {
+    showOnDiskWorkspaceId.value = workspace.id;
+    manageError.value = null;
+    showOnDiskConfirmationOpen.value = true;
+}
+
+function workspaceDatabaseFilename(workspace: Workspace): string {
+    const segments = workspace.database.split(/[\\/]/);
+
+    return segments[segments.length - 1] || workspace.database;
+}
+
+function workspaceMediaDirectoryName(workspace: Workspace): string {
+    const databaseFilename = workspaceDatabaseFilename(workspace);
+
+    return databaseFilename === 'nativephp.sqlite'
+        ? 'media'
+        : databaseFilename.replace(/\.sqlite$/i, '');
+}
+
 async function deleteWorkspace(workspace: Workspace): Promise<void> {
     if (workspaceActionId.value || !canDelete(workspace)) {
         return;
@@ -433,18 +462,71 @@ async function renameWorkspace(workspace: Workspace): Promise<void> {
     }
 }
 
-async function enableCloudSync(workspace: Workspace): Promise<void> {
-    if (workspaceActionId.value || !cloudAccount.value?.signed_in) {
+async function showWorkspaceOnDisk(
+    workspace: Workspace,
+    target: 'database' | 'media',
+): Promise<void> {
+    if (workspaceActionId.value) {
         return;
     }
 
     workspaceActionId.value = workspace.id;
     manageError.value = null;
+    showOnDiskConfirmationOpen.value = false;
+
+    await nextTick();
+    manageDialogOpen.value = true;
 
     try {
-        if (workspace.id === state.value?.active_workspace_id) {
-            replaceWorkspace({ ...workspace, cloud_status: 'syncing' });
+        const response = await fetch(
+            '/api/workspaces/' + workspace.id + '/show-on-disk',
+            {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ target }),
+            },
+        );
+        const payload = (await response.json().catch(() => null)) as {
+            message?: string;
+        } | null;
+
+        if (!response.ok) {
+            throw new Error(
+                payload?.message ?? 'Could not show the workspace on disk.',
+            );
         }
+    } catch (reason) {
+        manageError.value =
+            reason instanceof Error
+                ? reason.message
+                : 'Could not show the workspace on disk.';
+    } finally {
+        workspaceActionId.value = null;
+        showOnDiskWorkspaceId.value = null;
+    }
+}
+
+async function enableCloudSync(workspace: Workspace): Promise<void> {
+    if (workspaceActionId.value || !cloudAccount.value?.signed_in) {
+        return;
+    }
+
+    const returnToManager = managedWorkspaceId.value === workspace.id;
+
+    workspaceActionId.value = workspace.id;
+    manageError.value = null;
+    syncConfirmationOpen.value = false;
+
+    if (returnToManager) {
+        await nextTick();
+        manageDialogOpen.value = true;
+    }
+
+    try {
+        replaceWorkspace({ ...workspace, cloud_status: 'syncing' });
 
         await enableWorkspaceCloudSync(workspace.id);
         notifyWorkspaceSyncEnabled(workspace.id);
@@ -458,7 +540,6 @@ async function enableCloudSync(workspace: Workspace): Promise<void> {
             await requestCloudExchange();
         }
 
-        syncConfirmationOpen.value = false;
         syncWorkspaceId.value = null;
     } catch (reason) {
         manageError.value =
@@ -468,6 +549,10 @@ async function enableCloudSync(workspace: Workspace): Promise<void> {
         await loadWorkspaceState(true).catch(() => undefined);
     } finally {
         workspaceActionId.value = null;
+
+        if (returnToManager) {
+            manageDialogOpen.value = true;
+        }
     }
 }
 
@@ -625,8 +710,26 @@ onMounted(() => {
                 <DialogHeader v-if="managedWorkspace">
                     <DialogTitle>{{ managedWorkspace.name }}</DialogTitle>
                     <DialogDescription>
-                        Rename this workspace or choose whether to sync it with
-                        Yeidle Cloud.
+                        <template
+                            v-if="managedWorkspace.cloud_status === 'syncing'"
+                        >
+                            This workspace is being connected to Yeidle Cloud.
+                        </template>
+                        <template
+                            v-else-if="
+                                managedWorkspace.cloud_status === 'local'
+                            "
+                        >
+                            Rename this workspace or choose whether to sync it
+                            with Yeidle Cloud.
+                        </template>
+                        <template v-else-if="managedWorkspace.cloud_owned">
+                            This workspace is synced with Yeidle Cloud.
+                        </template>
+                        <template v-else>
+                            This workspace is synced with Yeidle Cloud and
+                            shared with you.
+                        </template>
                     </DialogDescription>
                 </DialogHeader>
 
@@ -678,15 +781,23 @@ onMounted(() => {
                             </div>
                             <div class="text-xs text-muted-foreground">
                                 {{
-                                    managedWorkspace.cloud_status === 'local'
-                                        ? 'Only on this device'
-                                        : managedWorkspace.cloud_owned
-                                          ? 'Synced with Yeidle Cloud'
-                                          : 'Shared with you'
+                                    managedWorkspace.cloud_status === 'syncing'
+                                        ? 'Syncing with Yeidle Cloud…'
+                                        : managedWorkspace.cloud_status ===
+                                            'local'
+                                          ? 'Only on this device'
+                                          : managedWorkspace.cloud_owned
+                                            ? 'Synced with Yeidle Cloud'
+                                            : 'Shared with you'
                                 }}
                             </div>
                         </div>
 
+                        <LoaderCircle
+                            v-if="managedWorkspace.cloud_status === 'syncing'"
+                            class="size-4 animate-spin text-muted-foreground"
+                            aria-label="Syncing workspace"
+                        />
                         <Button
                             v-if="canRename(managedWorkspace)"
                             type="button"
@@ -743,38 +854,136 @@ onMounted(() => {
                     v-if="managedWorkspace"
                     class="sm:justify-between"
                 >
-                    <TooltipProvider :delay-duration="0">
-                        <Tooltip :disabled="canDelete(managedWorkspace)">
-                            <TooltipTrigger as-child>
-                                <span class="inline-flex">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        class="text-muted-foreground hover:text-foreground"
-                                        :disabled="
-                                            workspaceActionId !== null ||
-                                            !canDelete(managedWorkspace)
-                                        "
-                                        @click="
-                                            requestWorkspaceDeletion(
-                                                managedWorkspace,
-                                            )
-                                        "
-                                    >
-                                        Delete workspace
-                                    </Button>
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                                Only the workspace owner can delete a cloud
-                                workspace.
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
+                    <div class="flex items-center gap-2">
+                        <TooltipProvider :delay-duration="0">
+                            <Tooltip :disabled="canDelete(managedWorkspace)">
+                                <TooltipTrigger as-child>
+                                    <span class="inline-flex">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            class="text-muted-foreground hover:text-foreground"
+                                            :disabled="
+                                                workspaceActionId !== null ||
+                                                !canDelete(managedWorkspace)
+                                            "
+                                            @click="
+                                                requestWorkspaceDeletion(
+                                                    managedWorkspace,
+                                                )
+                                            "
+                                        >
+                                            Delete workspace
+                                        </Button>
+                                    </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    Only the workspace owner can delete a cloud
+                                    workspace.
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            class="text-muted-foreground hover:text-foreground"
+                            :disabled="workspaceActionId !== null"
+                            @click="
+                                requestShowWorkspaceOnDisk(managedWorkspace)
+                            "
+                        >
+                            Show on disk
+                        </Button>
+                    </div>
                     <Button
                         type="button"
                         variant="outline"
                         @click="manageDialogOpen = false"
+                    >
+                        Close
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog v-model:open="showOnDiskConfirmationOpen">
+            <DialogContent>
+                <DialogHeader v-if="workspaceToShowOnDisk">
+                    <DialogTitle>
+                        Show {{ workspaceToShowOnDisk.name }} on disk?
+                    </DialogTitle>
+                    <DialogDescription>
+                        Use the buttons below to locate this workspace’s
+                        database file and media folder. You can copy both to
+                        make a manual backup, but editing or replacing them
+                        directly is not recommended.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div
+                    v-if="workspaceToShowOnDisk"
+                    class="divide-y rounded-md border bg-muted/50"
+                >
+                    <div class="px-3 py-2">
+                        <div class="text-xs text-muted-foreground">
+                            Database file
+                        </div>
+                        <code class="block truncate text-sm text-foreground">
+                            {{
+                                workspaceDatabaseFilename(workspaceToShowOnDisk)
+                            }}
+                        </code>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            class="mt-2"
+                            :disabled="workspaceActionId !== null"
+                            @click="
+                                showWorkspaceOnDisk(
+                                    workspaceToShowOnDisk,
+                                    'database',
+                                )
+                            "
+                        >
+                            Show on disk
+                        </Button>
+                    </div>
+                    <div class="px-3 py-2">
+                        <div class="text-xs text-muted-foreground">
+                            Media folder
+                        </div>
+                        <code class="block truncate text-sm text-foreground">
+                            {{
+                                workspaceMediaDirectoryName(
+                                    workspaceToShowOnDisk,
+                                )
+                            }}
+                        </code>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            class="mt-2"
+                            :disabled="workspaceActionId !== null"
+                            @click="
+                                showWorkspaceOnDisk(
+                                    workspaceToShowOnDisk,
+                                    'media',
+                                )
+                            "
+                        >
+                            Show on disk
+                        </Button>
+                    </div>
+                </div>
+
+                <DialogFooter v-if="workspaceToShowOnDisk">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        :disabled="workspaceActionId !== null"
+                        @click="showOnDiskConfirmationOpen = false"
                     >
                         Close
                     </Button>

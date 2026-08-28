@@ -1,6 +1,10 @@
 import { ref } from 'vue';
 import type { Appearance, Theme } from '@/types';
-import { updateAppearance, useAppearance } from '../composables/useAppearance';
+import {
+    getSystemTheme,
+    updateAppearance,
+    useAppearance,
+} from '../composables/useAppearance';
 import {
     activeFontFamily,
     activeFontSize,
@@ -8,7 +12,7 @@ import {
 } from '../composables/useTypography';
 import { requestCloudExchange } from '../sync/cloud';
 import type { CommittedOp } from '../sync/localOps';
-import { DEFAULT_THEME, isTheme } from '../types/theme';
+import { DEFAULT_APPEARANCE, isTheme } from '../types/theme';
 import {
     DEFAULT_FONT_FAMILY,
     DEFAULT_FONT_SIZE,
@@ -80,8 +84,8 @@ export async function loadPreferences(force = false): Promise<void> {
                 themePreference.value = payload.theme;
                 updateAppearance(payload.theme);
             } else {
-                themePreference.value = DEFAULT_THEME;
-                updateAppearance(DEFAULT_THEME);
+                themePreference.value = getSystemTheme();
+                updateAppearance(DEFAULT_APPEARANCE);
             }
 
             updateTypography(

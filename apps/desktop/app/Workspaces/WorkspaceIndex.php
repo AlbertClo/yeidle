@@ -318,6 +318,16 @@ final class WorkspaceIndex
             .DIRECTORY_SEPARATOR.'storage';
     }
 
+    /** @param array{id: string, database: string} $workspace */
+    public function mediaBackupPath(array $workspace): string
+    {
+        $storagePath = $this->storagePath($workspace);
+
+        return $workspace['database'] === basename($this->baseDatabasePath)
+            ? $storagePath.DIRECTORY_SEPARATOR.'media'
+            : dirname($storagePath);
+    }
+
     public function appDataDirectory(): string
     {
         return dirname($this->baseDatabasePath);

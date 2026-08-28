@@ -1,7 +1,7 @@
 import type { ComputedRef, Ref } from 'vue';
 import { computed, ref } from 'vue';
 import type { Appearance, ResolvedAppearance, Theme } from '@/types';
-import { DEFAULT_THEME, isDarkTheme, isTheme } from '../types/theme';
+import { DEFAULT_APPEARANCE, isDarkTheme, isTheme } from '../types/theme';
 
 export type { Appearance, ResolvedAppearance };
 
@@ -16,16 +16,7 @@ export function updateTheme(value: Appearance): void {
         return;
     }
 
-    let resolvedTheme: Theme;
-
-    if (value === 'system') {
-        const mediaQueryList = window.matchMedia(
-            '(prefers-color-scheme: dark)',
-        );
-        resolvedTheme = mediaQueryList.matches ? 'dark' : 'light';
-    } else {
-        resolvedTheme = value;
-    }
+    const resolvedTheme = value === 'system' ? getSystemTheme() : value;
 
     document.documentElement.dataset.theme = resolvedTheme;
     document.documentElement.classList.toggle(
@@ -52,6 +43,10 @@ const mediaQuery = () => {
     return window.matchMedia('(prefers-color-scheme: dark)');
 };
 
+export function getSystemTheme(): Theme {
+    return mediaQuery()?.matches ? 'dark' : 'light';
+}
+
 const getStoredAppearance = (): Appearance | null => {
     if (typeof window === 'undefined') {
         return null;
@@ -73,7 +68,7 @@ const prefersDark = (): boolean => {
 const handleSystemThemeChange = () => {
     const currentAppearance = getStoredAppearance();
 
-    updateTheme(currentAppearance || DEFAULT_THEME);
+    updateTheme(currentAppearance || DEFAULT_APPEARANCE);
 };
 
 export function initializeTheme(): void {
@@ -83,13 +78,13 @@ export function initializeTheme(): void {
 
     // Initialize theme from the saved preference or the workspace default.
     const savedAppearance = getStoredAppearance();
-    updateTheme(savedAppearance || DEFAULT_THEME);
+    updateTheme(savedAppearance || DEFAULT_APPEARANCE);
 
     // Set up system theme change listener...
     mediaQuery()?.addEventListener('change', handleSystemThemeChange);
 }
 
-const appearance = ref<Appearance>(getStoredAppearance() ?? DEFAULT_THEME);
+const appearance = ref<Appearance>(getStoredAppearance() ?? DEFAULT_APPEARANCE);
 const resolvedAppearance = computed<ResolvedAppearance>(() => {
     if (appearance.value === 'system') {
         return prefersDark() ? 'dark' : 'light';

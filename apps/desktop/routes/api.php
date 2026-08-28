@@ -19,6 +19,7 @@ Route::post('workspaces', [WorkspaceController::class, 'store']);
 Route::patch('workspaces/{workspaceId}', [WorkspaceController::class, 'update']);
 Route::delete('workspaces/{workspaceId}', [WorkspaceController::class, 'destroy']);
 Route::post('workspaces/{workspaceId}/sync', [WorkspaceController::class, 'sync']);
+Route::post('workspaces/{workspaceId}/show-on-disk', [WorkspaceController::class, 'showOnDisk']);
 Route::post('workspaces/{workspaceId}/activate', [WorkspaceController::class, 'activate']);
 
 Route::get('account', [CloudAccountController::class, 'show']);

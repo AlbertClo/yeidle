@@ -6,6 +6,8 @@ use App\Accounts\CloudAccountService;
 use App\Workspaces\WorkspaceIndex;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Native\Desktop\Facades\Shell;
 use RuntimeException;
 
 class WorkspaceController extends Controller
@@ -62,6 +64,35 @@ class WorkspaceController extends Controller
         }
 
         return response()->json(['workspace' => $workspace]);
+    }
+
+    public function showOnDisk(Request $request, string $workspaceId): JsonResponse
+    {
+        $validated = $request->validate([
+            'target' => ['nullable', 'string', 'in:database,media'],
+        ]);
+
+        try {
+            $workspace = $this->workspaces->find($workspaceId);
+            $target = $validated['target'] ?? 'database';
+            $path = $target === 'media'
+                ? $this->workspaces->mediaBackupPath($workspace)
+                : $this->workspaces->databasePath($workspace);
+
+            if ($target === 'database' && ! is_file($path)) {
+                throw new RuntimeException('The workspace database was not found on this device.');
+            }
+
+            if ($target === 'media') {
+                File::ensureDirectoryExists($path, 0700);
+            }
+
+            Shell::showInFolder($path);
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 404);
+        }
+
+        return response()->json(null);
     }
 
     public function destroy(string $workspaceId): JsonResponse

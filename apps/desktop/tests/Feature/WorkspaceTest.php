@@ -6,6 +6,7 @@ use App\Workspaces\WorkspaceIndex;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Native\Desktop\Facades\Shell;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -116,6 +117,32 @@ class WorkspaceTest extends TestCase
             ->assertJsonPath('workspace.cloud_status', 'local');
 
         $this->assertSame('New name', $this->workspaces->find($workspace['id'])['name']);
+    }
+
+    public function test_workspace_database_can_be_shown_on_disk(): void
+    {
+        $shell = Shell::fake();
+        $workspace = $this->workspaces->create('Find me');
+        $databasePath = $this->workspaces->databasePath($workspace);
+
+        $this->postJson("/api/workspaces/{$workspace['id']}/show-on-disk")
+            ->assertSuccessful();
+
+        $shell->assertShowInFolder($databasePath);
+    }
+
+    public function test_workspace_media_folder_can_be_shown_on_disk(): void
+    {
+        $shell = Shell::fake();
+        $workspace = $this->workspaces->create('Find my media');
+        $mediaPath = $this->workspaces->mediaBackupPath($workspace);
+
+        $this->postJson("/api/workspaces/{$workspace['id']}/show-on-disk", [
+            'target' => 'media',
+        ])->assertSuccessful();
+
+        $this->assertDirectoryExists($mediaPath);
+        $shell->assertShowInFolder($mediaPath);
     }
 
     public function test_local_workspace_can_be_deleted(): void

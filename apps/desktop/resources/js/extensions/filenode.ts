@@ -2,6 +2,7 @@ import { mergeAttributes, Node } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 
 import { requestCloudExchange } from '../sync/cloud';
+import type { UploadedMedia } from './mediaInsertion';
 
 export const FileNode = Node.create({
     name: 'fileNode',
@@ -145,12 +146,7 @@ export const FileNode = Node.create({
 
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
 
-export async function uploadFile(file: File): Promise<{
-    id: string;
-    original_name: string;
-    mime_type: string;
-    size: number;
-} | null> {
+export async function uploadFile(file: File): Promise<UploadedMedia | null> {
     try {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 

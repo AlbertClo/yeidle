@@ -7,6 +7,11 @@ import { Upload } from 'lucide-vue-next';
 import SlashCommandSuggestion from '@/components/SlashCommandSuggestion.vue';
 import type { SlashCommandItem } from '@/components/SlashCommandSuggestion.vue';
 import { uploadFile } from '@/extensions/filenode';
+import {
+    insertMediaAsSiblingNodes,
+    selectedListItemId,
+} from '@/extensions/mediaInsertion';
+import type { UploadedMedia } from '@/extensions/mediaInsertion';
 
 const COMMANDS: SlashCommandItem[] = [
     { id: 'upload', label: 'Upload file', icon: Upload, action: 'upload' },
@@ -81,31 +86,30 @@ export const SlashCommand = Extension.create({
                     editor.chain().focus().deleteRange(range).run();
 
                     if (item.action === 'upload') {
+                        const anchorBlockId = selectedListItemId(editor);
                         const input = document.createElement('input');
                         input.type = 'file';
                         input.multiple = true;
-                        input.onchange = () => {
-                            if (!input.files) return;
-                            Array.from(input.files).forEach(async (file) => {
-                                const media = await uploadFile(file);
-                                if (media) {
-                                    editor
-                                        .chain()
-                                        .focus()
-                                        .insertContent({
-                                            type: 'fileNode',
-                                            attrs: {
-                                                mediaId: media.id,
-                                                src: `/api/media/${media.id}`,
-                                                originalName:
-                                                    media.original_name,
-                                                mimeType: media.mime_type,
-                                                size: media.size,
-                                            },
-                                        })
-                                        .run();
-                                }
-                            });
+                        input.onchange = async () => {
+                            const files = Array.from(input.files ?? []);
+
+                            if (!anchorBlockId || files.length === 0) {
+                                return;
+                            }
+
+                            const uploads = await Promise.all(
+                                files.map((file) => uploadFile(file)),
+                            );
+                            const mediaItems = uploads.filter(
+                                (media): media is UploadedMedia =>
+                                    media !== null,
+                            );
+
+                            insertMediaAsSiblingNodes(
+                                editor,
+                                anchorBlockId,
+                                mediaItems,
+                            );
                         };
                         input.click();
                     }

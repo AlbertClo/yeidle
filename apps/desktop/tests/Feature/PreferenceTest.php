@@ -13,11 +13,11 @@ class PreferenceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_light_is_the_default_theme_without_a_saved_preference(): void
+    public function test_system_is_the_default_theme_without_a_saved_preference(): void
     {
         $this->get('/pages')
             ->assertSuccessful()
-            ->assertSee('data-theme="light"', false);
+            ->assertSee('data-theme="system"', false);
     }
 
     public function test_page_index_requires_setup_until_theme_and_storage_are_saved(): void
