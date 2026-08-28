@@ -2643,7 +2643,7 @@ onBeforeUnmount(() => {
             @blur="hideLinkPopover"
         >
             <button
-                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm"
                 :class="
                     linkPopover.selectedIndex === 0
                         ? 'bg-accent'
@@ -2657,7 +2657,7 @@ onBeforeUnmount(() => {
                 <kbd class="ml-4 text-xs text-muted-foreground">Ctrl+Q</kbd>
             </button>
             <button
-                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm"
                 :class="
                     linkPopover.selectedIndex === 1
                         ? 'bg-accent'
@@ -2685,7 +2685,7 @@ onBeforeUnmount(() => {
             @blur="hideMediaMenu"
         >
             <button
-                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm"
                 :class="
                     mediaMenu.selectedIndex === 0
                         ? 'bg-accent'
@@ -2698,7 +2698,7 @@ onBeforeUnmount(() => {
                 Download
             </button>
             <button
-                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm"
                 :class="
                     mediaMenu.selectedIndex === 1
                         ? 'bg-accent'
@@ -2711,7 +2711,7 @@ onBeforeUnmount(() => {
                 Open
             </button>
             <button
-                class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm"
                 :class="
                     mediaMenu.selectedIndex === 2
                         ? 'bg-accent'
@@ -2724,7 +2724,7 @@ onBeforeUnmount(() => {
                 Open folder
             </button>
             <button
-                class="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive transition-colors"
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive"
                 :class="
                     mediaMenu.selectedIndex === 3
                         ? 'bg-accent'
@@ -2768,7 +2768,7 @@ onBeforeUnmount(() => {
                                     page, index
                                 ) in updateLinkModal.searchResults"
                                 :key="page.id"
-                                class="w-full px-3 py-2 text-left text-sm transition-colors"
+                                class="w-full px-3 py-2 text-left text-sm"
                                 :class="
                                     index ===
                                     updateLinkModal.searchSelectedIndex
@@ -2795,7 +2795,7 @@ onBeforeUnmount(() => {
                             @keydown="handleLabelInputKeydown"
                         />
                         <button
-                            class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                            class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
                             title="Reset to page title"
                             @click="
                                 updateLinkModal.label =

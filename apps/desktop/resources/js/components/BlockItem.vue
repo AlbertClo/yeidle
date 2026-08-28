@@ -178,11 +178,11 @@ watch(() => props.node.content, (newVal) => {
         >
             <button
                 v-if="node.children && node.children.length > 0"
-                class="text-muted-foreground hover:text-foreground mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors"
+                class="text-muted-foreground hover:text-foreground mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded"
                 @click="toggleExpand"
             >
                 <ChevronRight
-                    class="h-3.5 w-3.5 transition-transform"
+                    class="h-3.5 w-3.5"
                     :class="{ 'rotate-90': isExpanded }"
                 />
             </button>

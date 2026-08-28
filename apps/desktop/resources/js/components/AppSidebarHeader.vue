@@ -35,7 +35,7 @@ const workspaceSectionStyle = computed(() => ({
         class="window-drag-region fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b border-sidebar-border/70 bg-sidebar"
     >
         <div
-            class="flex h-full shrink-0 items-center transition-[width] duration-200 ease-linear"
+            class="flex h-full shrink-0 items-center"
             :style="workspaceSectionStyle"
         >
             <SidebarMenu

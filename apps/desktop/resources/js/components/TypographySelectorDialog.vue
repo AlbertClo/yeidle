@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
                             type="button"
                             :aria-pressed="draftFontFamily === font.value"
                             :disabled="saving"
-                            class="relative min-h-20 cursor-pointer rounded-lg border p-3 text-left transition-colors hover:bg-accent"
+                            class="relative min-h-20 cursor-pointer rounded-lg border p-3 text-left hover:bg-accent"
                             :class="
                                 draftFontFamily === font.value
                                     ? 'border-ring ring-1 ring-ring'
@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
                                 :disabled="
                                     saving || draftFontSize <= MIN_FONT_SIZE
                                 "
-                                class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:bg-accent disabled:cursor-default disabled:opacity-40"
+                                class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md border hover:bg-accent disabled:cursor-default disabled:opacity-40"
                                 @click="adjustSize(-1)"
                             >
                                 <Minus class="size-4" />
@@ -194,7 +194,7 @@ onBeforeUnmount(() => {
                                 :disabled="
                                     saving || draftFontSize >= MAX_FONT_SIZE
                                 "
-                                class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors hover:bg-accent disabled:cursor-default disabled:opacity-40"
+                                class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md border hover:bg-accent disabled:cursor-default disabled:opacity-40"
                                 @click="adjustSize(1)"
                             >
                                 <Plus class="size-4" />

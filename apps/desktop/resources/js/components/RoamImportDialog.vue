@@ -308,7 +308,7 @@ function openImportedWorkspace(): void {
                             role="tab"
                             :aria-selected="importSource === source.id"
                             :disabled="busy"
-                            class="rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                            class="rounded-md px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
                             :class="{
                                 'bg-accent font-medium text-accent-foreground':
                                     importSource === source.id,

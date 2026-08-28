@@ -86,7 +86,7 @@ const user = computed(() => page.props.auth.user);
                             <Link
                                 :href="send()"
                                 as="button"
-                                class="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
+                                class="text-foreground underline decoration-neutral-300 underline-offset-4 hover:decoration-current! dark:decoration-neutral-500"
                             >
                                 Click here to resend the verification email.
                             </Link>
@@ -108,19 +108,12 @@ const user = computed(() => page.props.auth.user);
                             >Save</Button
                         >
 
-                        <Transition
-                            enter-active-class="transition ease-in-out"
-                            enter-from-class="opacity-0"
-                            leave-active-class="transition ease-in-out"
-                            leave-to-class="opacity-0"
+                        <p
+                            v-show="recentlySuccessful"
+                            class="text-sm text-neutral-600"
                         >
-                            <p
-                                v-show="recentlySuccessful"
-                                class="text-sm text-neutral-600"
-                            >
-                                Saved.
-                            </p>
-                        </Transition>
+                            Saved.
+                        </p>
                     </div>
                 </Form>
             </div>

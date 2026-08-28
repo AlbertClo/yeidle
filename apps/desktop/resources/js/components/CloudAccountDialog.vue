@@ -404,7 +404,7 @@ onBeforeUnmount(() => {
             <button
                 type="button"
                 aria-label="Close"
-                class="absolute top-2 right-2 z-10 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background focus:outline-hidden"
+                class="absolute top-2 right-2 z-10 rounded-xs opacity-70 hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background focus:outline-hidden"
                 @click="closeDialog"
             >
                 <X class="size-4" />

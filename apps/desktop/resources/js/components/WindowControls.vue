@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
     >
         <button
             type="button"
-            class="inline-flex h-full w-10 items-center justify-center text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+            class="inline-flex h-full w-10 items-center justify-center text-foreground/80 hover:bg-accent hover:text-foreground focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
             aria-label="Minimize window"
             title="Minimize"
             @click="minimize"
@@ -67,7 +67,7 @@ onBeforeUnmount(() => {
         </button>
         <button
             type="button"
-            class="inline-flex h-full w-10 items-center justify-center text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+            class="inline-flex h-full w-10 items-center justify-center text-foreground/80 hover:bg-accent hover:text-foreground focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
             :aria-label="isMaximized ? 'Restore window' : 'Maximize window'"
             :title="isMaximized ? 'Restore' : 'Maximize'"
             @click="toggleMaximize"
@@ -77,7 +77,7 @@ onBeforeUnmount(() => {
         </button>
         <button
             type="button"
-            class="inline-flex h-full w-10 items-center justify-center text-foreground/80 transition-colors hover:bg-red-600 hover:text-white focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+            class="inline-flex h-full w-10 items-center justify-center text-foreground/80 hover:bg-red-600 hover:text-white focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
             aria-label="Close window"
             title="Close"
             @click="close"

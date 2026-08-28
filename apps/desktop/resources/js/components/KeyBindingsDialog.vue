@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <TooltipProvider :delay-duration="300">
+    <TooltipProvider>
         <Dialog v-model:open="isOpen">
             <DialogContent class="sm:max-w-2xl">
                 <DialogHeader>
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
 
                         <button
                             type="button"
-                            class="flex h-9 cursor-pointer items-center justify-center rounded-md border bg-background px-3 text-sm transition-colors outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            class="flex h-9 cursor-pointer items-center justify-center rounded-md border bg-background px-3 text-sm outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                             :class="
                                 recording === definition.id
                                     ? 'border-ring ring-[3px] ring-ring/50'

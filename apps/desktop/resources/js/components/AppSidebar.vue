@@ -118,7 +118,7 @@ onBeforeUnmount(() => {
             <button
                 type="button"
                 aria-label="About Yeidle"
-                class="block w-fit cursor-pointer text-sidebar-foreground opacity-20 transition-[color,opacity] duration-300 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                class="block w-fit cursor-pointer text-sidebar-foreground opacity-20 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
                 @click="aboutOpen = true"
             >
                 <YeidleWordmark class="h-auto w-18" />

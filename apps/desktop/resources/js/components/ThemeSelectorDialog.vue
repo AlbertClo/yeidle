@@ -93,7 +93,7 @@ onBeforeUnmount(() => {
                             type="button"
                             :aria-pressed="themePreference === theme.value"
                             :disabled="saving"
-                            class="relative cursor-pointer rounded-lg border p-3 text-left transition-colors hover:bg-accent"
+                            class="relative cursor-pointer rounded-lg border p-3 text-left hover:bg-accent"
                             :class="
                                 themePreference === theme.value
                                     ? 'border-ring ring-1 ring-ring'

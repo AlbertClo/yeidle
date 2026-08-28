@@ -205,7 +205,7 @@ function modifiedDate(page: Node): string {
             <button
                 v-if="themeSetupRequired"
                 type="button"
-                class="flex w-full cursor-pointer items-center gap-4 rounded-lg border border-border p-5 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
+                class="flex w-full cursor-pointer items-center gap-4 rounded-lg border border-border p-5 text-left hover:bg-accent hover:text-accent-foreground"
                 @click="openThemeSelector"
             >
                 <span
@@ -227,7 +227,7 @@ function modifiedDate(page: Node): string {
             >
                 <button
                     type="button"
-                    class="flex cursor-pointer items-center gap-3 border-b p-5 text-left transition-colors hover:bg-accent hover:text-accent-foreground sm:border-r sm:border-b-0"
+                    class="flex cursor-pointer items-center gap-3 border-b p-5 text-left hover:bg-accent hover:text-accent-foreground sm:border-r sm:border-b-0"
                     :class="{
                         'bg-accent text-accent-foreground': !localWorkspace,
                     }"
@@ -251,7 +251,7 @@ function modifiedDate(page: Node): string {
                 </button>
                 <button
                     type="button"
-                    class="flex cursor-pointer items-center gap-3 p-5 text-left transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    class="flex cursor-pointer items-center gap-3 p-5 text-left hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     :aria-pressed="localWorkspace"
                     :disabled="storageSaving || !localWorkspace"
                     @click="saveStorageChoice('local')"
