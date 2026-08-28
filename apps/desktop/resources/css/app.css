@@ -251,7 +251,7 @@ html {
 :root[data-theme='catppuccin-latte'] {
     --theme-background: #eff1f5;
     --theme-foreground: #4c4f69;
-    --theme-surface: #e6e9ef;
+    --theme-surface: #dce0e8;
     --theme-muted: #dce0e8;
     --theme-muted-foreground: #6c6f85;
     --theme-border: #ccd0da;
@@ -335,7 +335,7 @@ html {
 :root[data-theme='solarized-light'] {
     --theme-background: #fdf6e3;
     --theme-foreground: #657b83;
-    --theme-surface: #eee8d5;
+    --theme-surface: #e2dcc8;
     --theme-muted: #f5efdc;
     --theme-muted-foreground: #839496;
     --theme-border: #d8d2c0;

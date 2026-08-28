@@ -15,7 +15,7 @@ export const THEME_OPTIONS = [
         value: 'catppuccin-latte',
         label: 'Catppuccin Latte',
         dark: false,
-        preview: ['#eff1f5', '#e6e9ef', '#4c4f69', '#1e66f5'],
+        preview: ['#eff1f5', '#dce0e8', '#4c4f69', '#1e66f5'],
     },
     {
         value: 'gruvbox-light',
@@ -27,7 +27,7 @@ export const THEME_OPTIONS = [
         value: 'solarized-light',
         label: 'Solarized Light',
         dark: false,
-        preview: ['#fdf6e3', '#eee8d5', '#657b83', '#268bd2'],
+        preview: ['#fdf6e3', '#e2dcc8', '#657b83', '#268bd2'],
     },
     {
         value: 'paper',
