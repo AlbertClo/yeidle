@@ -104,7 +104,7 @@
     --primary-foreground: hsl(0 0% 98%);
     --secondary: hsl(0 0% 92.1%);
     --secondary-foreground: hsl(0 0% 9%);
-    --muted: hsl(0 0% 96.1%);
+    --muted: hsl(0, 0%, 88%);
     --muted-foreground: hsl(0 0% 45.1%);
     --accent: hsl(0 0% 96.1%);
     --accent-foreground: hsl(0 0% 9%);
@@ -226,7 +226,7 @@ html {
 :root[data-theme='blush'] {
     --theme-background: #fff7fb;
     --theme-foreground: #2a1726;
-    --theme-surface: #f4d9e6;
+    --theme-surface: #ffd8ed;
     --theme-muted: #ffd6ec;
     --theme-muted-foreground: #7d6173;
     --theme-border: #f3b5d6;
@@ -252,7 +252,7 @@ html {
     --theme-background: #eff1f5;
     --theme-foreground: #4c4f69;
     --theme-surface: #dce0e8;
-    --theme-muted: #dce0e8;
+    --theme-muted: #d3d9e3;
     --theme-muted-foreground: #6c6f85;
     --theme-border: #ccd0da;
     --theme-accent: #1e66f5;
@@ -264,7 +264,7 @@ html {
     --theme-background: #282828;
     --theme-foreground: #ebdbb2;
     --theme-surface: #3c3836;
-    --theme-muted: #32302f;
+    --theme-muted: #413e3d;
     --theme-muted-foreground: #a89984;
     --theme-border: #504945;
     --theme-accent: #83a598;
@@ -276,7 +276,7 @@ html {
     --theme-background: #fbf1c7;
     --theme-foreground: #3c3836;
     --theme-surface: #ebdbb2;
-    --theme-muted: #f2e5bc;
+    --theme-muted: #ded2ae;
     --theme-muted-foreground: #7c6f64;
     --theme-border: #d5c4a1;
     --theme-accent: #076678;
@@ -288,7 +288,7 @@ html {
     --theme-background: #1a1b26;
     --theme-foreground: #c0caf5;
     --theme-surface: #24283b;
-    --theme-muted: #1f2335;
+    --theme-muted: #282e44;
     --theme-muted-foreground: #a9b1d6;
     --theme-border: #414868;
     --theme-accent: #7aa2f7;
@@ -300,7 +300,7 @@ html {
     --theme-background: #160b2d;
     --theme-foreground: #f7f1ff;
     --theme-surface: #271344;
-    --theme-muted: #1d1034;
+    --theme-muted: #301d52;
     --theme-muted-foreground: #b9a7d0;
     --theme-border: #5c2a82;
     --theme-accent: #fcee0a;
@@ -312,7 +312,7 @@ html {
     --theme-background: #2e3440;
     --theme-foreground: #eceff4;
     --theme-surface: #3b4252;
-    --theme-muted: #353b49;
+    --theme-muted: #464e60;
     --theme-muted-foreground: #d8dee9;
     --theme-border: #4c566a;
     --theme-accent: #88c0d0;
@@ -324,7 +324,7 @@ html {
     --theme-background: #002b36;
     --theme-foreground: #839496;
     --theme-surface: #073642;
-    --theme-muted: #073642;
+    --theme-muted: #133a44;
     --theme-muted-foreground: #586e75;
     --theme-border: #335d63;
     --theme-accent: #268bd2;
@@ -336,7 +336,7 @@ html {
     --theme-background: #fdf6e3;
     --theme-foreground: #657b83;
     --theme-surface: #e2dcc8;
-    --theme-muted: #f5efdc;
+    --theme-muted: #e0dac6;
     --theme-muted-foreground: #839496;
     --theme-border: #d8d2c0;
     --theme-accent: #268bd2;
@@ -348,7 +348,7 @@ html {
     --theme-background: #193549;
     --theme-foreground: #ffffff;
     --theme-surface: #1f4662;
-    --theme-muted: #122738;
+    --theme-muted: #162e41;
     --theme-muted-foreground: #aaaaaa;
     --theme-border: #234e6d;
     --theme-accent: #ffc600;
@@ -374,7 +374,7 @@ html {
     --theme-background: #f7f3ea;
     --theme-foreground: #282a26;
     --theme-surface: #d9dfcf;
-    --theme-muted: #eee8dc;
+    --theme-muted: #e0d8c7;
     --theme-muted-foreground: #6f7168;
     --theme-border: #d5d0c4;
     --theme-accent: #66735a;
