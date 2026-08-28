@@ -1,3 +1,4 @@
+import { router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { loadKeyBindings } from '@/stores/keyBindings';
 import { loadWorkspaceState, workspaceState } from '@/stores/workspaces';
@@ -41,6 +42,19 @@ export type AuthorizationResponse = {
 export const cloudAccount = ref<CloudAccountState | null>(null);
 
 let accountRequest: Promise<CloudAccountState> | null = null;
+
+async function reconcileWorkspaceState(): Promise<void> {
+    const previousWorkspaceId = workspaceState.value?.active_workspace_id;
+
+    await loadWorkspaceState(true);
+
+    if (
+        previousWorkspaceId !== undefined &&
+        workspaceState.value?.active_workspace_id !== previousWorkspaceId
+    ) {
+        router.visit('/pages', { replace: true });
+    }
+}
 
 async function json<T>(response: Response): Promise<T> {
     const payload = (await response.json().catch(() => null)) as
@@ -120,7 +134,7 @@ export async function completeCloudSignIn(): Promise<AuthorizationResponse> {
 
     if (payload.status === 'approved') {
         cloudAccount.value = payload as CloudAccountState;
-        await Promise.all([loadWorkspaceState(true), loadKeyBindings(true)]);
+        await Promise.all([reconcileWorkspaceState(), loadKeyBindings(true)]);
     } else if (payload.status === 'expired') {
         await loadCloudAccount(true);
     }
@@ -135,7 +149,7 @@ export async function refreshCloudAccount(): Promise<CloudAccountState> {
     });
     const state = await json<CloudAccountState>(response);
     cloudAccount.value = state;
-    await Promise.all([loadWorkspaceState(true), loadKeyBindings(true)]);
+    await Promise.all([reconcileWorkspaceState(), loadKeyBindings(true)]);
 
     return state;
 }
@@ -147,7 +161,7 @@ export async function syncActiveCloudWorkspace(): Promise<void> {
     });
 
     await json<{ synced: boolean }>(response);
-    await loadWorkspaceState(true);
+    await reconcileWorkspaceState();
 }
 
 export async function enableWorkspaceCloudSync(

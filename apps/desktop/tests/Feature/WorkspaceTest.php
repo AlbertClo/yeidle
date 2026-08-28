@@ -260,6 +260,72 @@ class WorkspaceTest extends TestCase
         $this->assertArrayNotHasKey('cloud_workspace_id', $workspace);
     }
 
+    public function test_cloud_catalog_hides_inaccessible_workspaces_and_selects_another_workspace(): void
+    {
+        $localWorkspace = $this->workspaces->active();
+        $cloudWorkspaceId = '00000000-0000-7000-8000-000000000122';
+        $this->workspaces->syncCloudCatalog('user-1', [[
+            'id' => $cloudWorkspaceId,
+            'name' => 'Revoked workspace',
+            'role' => 'editor',
+            'owned' => false,
+        ]]);
+        $cloudWorkspace = $this->workspaces->find($cloudWorkspaceId);
+        $cloudDatabasePath = $this->workspaces->databasePath($cloudWorkspace);
+        $cloudStoragePath = $this->workspaces->storagePath($cloudWorkspace);
+        mkdir($cloudStoragePath, 0700, true);
+        file_put_contents($cloudStoragePath.'/kept.txt', 'kept');
+        $this->workspaces->activate($cloudWorkspaceId);
+
+        $state = $this->workspaces->syncCloudCatalog('user-1', []);
+
+        $this->assertSame($localWorkspace['id'], $state['active_workspace_id']);
+        $this->assertSame([$localWorkspace['id']], collect($state['workspaces'])->pluck('id')->all());
+        $this->assertFileExists($cloudDatabasePath);
+        $this->assertFileExists($cloudStoragePath.'/kept.txt');
+    }
+
+    public function test_cloud_catalog_creates_personal_when_no_accessible_or_local_workspace_remains(): void
+    {
+        $initialWorkspace = $this->workspaces->active();
+        $cloudWorkspaceId = '00000000-0000-7000-8000-000000000123';
+        $this->workspaces->syncCloudCatalog('user-1', [[
+            'id' => $cloudWorkspaceId,
+            'name' => 'Only cloud workspace',
+            'role' => 'owner',
+            'owned' => true,
+        ]]);
+        $this->workspaces->delete($initialWorkspace['id']);
+        $this->workspaces->activate($cloudWorkspaceId);
+
+        $state = $this->workspaces->syncCloudCatalog('user-1', []);
+        $replacement = $state['workspaces'][0];
+
+        $this->assertCount(1, $state['workspaces']);
+        $this->assertNotSame($cloudWorkspaceId, $replacement['id']);
+        $this->assertSame('Personal', $replacement['name']);
+        $this->assertSame('local', $replacement['cloud_status']);
+        $this->assertSame($replacement['id'], $state['active_workspace_id']);
+        $this->assertFileExists($this->workspaces->databasePath($replacement));
+    }
+
+    public function test_cloud_catalog_keeps_shared_workspaces_the_account_can_access(): void
+    {
+        $sharedWorkspaceId = '00000000-0000-7000-8000-000000000124';
+
+        $state = $this->workspaces->syncCloudCatalog('user-1', [[
+            'id' => $sharedWorkspaceId,
+            'name' => 'Shared workspace',
+            'role' => 'viewer',
+            'owned' => false,
+        ]]);
+        $sharedWorkspace = collect($state['workspaces'])->firstWhere('id', $sharedWorkspaceId);
+
+        $this->assertNotNull($sharedWorkspace);
+        $this->assertSame('viewer', $sharedWorkspace['cloud_role']);
+        $this->assertFalse($sharedWorkspace['cloud_owned']);
+    }
+
     public function test_version_two_registry_adopts_the_cloud_id_without_losing_local_files(): void
     {
         $workspace = $this->workspaces->create('Existing Sync');

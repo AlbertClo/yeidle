@@ -210,18 +210,19 @@ final class CloudAccountService
             throw new RuntimeException('Could not refresh cloud workspaces.');
         }
 
+        $workspaces = $workspaceResponse->json('workspaces');
+        $this->store->updateWorkspaces($workspaces);
+        $this->workspaces->syncCloudCatalog($account['user']['id'], $workspaces);
+
         if (! $preferenceResponse->successful()) {
             throw new RuntimeException('Could not refresh account preferences.');
         }
 
-        $workspaces = $workspaceResponse->json('workspaces');
         $preferences = [
             'key_bindings' => $preferenceResponse->json('key_bindings', []),
         ];
-        $this->store->updateWorkspaces($workspaces);
         $this->store->updatePreferences($preferences);
         $this->keyBindings->importCloud($preferences['key_bindings']);
-        $this->workspaces->syncCloudCatalog($account['user']['id'], $workspaces);
 
         return $this->status();
     }
@@ -233,6 +234,15 @@ final class CloudAccountService
 
         if ($workspace['cloud_status'] === 'local') {
             return ['synced' => false, 'reason' => 'local'];
+        }
+
+        if (! collect($account['workspaces'])->contains('id', $workspace['id'])) {
+            $this->workspaces->syncCloudCatalog(
+                $account['user']['id'],
+                $account['workspaces'],
+            );
+
+            return ['synced' => false, 'reason' => 'unavailable'];
         }
 
         $this->workspaces->markCloudStatus($workspace['id'], 'syncing');

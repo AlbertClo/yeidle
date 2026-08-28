@@ -142,9 +142,9 @@ final class WorkspaceIndex
     }
 
     /**
-     * Make every cloud workspace visible locally without downloading its
-     * contents. A workspace has one UUID everywhere, so catalog entries are
-     * matched only by ID and never by name or whichever workspace is active.
+     * Reconcile the local cloud catalog with the account's authoritative list
+     * without downloading workspace contents. Entries no longer accessible to
+     * the account are hidden, but their database and media remain on disk.
      *
      * @param  list<array{id: string, name: string, role?: string, owned?: bool}>  $cloudWorkspaces
      */
@@ -159,7 +159,16 @@ final class WorkspaceIndex
                 || trim($cloudWorkspace['name']) === '') {
                 throw new RuntimeException('The cloud workspace catalog is invalid.');
             }
+        }
 
+        $accessibleWorkspaceIds = array_column($cloudWorkspaces, 'id');
+        $state['workspaces'] = array_values(array_filter(
+            $state['workspaces'],
+            fn (array $workspace): bool => $workspace['cloud_status'] === 'local'
+                || in_array($workspace['id'], $accessibleWorkspaceIds, true),
+        ));
+
+        foreach ($cloudWorkspaces as $cloudWorkspace) {
             $index = collect($state['workspaces'])->search(
                 fn (array $workspace): bool => $workspace['id'] === $cloudWorkspace['id'],
             );
@@ -180,6 +189,18 @@ final class WorkspaceIndex
             $state['workspaces'][$index]['cloud_role'] = $cloudWorkspace['role'] ?? 'member';
             $state['workspaces'][$index]['cloud_owned'] = $cloudWorkspace['owned'] ?? false;
             $state['workspaces'][$index]['cloud_error'] = null;
+        }
+
+        if ($state['workspaces'] === []) {
+            $replacementId = (string) Str::uuid7();
+            $state['workspaces'][] = $this->createWorkspaceRecord(
+                $replacementId,
+                'Personal',
+            );
+        }
+
+        if (! collect($state['workspaces'])->contains('id', $state['active_workspace_id'])) {
+            $state['active_workspace_id'] = $state['workspaces'][0]['id'];
         }
 
         $this->write($state);

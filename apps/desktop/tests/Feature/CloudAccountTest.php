@@ -302,6 +302,70 @@ class CloudAccountTest extends TestCase
         $this->assertSame($workspaceId, $this->workspaces->find($workspaceId)['id']);
     }
 
+    public function test_active_cloud_workspace_missing_from_the_account_catalog_is_not_synced(): void
+    {
+        $workspaceId = '00000000-0000-7000-8000-000000000233';
+        $catalogWorkspace = [
+            'id' => $workspaceId,
+            'name' => 'No longer shared',
+            'role' => 'editor',
+            'owned' => false,
+        ];
+        $this->workspaces->syncCloudCatalog('previous-user', [$catalogWorkspace]);
+        $this->workspaces->activate($workspaceId);
+        $this->accountStore->saveAccount([
+            'cloud_url' => 'https://cloud.yeidle.test',
+            'token' => '1|desktop-token',
+            'user' => ['id' => '42', 'name' => 'Albert', 'email' => 'albert@example.com'],
+            'workspaces' => [],
+            'preferences' => ['key_bindings' => []],
+        ]);
+        Http::fake();
+
+        $this->postJson('/api/account/sync-active-workspace')
+            ->assertSuccessful()
+            ->assertJsonPath('synced', false)
+            ->assertJsonPath('reason', 'unavailable');
+
+        Http::assertNothingSent();
+        $state = $this->workspaces->state();
+        $this->assertNotSame($workspaceId, $state['active_workspace_id']);
+        $this->assertFalse(collect($state['workspaces'])->contains('id', $workspaceId));
+    }
+
+    public function test_account_refresh_hides_revoked_workspaces_even_if_preferences_fail(): void
+    {
+        $workspaceId = '00000000-0000-7000-8000-000000000234';
+        $catalogWorkspace = [
+            'id' => $workspaceId,
+            'name' => 'No longer available',
+            'role' => 'editor',
+            'owned' => false,
+        ];
+        $this->workspaces->syncCloudCatalog('42', [$catalogWorkspace]);
+        $this->workspaces->activate($workspaceId);
+        $this->accountStore->saveAccount([
+            'cloud_url' => 'https://cloud.yeidle.test',
+            'token' => '1|desktop-token',
+            'user' => ['id' => '42', 'name' => 'Albert', 'email' => 'albert@example.com'],
+            'workspaces' => [$catalogWorkspace],
+            'preferences' => ['key_bindings' => []],
+        ]);
+        Http::fake([
+            'https://cloud.yeidle.test/api/workspaces' => Http::response(['workspaces' => []]),
+            'https://cloud.yeidle.test/api/user/preferences' => Http::response([], 500),
+        ]);
+
+        $this->postJson('/api/account/refresh')
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Could not refresh account preferences.');
+
+        $state = $this->workspaces->state();
+        $this->assertNotSame($workspaceId, $state['active_workspace_id']);
+        $this->assertFalse(collect($state['workspaces'])->contains('id', $workspaceId));
+        $this->assertSame([], $this->accountStore->account()['workspaces']);
+    }
+
     public function test_signing_out_keeps_the_last_cloud_identity_for_offline_preferences(): void
     {
         $this->accountStore->saveAccount([
