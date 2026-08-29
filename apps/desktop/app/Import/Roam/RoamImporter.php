@@ -32,8 +32,14 @@ final class RoamImporter
         $mediaByUrl = [];
 
         if (! $dryRun && $downloadAttachments) {
+            $attachmentUrls = $export->attachmentUrls();
+
+            if ($progress) {
+                $progress('attachments', 0, count($attachmentUrls));
+            }
+
             $mediaByUrl = $this->attachments->import(
-                $export->attachmentUrls(),
+                $attachmentUrls,
                 $report,
                 $clock,
                 $workspaceId,
@@ -64,6 +70,10 @@ final class RoamImporter
 
         $operations = [];
         $records = $export->records();
+
+        if ($progress) {
+            $progress('nodes', 0, count($records));
+        }
 
         foreach ($records as $index => $record) {
             if ($record['parent_id'] === null) {

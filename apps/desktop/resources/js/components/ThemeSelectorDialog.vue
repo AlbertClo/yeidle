@@ -2,6 +2,7 @@
 import { Check } from 'lucide-vue-next';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -93,7 +94,7 @@ onBeforeUnmount(() => {
                             type="button"
                             :aria-pressed="themePreference === theme.value"
                             :disabled="saving"
-                            class="relative cursor-pointer rounded-lg border p-3 text-left hover:bg-accent"
+                            class="relative flex cursor-pointer flex-col items-stretch justify-start rounded-lg border p-3 text-left hover:bg-accent"
                             :class="
                                 themePreference === theme.value
                                     ? 'border-ring ring-1 ring-ring'
@@ -111,7 +112,7 @@ onBeforeUnmount(() => {
                                     :style="{ backgroundColor: color }"
                                 />
                             </div>
-                            <div class="pr-5 text-sm font-medium">
+                            <div class="pr-5 text-xs font-medium">
                                 {{ theme.label }}
                             </div>
                             <Check
@@ -124,7 +125,7 @@ onBeforeUnmount(() => {
 
                 <section
                     aria-label="Theme preview"
-                    class="min-h-96 overflow-hidden rounded-lg border bg-background shadow-sm"
+                    class="relative min-h-96 overflow-hidden rounded-lg border bg-background shadow-sm"
                 >
                     <div
                         class="flex h-11 items-center gap-2 border-b px-4 text-sm text-muted-foreground"
@@ -138,7 +139,7 @@ onBeforeUnmount(() => {
                         <span class="text-foreground">Theme preview</span>
                     </div>
 
-                    <div class="px-8 py-7">
+                    <div class="px-8 pt-7 pb-20">
                         <p
                             class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase"
                         >
@@ -198,6 +199,16 @@ onBeforeUnmount(() => {
                             </div>
                         </div>
                     </div>
+
+                    <Button
+                        type="button"
+                        variant="outline"
+                        class="absolute right-4 bottom-4"
+                        :disabled="saving"
+                        @click="isOpen = false"
+                    >
+                        Close
+                    </Button>
                 </section>
             </div>
         </DialogContent>

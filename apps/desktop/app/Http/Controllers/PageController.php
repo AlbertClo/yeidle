@@ -4,12 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Node;
 use App\Models\PageVisit;
+use App\Services\NodeTreeLoader;
 use App\Support\Shell;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PageController extends Controller
 {
+    public function __construct(
+        private NodeTreeLoader $trees,
+    ) {}
+
     public function index(): JsonResponse
     {
         $pages = Node::pages()
@@ -43,18 +48,9 @@ class PageController extends Controller
     {
         abort_if($node->isSystemNode(), 404);
 
-        $node->load('children');
-        $this->loadChildrenRecursive($node);
+        $this->trees->load($node);
 
         return response()->json($node);
-    }
-
-    private function loadChildrenRecursive(Node $node): void
-    {
-        foreach ($node->children as $child) {
-            $child->load('children');
-            $this->loadChildrenRecursive($child);
-        }
     }
 
     public function recent(): JsonResponse

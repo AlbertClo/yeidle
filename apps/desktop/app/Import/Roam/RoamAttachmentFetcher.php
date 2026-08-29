@@ -13,7 +13,14 @@ class RoamAttachmentFetcher
         $response = Http::connectTimeout(15)
             ->timeout(300)
             ->retry(2, 500)
-            ->withOptions(['sink' => $target])
+            ->withOptions([
+                'sink' => $target,
+                'progress' => static function (): void {
+                    if (connection_aborted()) {
+                        throw new RoamImportCancelled;
+                    }
+                },
+            ])
             ->get($url);
 
         if (! $response->successful()) {

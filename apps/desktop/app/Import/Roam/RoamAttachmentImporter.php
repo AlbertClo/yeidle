@@ -37,10 +37,6 @@ final class RoamAttachmentImporter
         foreach ($urls as $index => $url) {
             $temporary = null;
 
-            if ($progress) {
-                $progress($index + 1, count($urls));
-            }
-
             try {
                 $this->assertAllowedUrl($url);
                 $canonicalUrl = $this->canonicalUrl($url);
@@ -117,6 +113,10 @@ final class RoamAttachmentImporter
                     $this->safeName($url),
                     $exception->getMessage(),
                 );
+            }
+
+            if ($progress) {
+                $progress($index + 1, count($urls));
             }
         }
 

@@ -22,6 +22,17 @@ type ImportResult = {
     has_failures: boolean;
 };
 
+type ImportProgress = {
+    phase: 'preparing' | 'attachments' | 'nodes';
+    current: number;
+    total: number;
+};
+
+type ImportStreamEvent =
+    | ({ type: 'progress' } & ImportProgress)
+    | { type: 'complete'; result: ImportResult }
+    | { type: 'error'; message: string };
+
 type ImportSource = 'obsidian' | 'notion' | 'roam' | 'logseq' | 'markdown';
 
 const importSources: { id: ImportSource; label: string }[] = [
@@ -51,7 +62,11 @@ const newWorkspaceName = ref('');
 const downloadAttachments = ref(true);
 const phase = ref<'idle' | 'uploading' | 'importing' | 'complete'>('idle');
 const uploadProgress = ref(0);
+const importProgress = ref<ImportProgress | null>(null);
+const importAbortController = ref<AbortController | null>(null);
+const stopping = ref(false);
 const error = ref<string | null>(null);
+const notice = ref<string | null>(null);
 const result = ref<ImportResult | null>(null);
 const selectedImportSource = computed(
     () =>
@@ -69,6 +84,37 @@ const canImport = computed(
         (destination.value !== '__new__' ||
             newWorkspaceName.value.trim() !== ''),
 );
+
+const progressPercentage = computed<number | null>(() => {
+    if (phase.value === 'uploading') {
+        return uploadProgress.value;
+    }
+
+    if (
+        phase.value === 'importing' &&
+        importProgress.value !== null &&
+        importProgress.value.total > 0
+    ) {
+        return Math.round(
+            (importProgress.value.current / importProgress.value.total) * 100,
+        );
+    }
+
+    return null;
+});
+
+const importProgressLabel = computed(() => {
+    const progress = importProgress.value;
+
+    if (progress === null || progress.phase === 'preparing') {
+        return 'Preparing import…';
+    }
+
+    const item = progress.phase === 'attachments' ? 'attachments' : 'nodes';
+    const percentage = progressPercentage.value ?? 0;
+
+    return `Importing ${item} — ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()} (${percentage}%)`;
+});
 
 const reportRows = computed(() => {
     if (result.value === null) {
@@ -105,7 +151,11 @@ watch(
         downloadAttachments.value = true;
         phase.value = 'idle';
         uploadProgress.value = 0;
+        importProgress.value = null;
+        importAbortController.value = null;
+        stopping.value = false;
         error.value = null;
+        notice.value = null;
         result.value = null;
     },
 );
@@ -169,6 +219,74 @@ async function cancelUpload(uploadId: string): Promise<void> {
     }).catch(() => null);
 }
 
+function isAbortError(reason: unknown): boolean {
+    return reason instanceof Error && reason.name === 'AbortError';
+}
+
+async function streamedImportResult(response: Response): Promise<ImportResult> {
+    if (response.body === null) {
+        throw new Error('The import progress stream was unavailable.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let completed: ImportResult | null = null;
+
+    const processLine = (line: string): void => {
+        const trimmed = line.trim();
+
+        if (trimmed === '') {
+            return;
+        }
+
+        const event = JSON.parse(trimmed) as ImportStreamEvent;
+
+        if (event.type === 'progress') {
+            importProgress.value = {
+                phase: event.phase,
+                current: event.current,
+                total: event.total,
+            };
+        } else if (event.type === 'complete') {
+            completed = event.result;
+        } else if (event.type === 'error') {
+            throw new Error(event.message);
+        }
+    };
+
+    while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+            buffer += decoder.decode();
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        lines.forEach(processLine);
+    }
+
+    processLine(buffer);
+
+    if (completed === null) {
+        throw new Error('The import ended before it completed.');
+    }
+
+    return completed;
+}
+
+function stopImport(): void {
+    if (!busy.value || stopping.value) {
+        return;
+    }
+
+    stopping.value = true;
+    importAbortController.value?.abort();
+}
+
 async function importRoam(): Promise<void> {
     const selectedFile = file.value;
 
@@ -177,10 +295,15 @@ async function importRoam(): Promise<void> {
     }
 
     let uploadId: string | null = null;
+    const abortController = new AbortController();
 
     phase.value = 'uploading';
     uploadProgress.value = 0;
+    importProgress.value = null;
+    importAbortController.value = abortController;
+    stopping.value = false;
     error.value = null;
+    notice.value = null;
 
     try {
         const initialization = await responsePayload<{
@@ -198,6 +321,7 @@ async function importRoam(): Promise<void> {
                     filename: selectedFile.name,
                     size: selectedFile.size,
                 }),
+                signal: abortController.signal,
             }),
         );
         uploadId = initialization.upload_id;
@@ -220,6 +344,7 @@ async function importRoam(): Promise<void> {
                     method: 'POST',
                     headers: { Accept: 'application/json' },
                     body: form,
+                    signal: abortController.signal,
                 }),
             );
             uploadProgress.value = Math.round(
@@ -228,27 +353,35 @@ async function importRoam(): Promise<void> {
         }
 
         phase.value = 'importing';
-        result.value = await responsePayload<ImportResult>(
-            await fetch('/api/imports/roam/finish', {
-                method: 'POST',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    upload_id: uploadId,
-                    workspace_id:
-                        destination.value === '__new__'
-                            ? null
-                            : destination.value,
-                    new_workspace_name:
-                        destination.value === '__new__'
-                            ? newWorkspaceName.value.trim()
-                            : null,
-                    download_attachments: downloadAttachments.value,
-                }),
+        importProgress.value = {
+            phase: 'preparing',
+            current: 0,
+            total: 0,
+        };
+        const streamResponse = await fetch('/api/imports/roam/stream', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/x-ndjson, application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                upload_id: uploadId,
+                workspace_id:
+                    destination.value === '__new__' ? null : destination.value,
+                new_workspace_name:
+                    destination.value === '__new__'
+                        ? newWorkspaceName.value.trim()
+                        : null,
+                download_attachments: downloadAttachments.value,
             }),
-        );
+            signal: abortController.signal,
+        });
+
+        if (!streamResponse.ok) {
+            await responsePayload(streamResponse);
+        }
+
+        result.value = await streamedImportResult(streamResponse);
         emit('workspace-added', result.value.workspace);
         uploadId = null;
         phase.value = 'complete';
@@ -257,11 +390,26 @@ async function importRoam(): Promise<void> {
             await cancelUpload(uploadId);
         }
 
-        error.value =
-            reason instanceof Error
-                ? reason.message
-                : 'The Roam database could not be imported.';
+        if (isAbortError(reason)) {
+            notice.value =
+                destination.value === '__new__'
+                    ? 'Import stopped. The incomplete workspace was removed.'
+                    : 'Import stopped. Changes already written remain; run the same import again to finish.';
+        } else {
+            error.value =
+                reason instanceof Error
+                    ? reason.message
+                    : 'The Roam database could not be imported.';
+        }
+
         phase.value = 'idle';
+        importProgress.value = null;
+    } finally {
+        if (importAbortController.value === abortController) {
+            importAbortController.value = null;
+        }
+
+        stopping.value = false;
     }
 }
 
@@ -434,27 +582,28 @@ function openImportedWorkspace(): void {
 
                                 <div v-if="busy" class="grid gap-2">
                                     <div
-                                        class="flex items-center gap-2 text-sm"
+                                        class="flex items-center gap-2 text-sm tabular-nums"
+                                        aria-live="polite"
                                     >
                                         <LoaderCircle
-                                            class="size-4 animate-spin"
+                                            class="size-4 animate-spin will-change-transform"
                                         />
                                         <span v-if="phase === 'uploading'">
                                             Uploading export…
                                             {{ uploadProgress }}%
                                         </span>
                                         <span v-else>
-                                            Importing pages and attachments…
+                                            {{ importProgressLabel }}
                                         </span>
                                     </div>
                                     <div
                                         class="h-1.5 overflow-hidden rounded-full bg-muted"
                                     >
                                         <div
-                                            v-if="phase === 'uploading'"
+                                            v-if="progressPercentage !== null"
                                             class="h-full bg-primary transition-[width]"
                                             :style="{
-                                                width: `${uploadProgress}%`,
+                                                width: `${progressPercentage}%`,
                                             }"
                                         />
                                         <div
@@ -467,6 +616,14 @@ function openImportedWorkspace(): void {
                                         and file downloads can take several
                                         minutes.
                                     </p>
+                                </div>
+
+                                <div
+                                    v-if="notice"
+                                    class="rounded-md bg-muted p-3 text-sm text-muted-foreground"
+                                    role="status"
+                                >
+                                    {{ notice }}
                                 </div>
 
                                 <div
@@ -484,10 +641,20 @@ function openImportedWorkspace(): void {
                                     <Button
                                         type="button"
                                         variant="outline"
-                                        :disabled="busy"
-                                        @click="updateOpen(false)"
+                                        :disabled="stopping"
+                                        @click="
+                                            busy
+                                                ? stopImport()
+                                                : updateOpen(false)
+                                        "
                                     >
-                                        Cancel
+                                        {{
+                                            stopping
+                                                ? 'Stopping…'
+                                                : busy
+                                                  ? 'Stop import'
+                                                  : 'Cancel'
+                                        }}
                                     </Button>
                                     <Button
                                         type="submit"
@@ -495,7 +662,7 @@ function openImportedWorkspace(): void {
                                     >
                                         <LoaderCircle
                                             v-if="busy"
-                                            class="animate-spin"
+                                            class="animate-spin will-change-transform"
                                         />
                                         <FileUp v-else />
                                         {{ busy ? 'Importing…' : 'Import' }}

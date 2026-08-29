@@ -5,6 +5,8 @@ namespace Tests\Feature\Import;
 use App\Import\Roam\RoamAttachmentFetcher;
 use App\Import\Roam\RoamContentConverter;
 use App\Import\Roam\RoamExport;
+use App\Import\Roam\RoamImportCancelled;
+use App\Import\Roam\RoamImporter;
 use App\Import\Roam\RoamImportReport;
 use App\Models\Media;
 use App\Models\Node;
@@ -114,6 +116,26 @@ class RoamImporterTest extends TestCase
         $this->assertSame(1, Media::count());
         $this->assertSame(8, Op::count());
         $this->assertSame(1, app(RoamAttachmentFetcher::class)->downloads);
+    }
+
+    public function test_progress_callback_can_stop_before_nodes_are_written(): void
+    {
+        try {
+            app(RoamImporter::class)->import(
+                $this->fixture,
+                downloadAttachments: false,
+                progress: function (string $phase, int $current): void {
+                    if ($phase === 'nodes' && $current === 0) {
+                        throw new RoamImportCancelled;
+                    }
+                },
+            );
+
+            $this->fail('The import should have been cancelled.');
+        } catch (RoamImportCancelled) {
+            $this->assertSame(0, Node::count());
+            $this->assertSame(0, Op::count());
+        }
     }
 
     public function test_deterministic_ids_are_namespaced_by_workspace(): void

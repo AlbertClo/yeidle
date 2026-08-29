@@ -34,6 +34,7 @@ Route::delete('account', [CloudAccountController::class, 'destroy']);
 Route::post('imports/roam/init', [RoamImportController::class, 'initialize']);
 Route::post('imports/roam/chunk', [RoamImportController::class, 'uploadChunk']);
 Route::post('imports/roam/finish', [RoamImportController::class, 'finish']);
+Route::post('imports/roam/stream', [RoamImportController::class, 'stream']);
 Route::delete('imports/roam/{uploadId}', [RoamImportController::class, 'cancel']);
 
 Route::post('sync/push', [SyncController::class, 'push']);

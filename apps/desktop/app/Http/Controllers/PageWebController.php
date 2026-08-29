@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Node;
 use App\Models\Op;
 use App\Models\PageVisit;
+use App\Services\NodeTreeLoader;
 use App\Support\PinNodes;
 use App\Support\PreferenceNodes;
 use App\Workspaces\WorkspaceIndex;
@@ -18,6 +19,7 @@ class PageWebController extends Controller
     public function __construct(
         private PinNodes $pins,
         private PreferenceNodes $preferences,
+        private NodeTreeLoader $trees,
     ) {}
 
     public function index(Request $request): Response
@@ -57,10 +59,7 @@ class PageWebController extends Controller
         // (idempotent) rather than silently missed.
         $syncCursor = (int) (Op::max('id') ?? 0);
 
-        $page->load('children');
-
-        // Recursively load all nested children
-        $this->loadChildrenRecursive($page);
+        $this->trees->load($page);
 
         $backlinks = $page->incomingLinks()
             ->with('sourceNode')
@@ -99,13 +98,5 @@ class PageWebController extends Controller
             'backlinks' => $backlinks,
             'syncCursor' => $syncCursor,
         ]);
-    }
-
-    private function loadChildrenRecursive(Node $node): void
-    {
-        foreach ($node->children as $child) {
-            $child->load('children');
-            $this->loadChildrenRecursive($child);
-        }
     }
 }

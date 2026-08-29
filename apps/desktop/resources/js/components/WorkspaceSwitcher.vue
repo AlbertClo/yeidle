@@ -910,7 +910,7 @@ onMounted(() => {
             <DialogContent>
                 <DialogHeader v-if="workspaceToShowOnDisk">
                     <DialogTitle>
-                        Show {{ workspaceToShowOnDisk.name }} on disk?
+                        Show {{ workspaceToShowOnDisk.name }} on disk
                     </DialogTitle>
                     <DialogDescription>
                         Use the buttons below to locate this workspace’s

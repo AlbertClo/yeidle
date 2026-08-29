@@ -97,6 +97,33 @@ class RoamImportApiTest extends TestCase
         $this->assertCount(2, $this->workspaces->all());
     }
 
+    public function test_stream_reports_preparation_node_progress_and_completion(): void
+    {
+        $uploadId = $this->upload(file_get_contents($this->fixture));
+
+        $response = $this->postJson('/api/imports/roam/stream', [
+            'upload_id' => $uploadId,
+            'workspace_id' => null,
+            'new_workspace_name' => 'Streamed Roam',
+            'download_attachments' => false,
+        ])->assertSuccessful();
+
+        $events = collect(explode("\n", trim($response->streamedContent())))
+            ->map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR));
+
+        $this->assertSame('preparing', $events->first()['phase']);
+        $this->assertTrue($events->contains(fn (array $event): bool => ($event['type'] ?? null) === 'progress'
+            && ($event['phase'] ?? null) === 'nodes'
+            && ($event['current'] ?? null) === 0
+            && ($event['total'] ?? null) === 7));
+        $this->assertTrue($events->contains(fn (array $event): bool => ($event['type'] ?? null) === 'progress'
+            && ($event['phase'] ?? null) === 'nodes'
+            && ($event['current'] ?? null) === 7
+            && ($event['total'] ?? null) === 7));
+        $this->assertSame('complete', $events->last()['type']);
+        $this->assertSame(7, $events->last()['result']['report']['Nodes written']);
+    }
+
     public function test_invalid_export_does_not_create_a_workspace(): void
     {
         $uploadId = $this->upload('{not valid json');

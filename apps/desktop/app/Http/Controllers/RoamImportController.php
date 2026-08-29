@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Import\Roam\RoamExport;
+use App\Import\Roam\RoamImportCancelled;
 use App\Import\Roam\RoamImporter;
 use App\Workspaces\WorkspaceIndex;
 use Illuminate\Http\JsonResponse;
@@ -12,6 +13,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class RoamImportController extends Controller
@@ -89,6 +91,98 @@ class RoamImportController extends Controller
 
     public function finish(Request $request): JsonResponse
     {
+        $validated = $this->validateImport($request);
+
+        try {
+            return response()->json($this->runImport($validated));
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'message' => $exception instanceof RuntimeException
+                    ? $exception->getMessage()
+                    : 'The Roam database could not be imported.',
+            ], 422);
+        }
+    }
+
+    public function stream(Request $request): StreamedResponse
+    {
+        $validated = $this->validateImport($request);
+
+        return response()->stream(function () use ($validated): void {
+            $previousIgnoreUserAbort = ignore_user_abort(true);
+            $emit = function (array $event): void {
+                echo json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
+
+                if (ob_get_level() > 0) {
+                    @ob_flush();
+                }
+
+                flush();
+
+                if (connection_aborted()) {
+                    throw new RoamImportCancelled;
+                }
+            };
+
+            try {
+                $emit([
+                    'type' => 'progress',
+                    'phase' => 'preparing',
+                    'current' => 0,
+                    'total' => 0,
+                ]);
+
+                $result = $this->runImport(
+                    $validated,
+                    fn (string $phase, int $current, int $total) => $emit([
+                        'type' => 'progress',
+                        'phase' => $phase,
+                        'current' => $current,
+                        'total' => $total,
+                    ]),
+                );
+
+                $emit(['type' => 'complete', 'result' => $result]);
+            } catch (RoamImportCancelled) {
+                // The client deliberately closed the stream. runImport has
+                // already removed an incomplete newly-created workspace.
+            } catch (Throwable $exception) {
+                report($exception);
+
+                if (! connection_aborted()) {
+                    $emit([
+                        'type' => 'error',
+                        'message' => $exception instanceof RuntimeException
+                            ? $exception->getMessage()
+                            : 'The Roam database could not be imported.',
+                    ]);
+                }
+            } finally {
+                ignore_user_abort((bool) $previousIgnoreUserAbort);
+            }
+        }, headers: [
+            'Cache-Control' => 'no-cache, no-store',
+            'Content-Type' => 'application/x-ndjson',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    public function cancel(string $uploadId): JsonResponse
+    {
+        if (Str::isUuid($uploadId)) {
+            File::deleteDirectory($this->uploadDirectory($uploadId));
+        }
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * @return array{upload_id: string, workspace_id: ?string, new_workspace_name: ?string, download_attachments: bool}
+     */
+    private function validateImport(Request $request): array
+    {
         $validated = $request->validate([
             'upload_id' => ['required', 'string', 'uuid'],
             'workspace_id' => ['nullable', 'string', 'uuid'],
@@ -104,8 +198,24 @@ class RoamImportController extends Controller
             ]);
         }
 
+        return [
+            'upload_id' => $validated['upload_id'],
+            'workspace_id' => $workspaceId,
+            'new_workspace_name' => $newWorkspaceName !== '' ? $newWorkspaceName : null,
+            'download_attachments' => $validated['download_attachments'],
+        ];
+    }
+
+    /**
+     * @param  array{upload_id: string, workspace_id: ?string, new_workspace_name: ?string, download_attachments: bool}  $validated
+     * @param  null|callable(string, int, int): void  $progress
+     * @return array{workspace: array, report: array<string, int>, warnings: list<string>, has_failures: bool}
+     */
+    private function runImport(array $validated, ?callable $progress = null): array
+    {
         $directory = $this->existingUploadDirectory($validated['upload_id']);
         $workspace = null;
+        $createdWorkspace = $validated['workspace_id'] === null;
 
         try {
             $exportPath = $this->assembleExport($directory);
@@ -114,15 +224,9 @@ class RoamImportController extends Controller
             // malformed file cannot leave an empty workspace behind.
             RoamExport::fromPath($exportPath, 'validation');
 
-            if ($workspaceId !== null) {
-                $workspace = $this->workspaces->find($workspaceId);
-            } else {
-                $workspace = $this->workspaces->create($newWorkspaceName);
-            }
-
-            if (! is_array($workspace)) {
-                throw new RuntimeException('The import workspace could not be created.');
-            }
+            $workspace = $validated['workspace_id'] !== null
+                ? $this->workspaces->find($validated['workspace_id'])
+                : $this->workspaces->create((string) $validated['new_workspace_name']);
 
             $this->workspaces->configureActiveConnection($workspace['id']);
 
@@ -130,35 +234,24 @@ class RoamImportController extends Controller
                 $exportPath,
                 downloadAttachments: $validated['download_attachments'],
                 workspaceId: $workspace['id'],
+                progress: $progress,
             );
 
-            return response()->json([
+            return [
                 'workspace' => $workspace,
                 'report' => $report->summary(),
                 'warnings' => $report->warnings,
                 'has_failures' => $report->hasFailures(),
-            ]);
-        } catch (Throwable $exception) {
-            report($exception);
+            ];
+        } catch (RoamImportCancelled $exception) {
+            if ($createdWorkspace && is_array($workspace)) {
+                $this->workspaces->delete($workspace['id']);
+            }
 
-            return response()->json(array_filter([
-                'message' => $exception instanceof RuntimeException
-                    ? $exception->getMessage()
-                    : 'The Roam database could not be imported.',
-                'workspace' => $workspace,
-            ]), 422);
+            throw $exception;
         } finally {
             File::deleteDirectory($directory);
         }
-    }
-
-    public function cancel(string $uploadId): JsonResponse
-    {
-        if (Str::isUuid($uploadId)) {
-            File::deleteDirectory($this->uploadDirectory($uploadId));
-        }
-
-        return response()->json(null, 204);
     }
 
     /** @return array{filename: string, size: int, total_chunks: int, created_at: string} */
