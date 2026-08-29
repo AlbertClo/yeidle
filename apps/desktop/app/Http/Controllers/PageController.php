@@ -48,9 +48,7 @@ class PageController extends Controller
     {
         abort_if($node->isSystemNode(), 404);
 
-        $this->trees->load($node);
-
-        return response()->json($node);
+        return response()->json($this->trees->load($node->id));
     }
 
     public function recent(): JsonResponse

@@ -2,66 +2,117 @@
 
 namespace App\Services;
 
-use App\Models\Node;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 final class NodeTreeLoader
 {
-    public function load(Node $root): Node
+    /**
+     * @return array{
+     *     id: string,
+     *     parent_id: ?string,
+     *     position: string,
+     *     content: string,
+     *     tiptap_content: mixed,
+     *     is_checked: ?bool,
+     *     children: array
+     * }
+     */
+    public function load(string $rootId): array
     {
         $rows = DB::select(<<<'SQL'
-            WITH RECURSIVE descendants AS (
-                SELECT nodes.*
+            WITH RECURSIVE subtree AS (
+                SELECT id, parent_id, position, content, tiptap_content, is_checked
                 FROM nodes
-                WHERE nodes.parent_id = ?
-                    AND nodes.deleted_at IS NULL
+                WHERE id = ?
+                    AND deleted_at IS NULL
 
                 UNION
 
-                SELECT nodes.*
+                SELECT nodes.id, nodes.parent_id, nodes.position, nodes.content,
+                    nodes.tiptap_content, nodes.is_checked
                 FROM nodes
-                INNER JOIN descendants ON nodes.parent_id = descendants.id
+                INNER JOIN subtree ON nodes.parent_id = subtree.id
                 WHERE nodes.deleted_at IS NULL
             )
             SELECT *
-            FROM descendants
+            FROM subtree
             ORDER BY parent_id, position, id
-        SQL, [$root->id]);
+        SQL, [$rootId]);
 
-        $descendants = Node::hydrate(array_map(
-            fn (object $row): array => (array) $row,
-            $rows,
-        ))->reject(
-            fn (Node $node): bool => $node->id === $root->id,
-        );
+        $root = null;
+        $childrenByParent = [];
 
-        /** @var Collection<string, EloquentCollection<int, Node>> $childrenByParent */
-        $childrenByParent = $descendants->groupBy('parent_id');
-        $this->attachChildren($root, $childrenByParent, []);
+        foreach ($rows as $row) {
+            $node = $this->nodeFromRow($row);
 
-        return $root;
+            if ($node['id'] === $rootId) {
+                $root = $node;
+
+                continue;
+            }
+
+            $childrenByParent[$node['parent_id']][] = $node;
+        }
+
+        if ($root === null) {
+            throw new RuntimeException("Node [{$rootId}] was not found.");
+        }
+
+        return $this->attachChildren($root, $childrenByParent, []);
     }
 
     /**
-     * @param  Collection<string, EloquentCollection<int, Node>>  $childrenByParent
-     * @param  array<string, true>  $ancestors
+     * @return array{
+     *     id: string,
+     *     parent_id: ?string,
+     *     position: string,
+     *     content: string,
+     *     tiptap_content: mixed,
+     *     is_checked: ?bool,
+     *     children: array
+     * }
      */
-    private function attachChildren(Node $node, $childrenByParent, array $ancestors): void
+    private function nodeFromRow(object $row): array
     {
-        if (isset($ancestors[$node->id])) {
-            $node->setRelation('children', new EloquentCollection);
+        return [
+            'id' => $row->id,
+            'parent_id' => $row->parent_id,
+            'position' => $row->position,
+            'content' => $row->content,
+            'tiptap_content' => $row->tiptap_content === null
+                ? null
+                : json_decode($row->tiptap_content, true),
+            'is_checked' => $row->is_checked === null
+                ? null
+                : (bool) $row->is_checked,
+            'children' => [],
+        ];
+    }
 
-            return;
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $childrenByParent
+     * @param  array<string, true>  $ancestors
+     * @return array<string, mixed>
+     */
+    private function attachChildren(array $node, array $childrenByParent, array $ancestors): array
+    {
+        if (isset($ancestors[$node['id']])) {
+            $node['children'] = [];
+
+            return $node;
         }
 
-        $ancestors[$node->id] = true;
-        $children = $childrenByParent->get($node->id, new EloquentCollection);
-        $node->setRelation('children', $children);
+        $ancestors[$node['id']] = true;
+        $node['children'] = array_map(
+            fn (array $child): array => $this->attachChildren(
+                $child,
+                $childrenByParent,
+                $ancestors,
+            ),
+            $childrenByParent[$node['id']] ?? [],
+        );
 
-        foreach ($children as $child) {
-            $this->attachChildren($child, $childrenByParent, $ancestors);
-        }
+        return $node;
     }
 }

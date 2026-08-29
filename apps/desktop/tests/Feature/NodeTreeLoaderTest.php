@@ -22,13 +22,14 @@ class NodeTreeLoaderTest extends TestCase
         DB::flushQueryLog();
         DB::enableQueryLog();
 
-        app(NodeTreeLoader::class)->load($page);
+        $tree = app(NodeTreeLoader::class)->load($page->id);
 
         $this->assertCount(1, DB::getQueryLog());
-        $this->assertSame([$first->id, $second->id], $page->children->pluck('id')->all());
-        $this->assertSame($nested->id, $page->children[0]->children[0]->id);
-        $this->assertTrue($page->children[0]->children[0]->relationLoaded('children'));
-        $this->assertCount(0, $page->children[0]->children[0]->children);
+        $this->assertSame([$first->id, $second->id], array_column($tree['children'], 'id'));
+        $this->assertSame($nested->id, $tree['children'][0]['children'][0]['id']);
+        $this->assertCount(0, $tree['children'][0]['children'][0]['children']);
+        $this->assertArrayNotHasKey('created_at', $tree['children'][0]);
+        $this->assertArrayNotHasKey('modified_hlc', $tree['children'][0]);
     }
 
     public function test_it_omits_soft_deleted_descendants(): void
@@ -38,9 +39,9 @@ class NodeTreeLoaderTest extends TestCase
         $this->node('00000000-0000-7000-8000-000000000012', $deleted->id, 'a0');
         $deleted->delete();
 
-        app(NodeTreeLoader::class)->load($page);
+        $tree = app(NodeTreeLoader::class)->load($page->id);
 
-        $this->assertCount(0, $page->children);
+        $this->assertCount(0, $tree['children']);
     }
 
     private function node(string $id, ?string $parentId, string $position): Node

@@ -59,33 +59,7 @@ class PageWebController extends Controller
         // (idempotent) rather than silently missed.
         $syncCursor = (int) (Op::max('id') ?? 0);
 
-        $this->trees->load($page);
-
-        $backlinks = $page->incomingLinks()
-            ->with('sourceNode')
-            ->get()
-            ->filter(fn ($link) => $link->sourceNode !== null)
-            ->map(function ($link) {
-                $page = $link->sourceNode;
-                while ($page->parent_id) {
-                    $page = Node::find($page->parent_id);
-                    if (! $page) {
-                        break;
-                    }
-                }
-                if (! $page) {
-                    return null;
-                }
-
-                return [
-                    'id' => $link->id,
-                    'page_id' => $page->id,
-                    'page_title' => $page->content ?: '[untitled]',
-                ];
-            })
-            ->filter()
-            ->unique('page_id')
-            ->values();
+        $pageTree = $this->trees->load($page->id);
 
         PageVisit::create([
             'node_id' => $page->id,
@@ -93,9 +67,10 @@ class PageWebController extends Controller
         ]);
 
         return Inertia::render('Pages/Show', [
-            'page' => $page,
+            'page' => $pageTree,
             'pinned' => $this->pins->isPinned($page),
-            'backlinks' => $backlinks,
+            // Show.vue refreshes backlinks after mounting and after edits.
+            'backlinks' => [],
             'syncCursor' => $syncCursor,
         ]);
     }
