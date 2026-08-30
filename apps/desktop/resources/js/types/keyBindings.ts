@@ -10,6 +10,21 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Alt+A',
     },
     {
+        id: 'daily-notes',
+        label: "Open Today's Daily Note",
+        defaultBinding: 'Alt+D',
+    },
+    {
+        id: 'previous-daily-note',
+        label: 'Open Previous Daily Note',
+        defaultBinding: 'Ctrl+Alt+P',
+    },
+    {
+        id: 'next-daily-note',
+        label: 'Open Next Daily Note',
+        defaultBinding: 'Ctrl+Alt+N',
+    },
+    {
         id: 'navigation-history',
         label: 'Open Navigation History',
         defaultBinding: 'Mod+H',

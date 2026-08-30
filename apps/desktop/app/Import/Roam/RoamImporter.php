@@ -83,6 +83,8 @@ final class RoamImporter
                     'content' => $record['content'],
                     'tiptap_content' => null,
                     'is_checked' => null,
+                    'page_type' => $record['page_type'],
+                    'daily_note_date' => $record['daily_note_date'],
                 ];
             } else {
                 $converted = $converter->convert($record['content'], $record['heading']);

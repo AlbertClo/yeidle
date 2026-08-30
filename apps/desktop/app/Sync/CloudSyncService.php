@@ -843,6 +843,8 @@ class CloudSyncService
                         'content' => $node->content,
                         'tiptap_content' => $node->tiptap_content,
                         'is_checked' => $node->is_checked,
+                        'page_type' => $node->page_type,
+                        'daily_note_date' => $node->daily_note_date,
                     ],
                 ],
             ];
@@ -942,6 +944,8 @@ class CloudSyncService
                         'content' => $n['content'] ?? '',
                         'tiptap_content' => isset($n['tiptap_content']) ? json_encode($n['tiptap_content']) : null,
                         'is_checked' => $n['is_checked'],
+                        'page_type' => $n['page_type'] ?? null,
+                        'daily_note_date' => $n['daily_note_date'] ?? null,
                         'field_clocks' => isset($n['field_clocks']) ? json_encode($n['field_clocks']) : null,
                         'purged' => $n['purged'] ?? false,
                         'modified_hlc' => $this->snapshotModifiedHlc($n),

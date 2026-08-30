@@ -5,6 +5,7 @@ import type { BreadcrumbItem } from '@/types';
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
     currentPageId?: string;
+    currentPageType?: string | null;
 };
 
 withDefaults(defineProps<Props>(), {
@@ -13,7 +14,11 @@ withDefaults(defineProps<Props>(), {
 </script>
 
 <template>
-    <AppLayout :breadcrumbs="breadcrumbs" :current-page-id="currentPageId">
+    <AppLayout
+        :breadcrumbs="breadcrumbs"
+        :current-page-id="currentPageId"
+        :current-page-type="currentPageType"
+    >
         <slot />
     </AppLayout>
 </template>

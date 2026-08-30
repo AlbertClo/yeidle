@@ -27,7 +27,14 @@ class PageWebController extends Controller
     public function index(Request $request): Response
     {
         $pages = DB::table('nodes')
-            ->select(['id', 'content', 'modified_hlc', 'updated_at'])
+            ->select([
+                'id',
+                'content',
+                'page_type',
+                'daily_note_date',
+                'modified_hlc',
+                'updated_at',
+            ])
             ->whereNull('parent_id')
             ->whereNull('deleted_at')
             ->whereNotIn('id', SystemNodes::ROOT_IDS)
@@ -38,13 +45,16 @@ class PageWebController extends Controller
         $workspaceCloudStatus = app()->resolved(WorkspaceIndex::class)
             ? app(WorkspaceIndex::class)->active()['cloud_status']
             : 'local';
+        $themeSetupRequired = $preferences['theme'] === null;
+        $storageSetupRequired = $preferences['workspace_storage'] === null
+            && $workspaceCloudStatus === 'local';
 
         return Inertia::render('Pages/Index', [
             'pages' => $pages,
-            'themeSetupRequired' => $preferences['theme'] === null,
-            'storageSetupRequired' => $preferences['workspace_storage'] === null
-                && $workspaceCloudStatus === 'local',
+            'themeSetupRequired' => $themeSetupRequired,
+            'storageSetupRequired' => $storageSetupRequired,
             'workspaceCloudStatus' => $workspaceCloudStatus,
+            'openDailyNote' => $request->routeIs('home'),
             'missingPage' => $request->session()->get('missing_page', false),
             'databaseRecovered' => app()->resolved(WorkspaceIndex::class)
                 && app(WorkspaceIndex::class)->recoveredMissingDatabase(),

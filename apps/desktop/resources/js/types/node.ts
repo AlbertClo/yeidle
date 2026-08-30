@@ -6,6 +6,8 @@ export type Node = {
     content: string;
     tiptap_content: Record<string, unknown> | Record<string, unknown>[] | null;
     is_checked: boolean | null;
+    page_type?: 'daily_note' | null;
+    daily_note_date?: string | null;
     modified_hlc: string;
     created_at: string;
     updated_at: string;
@@ -14,7 +16,12 @@ export type Node = {
 
 export type PageListItem = Pick<
     Node,
-    'id' | 'content' | 'modified_hlc' | 'updated_at'
+    | 'id'
+    | 'content'
+    | 'page_type'
+    | 'daily_note_date'
+    | 'modified_hlc'
+    | 'updated_at'
 >;
 
 export type NodeLink = {

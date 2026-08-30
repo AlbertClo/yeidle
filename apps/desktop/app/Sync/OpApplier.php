@@ -28,7 +28,15 @@ use Carbon\Carbon;
  */
 class OpApplier
 {
-    private const NODE_FIELDS = ['parent_id', 'position', 'content', 'tiptap_content', 'is_checked'];
+    private const NODE_FIELDS = [
+        'parent_id',
+        'position',
+        'content',
+        'tiptap_content',
+        'is_checked',
+        'page_type',
+        'daily_note_date',
+    ];
 
     public function __construct(
         private LinkParser $linkParser = new LinkParser,
@@ -79,6 +87,16 @@ class OpApplier
 
                 if ($field === 'position') {
                     $value = $value ?? 'a0';
+                }
+
+                if ($field === 'page_type'
+                    && ! in_array($value, [null, 'daily_note'], true)) {
+                    $value = null;
+                }
+
+                if ($field === 'daily_note_date'
+                    && ! $this->isValidDate($value)) {
+                    $value = null;
                 }
 
                 $node->{$field} = $value;
@@ -196,6 +214,8 @@ class OpApplier
         $node->content = '';
         $node->tiptap_content = null;
         $node->is_checked = null;
+        $node->page_type = null;
+        $node->daily_note_date = null;
         $node->field_clocks = null;
         $node->deleted_at = $purgedAt;
         $node->modified_hlc = $op['hlc'];
@@ -258,5 +278,19 @@ class OpApplier
         $node->save();
 
         return $node;
+    }
+
+    private function isValidDate(mixed $value): bool
+    {
+        if ($value === null) {
+            return true;
+        }
+
+        if (! is_string($value)
+            || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $value, $matches) !== 1) {
+            return false;
+        }
+
+        return checkdate((int) $matches[2], (int) $matches[3], (int) $matches[1]);
     }
 }

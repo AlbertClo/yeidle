@@ -96,4 +96,10 @@ describe('key bindings', () => {
     it("follows the link under the cursor with Roam Research's shortcut", () => {
         expect(DEFAULT_KEY_BINDINGS['follow-link']).toBe('Ctrl+O');
     });
+
+    it("opens daily notes with Roam Research's shortcuts", () => {
+        expect(DEFAULT_KEY_BINDINGS['daily-notes']).toBe('Alt+D');
+        expect(DEFAULT_KEY_BINDINGS['previous-daily-note']).toBe('Ctrl+Alt+P');
+        expect(DEFAULT_KEY_BINDINGS['next-daily-note']).toBe('Ctrl+Alt+N');
+    });
 });

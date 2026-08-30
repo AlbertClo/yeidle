@@ -3,6 +3,7 @@ import { router } from '@inertiajs/vue3';
 import {
     Cloud,
     CloudUpload,
+    CalendarDays,
     FileText,
     History,
     Keyboard,
@@ -25,6 +26,7 @@ import {
     CommandShortcut,
 } from '@/components/ui/command';
 import { useSidebar } from '@/components/ui/sidebar';
+import { openDailyNote } from '@/dailyNotes';
 import { cloudAccount } from '@/stores/cloudAccount';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import { isNodePinned, toggleNodePin } from '@/stores/pins';
@@ -66,6 +68,13 @@ const commands = computed<PaletteCommand[]>(() => [
         icon: FileText,
         shortcut: bindingLabel('all-pages'),
         run: () => router.visit('/pages'),
+    },
+    {
+        id: 'daily-notes',
+        label: "Open Today's Daily Note",
+        icon: CalendarDays,
+        shortcut: bindingLabel('daily-notes'),
+        run: openTodaysDailyNote,
     },
     {
         id: 'navigation-history',
@@ -156,6 +165,14 @@ function openPalette(): void {
 function execute(command: PaletteCommand): void {
     isOpen.value = false;
     void command.run();
+}
+
+async function openTodaysDailyNote(): Promise<void> {
+    try {
+        await openDailyNote();
+    } catch {
+        toast.error('Could not open today’s daily note.');
+    }
 }
 
 async function toggleCurrentPagePin(): Promise<void> {

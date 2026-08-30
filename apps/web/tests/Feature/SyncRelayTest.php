@@ -1,12 +1,12 @@
 <?php
 
 use App\Events\WorkspaceOpsCommitted;
-use App\Workspaces\CreateWorkspace;
 use App\Models\Node;
 use App\Models\Op;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Sync\HlcGenerator;
+use App\Workspaces\CreateWorkspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
@@ -71,6 +71,25 @@ test('push assigns server sequence, stamps the user, and applies', function () {
     expect($op->user_id)->toBe($user->id);
     expect($op->workspace_id)->toBe($user->workspaces()->sole()->id);
     expect(Node::find($id)->content)->toBe('from device a');
+});
+
+test('daily note metadata is relayed and projected', function () {
+    $user = User::factory()->create();
+    Sanctum::actingAs($user);
+    $id = fake()->uuid();
+
+    $this->postJson(syncUrl('push'), [
+        'client_id' => 'device-a',
+        'ops' => [setOp($id, [
+            'content' => 'August 30, 2026',
+            'page_type' => 'daily_note',
+            'daily_note_date' => '2026-08-30',
+        ], 100)],
+    ])->assertSuccessful();
+
+    $node = Node::findOrFail($id);
+    expect($node->page_type)->toBe('daily_note')
+        ->and($node->daily_note_date)->toBe('2026-08-30');
 });
 
 test('push broadcasts newly committed ops in pull wire format', function () {

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Import;
 
+use App\DailyNotes\DailyNotes;
 use App\Import\Roam\RoamAttachmentFetcher;
 use App\Import\Roam\RoamContentConverter;
 use App\Import\Roam\RoamExport;
@@ -14,6 +15,7 @@ use App\Models\NodeLink;
 use App\Models\Op;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -155,6 +157,47 @@ class RoamImporterTest extends TestCase
             RoamExport::opId('same-import', 'personal'),
             RoamExport::opId('same-import', 'knowledge'),
         );
+    }
+
+    public function test_roam_daily_pages_import_into_the_native_daily_note_structure(): void
+    {
+        $workspaceId = (string) Str::uuid7();
+        $path = tempnam(sys_get_temp_dir(), 'roam-daily-');
+        file_put_contents($path, json_encode([
+            [
+                'uid' => '08-30-2026',
+                'title' => 'August 30th, 2026',
+                'children' => [
+                    ['uid' => 'daily-child', 'string' => 'Plan the day'],
+                ],
+            ],
+            [
+                'uid' => 'ordinary-page',
+                'title' => 'Ordinary Page',
+                'children' => [
+                    ['uid' => 'daily-link', 'string' => 'See [[August 30th, 2026]]'],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            app(RoamImporter::class)->import(
+                $path,
+                downloadAttachments: false,
+                workspaceId: $workspaceId,
+            );
+        } finally {
+            @unlink($path);
+        }
+
+        $dailyId = DailyNotes::pageId($workspaceId, '2026-08-30');
+        $daily = Node::findOrFail($dailyId);
+        $link = Node::findOrFail(RoamExport::nodeId('daily-link', $workspaceId));
+
+        $this->assertSame('daily_note', $daily->page_type);
+        $this->assertSame('2026-08-30', $daily->daily_note_date);
+        $this->assertSame('August 30, 2026', $daily->content);
+        $this->assertSame($dailyId, $link->tiptap_content['content'][1]['attrs']['id']);
     }
 
     public function test_without_files_preserves_the_upload_as_a_web_link(): void

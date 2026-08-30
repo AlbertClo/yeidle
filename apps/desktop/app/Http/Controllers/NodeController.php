@@ -30,6 +30,8 @@ class NodeController extends Controller
             'content' => ['nullable', 'string'],
             'tiptap_content' => ['nullable'],
             'is_checked' => ['nullable', 'boolean'],
+            'page_type' => ['nullable', 'string', 'in:daily_note'],
+            'daily_note_date' => ['nullable', 'date_format:Y-m-d'],
         ]);
 
         $content = $validated['content'] ?? '';
@@ -69,6 +71,8 @@ class NodeController extends Controller
                     'content' => $content,
                     'tiptap_content' => $validated['tiptap_content'] ?? null,
                     'is_checked' => $validated['is_checked'] ?? null,
+                    'page_type' => $validated['page_type'] ?? null,
+                    'daily_note_date' => $validated['daily_note_date'] ?? null,
                 ],
             ],
         ]]);

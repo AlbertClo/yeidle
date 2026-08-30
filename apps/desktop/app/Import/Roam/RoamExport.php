@@ -2,6 +2,7 @@
 
 namespace App\Import\Roam;
 
+use App\DailyNotes\DailyNotes;
 use JsonException;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
@@ -10,7 +11,7 @@ final class RoamExport
 {
     public const UUID_NAMESPACE = '8bf7d75e-9d19-5aca-b853-36da04773e3f';
 
-    /** @var list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int}> */
+    /** @var list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int, page_type: ?string, daily_note_date: ?string}> */
     private array $records = [];
 
     /** @var array<string, string> */
@@ -58,7 +59,7 @@ final class RoamExport
         return new self($pages, $workspaceId);
     }
 
-    /** @return list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int}> */
+    /** @return list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int, page_type: ?string, daily_note_date: ?string}> */
     public function records(): array
     {
         return $this->records;
@@ -126,7 +127,17 @@ final class RoamExport
 
             $uid = $this->requiredString($page, 'uid', "page at index {$pageIndex}");
             $title = $this->requiredString($page, 'title', "page [{$uid}]");
-            $pageId = $this->registerUid($uid, $title);
+            $dailyNoteDate = $this->dailyNoteDate($uid);
+            $pageId = $this->registerUid(
+                $uid,
+                $title,
+                $dailyNoteDate === null
+                    ? null
+                    : DailyNotes::pageId($this->workspaceId, $dailyNoteDate),
+            );
+            $content = $dailyNoteDate === null
+                ? $title
+                : DailyNotes::title($dailyNoteDate);
             $this->pageIdsByTitle[$title] = $pageId;
             $this->pageIdsByLowerTitle[mb_strtolower($title)] ??= $pageId;
             $this->records[] = [
@@ -135,8 +146,10 @@ final class RoamExport
                 'page_id' => $pageId,
                 'parent_id' => null,
                 'position' => 'a0',
-                'content' => $title,
+                'content' => $content,
                 'heading' => null,
+                'page_type' => $dailyNoteDate === null ? null : DailyNotes::PAGE_TYPE,
+                'daily_note_date' => $dailyNoteDate,
             ];
 
             $this->walkChildren($page['children'] ?? [], $pageId, $pageId, "page [{$uid}]");
@@ -173,6 +186,8 @@ final class RoamExport
                 'position' => RoamPosition::at($index),
                 'content' => $content,
                 'heading' => isset($block['heading']) && is_int($block['heading']) ? $block['heading'] : null,
+                'page_type' => null,
+                'daily_note_date' => null,
             ];
 
             $this->analyseText($content);
@@ -180,17 +195,34 @@ final class RoamExport
         }
     }
 
-    private function registerUid(string $uid, string $content): string
+    private function registerUid(string $uid, string $content, ?string $id = null): string
     {
         if (isset($this->nodeIdsByUid[$uid])) {
             throw new RuntimeException("Roam export contains duplicate UID [{$uid}].");
         }
 
-        $id = self::nodeId($uid, $this->workspaceId);
+        $id ??= self::nodeId($uid, $this->workspaceId);
         $this->nodeIdsByUid[$uid] = $id;
         $this->nodeContentByUid[$uid] = $content;
 
         return $id;
+    }
+
+    private function dailyNoteDate(string $uid): ?string
+    {
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{4})$/D', $uid, $matches) !== 1) {
+            return null;
+        }
+
+        $month = (int) $matches[1];
+        $day = (int) $matches[2];
+        $year = (int) $matches[3];
+
+        if (! checkdate($month, $day, $year)) {
+            return null;
+        }
+
+        return sprintf('%04d-%02d-%02d', $year, $month, $day);
     }
 
     private function analyseText(string $content): void

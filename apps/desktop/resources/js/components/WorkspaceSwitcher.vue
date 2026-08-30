@@ -137,7 +137,7 @@ const workspaceToShowOnDisk = computed(
 );
 
 function visitPages(): void {
-    router.visit('/pages', {
+    router.visit('/', {
         replace: true,
         onSuccess: () => {
             void refreshRealtimeSync();

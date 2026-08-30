@@ -9,6 +9,7 @@ import type { BreadcrumbItem } from '@/types';
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
     currentPageId?: string;
+    currentPageType?: string | null;
 };
 
 withDefaults(defineProps<Props>(), {
@@ -22,7 +23,10 @@ withDefaults(defineProps<Props>(), {
             :breadcrumbs="breadcrumbs"
             :current-page-id="currentPageId"
         />
-        <AppSidebar :current-page-id="currentPageId" />
+        <AppSidebar
+            :current-page-id="currentPageId"
+            :current-page-type="currentPageType"
+        />
         <AppContent
             variant="sidebar"
             class="min-h-0 overflow-hidden md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-0"

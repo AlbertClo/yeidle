@@ -15,6 +15,9 @@ final class UserKeyBindings
     public const DEFAULTS = [
         'command-palette' => 'Mod+P',
         'all-pages' => 'Alt+A',
+        'daily-notes' => 'Alt+D',
+        'previous-daily-note' => 'Ctrl+Alt+P',
+        'next-daily-note' => 'Ctrl+Alt+N',
         'navigation-history' => 'Mod+H',
         'toggle-left-sidebar' => 'Mod+Backslash',
         'find-page' => 'Mod+U',

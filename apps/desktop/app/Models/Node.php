@@ -21,6 +21,8 @@ class Node extends Model
         'content',
         'tiptap_content',
         'is_checked',
+        'page_type',
+        'daily_note_date',
         'modified_hlc',
     ];
 
@@ -81,6 +83,12 @@ class Node extends Model
     public function isPage(): bool
     {
         return $this->parent_id === null;
+    }
+
+    public function isDailyNote(): bool
+    {
+        return $this->page_type === 'daily_note'
+            && $this->daily_note_date !== null;
     }
 
     /** Whether this node belongs to one of Yeidle's hidden system subtrees. */

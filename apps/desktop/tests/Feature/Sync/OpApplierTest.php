@@ -49,6 +49,35 @@ class OpApplierTest extends TestCase
         $this->assertSame(HlcGenerator::encode(200, 0, 'c1'), $node->modified_hlc);
     }
 
+    public function test_applies_daily_note_metadata(): void
+    {
+        $id = fake()->uuid();
+
+        $this->applier->apply($this->set($id, [
+            'content' => 'August 30, 2026',
+            'page_type' => 'daily_note',
+            'daily_note_date' => '2026-08-30',
+        ], 100));
+
+        $node = Node::findOrFail($id);
+        $this->assertSame('daily_note', $node->page_type);
+        $this->assertSame('2026-08-30', $node->daily_note_date);
+    }
+
+    public function test_invalid_daily_note_metadata_cannot_wedge_the_log(): void
+    {
+        $id = fake()->uuid();
+
+        $this->applier->apply($this->set($id, [
+            'page_type' => 'unknown',
+            'daily_note_date' => '2026-99-99',
+        ], 100));
+
+        $node = Node::findOrFail($id);
+        $this->assertNull($node->page_type);
+        $this->assertNull($node->daily_note_date);
+    }
+
     public function test_older_write_loses_per_field(): void
     {
         $id = fake()->uuid();

@@ -15,6 +15,8 @@ final class NodeTreeLoader
      *     content: string,
      *     tiptap_content: mixed,
      *     is_checked: ?bool,
+     *     page_type: ?string,
+     *     daily_note_date: ?string,
      *     children: array
      * }
      */
@@ -22,7 +24,8 @@ final class NodeTreeLoader
     {
         $rows = DB::select(<<<'SQL'
             WITH RECURSIVE subtree AS (
-                SELECT id, parent_id, position, content, tiptap_content, is_checked
+                SELECT id, parent_id, position, content, tiptap_content, is_checked,
+                    page_type, daily_note_date
                 FROM nodes
                 WHERE id = ?
                     AND deleted_at IS NULL
@@ -30,7 +33,8 @@ final class NodeTreeLoader
                 UNION
 
                 SELECT nodes.id, nodes.parent_id, nodes.position, nodes.content,
-                    nodes.tiptap_content, nodes.is_checked
+                    nodes.tiptap_content, nodes.is_checked, nodes.page_type,
+                    nodes.daily_note_date
                 FROM nodes
                 INNER JOIN subtree ON nodes.parent_id = subtree.id
                 WHERE nodes.deleted_at IS NULL
@@ -70,6 +74,8 @@ final class NodeTreeLoader
      *     content: string,
      *     tiptap_content: mixed,
      *     is_checked: ?bool,
+     *     page_type: ?string,
+     *     daily_note_date: ?string,
      *     children: array
      * }
      */
@@ -86,6 +92,8 @@ final class NodeTreeLoader
             'is_checked' => $row->is_checked === null
                 ? null
                 : (bool) $row->is_checked,
+            'page_type' => $row->page_type,
+            'daily_note_date' => $row->daily_note_date,
             'children' => [],
         ];
     }

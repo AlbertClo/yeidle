@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CloudAccountController;
 use App\Http\Controllers\CloudController;
+use App\Http\Controllers\DailyNoteController;
 use App\Http\Controllers\KeyBindingController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NavigationHistoryController;
@@ -51,6 +52,7 @@ Route::post('sync/cloud-exchange', [CloudController::class, 'exchange']);
 
 // Intent-level façade: mints ops server-side (see NodeController)
 Route::post('nodes', [NodeController::class, 'store']);
+Route::post('daily-notes', [DailyNoteController::class, 'store']);
 Route::get('nodes/{node}/reference', [NodeController::class, 'reference']);
 
 Route::get('pages', [PageController::class, 'index']);

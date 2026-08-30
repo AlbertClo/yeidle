@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { EllipsisVertical, Pin, Trash2 } from 'lucide-vue-next';
+import {
+    ChevronLeft,
+    ChevronRight,
+    EllipsisVertical,
+    Pin,
+    Trash2,
+} from 'lucide-vue-next';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import PageEditor from '@/components/PageEditor.vue';
@@ -21,6 +27,7 @@ import {
     DropdownMenuShortcut,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { adjacentDate, openDailyNote } from '@/dailyNotes';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     isHistoryNavigation,
@@ -31,7 +38,7 @@ import {
 } from '@/navigation/historyNavigation';
 import type { EditorSelectionBookmark } from '@/navigation/historyNavigation';
 import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
-import { bindingLabel } from '@/stores/keyBindings';
+import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import {
     getCachedPage,
     invalidateCachedPage,
@@ -78,6 +85,11 @@ const pageNodes = ref<Node[]>(cached?.children ?? props.page.children ?? []);
 const pageBacklinks = ref(props.backlinks);
 const editorKey = ref(0);
 const pagePinned = computed(() => isNodePinned(props.page.id));
+const isDailyNote = computed(
+    () =>
+        props.page.page_type === 'daily_note' &&
+        props.page.daily_note_date !== null,
+);
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'All Pages', href: '/pages' },
     {
@@ -121,6 +133,10 @@ let retryDelay = 1000;
 const syncScheduler = createMaxWaitScheduler(() => void runSync(), 300, 1000);
 
 function startEditingTitle(cursorPos?: number) {
+    if (isDailyNote.value) {
+        return;
+    }
+
     isEditingTitle.value = true;
     setTimeout(() => {
         if (titleRef.value) {
@@ -645,6 +661,21 @@ async function toggleCurrentPagePin() {
     }
 }
 
+function openAdjacentDailyNote(offset: -1 | 1): void {
+    if (!props.page.daily_note_date) {
+        return;
+    }
+
+    void openDailyNote(adjacentDate(props.page.daily_note_date, offset)).catch(
+        () =>
+            toast.error(
+                offset < 0
+                    ? 'Could not open the previous daily note.'
+                    : 'Could not open the next daily note.',
+            ),
+    );
+}
+
 async function deletePage() {
     const ok = await pushOps([mintNodeDelete(props.page.id, props.page.id)]);
     showDeleteConfirm.value = false;
@@ -661,6 +692,28 @@ async function deletePage() {
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
+    if (
+        isDailyNote.value &&
+        props.page.daily_note_date &&
+        eventMatchesCommand(e, 'previous-daily-note')
+    ) {
+        e.preventDefault();
+        openAdjacentDailyNote(-1);
+
+        return;
+    }
+
+    if (
+        isDailyNote.value &&
+        props.page.daily_note_date &&
+        eventMatchesCommand(e, 'next-daily-note')
+    ) {
+        e.preventDefault();
+        openAdjacentDailyNote(1);
+
+        return;
+    }
+
     if (e.key === 'Enter' && !isEditingTitle.value) {
         const target = e.target as HTMLElement;
 
@@ -720,7 +773,11 @@ onBeforeUnmount(() => {
 <template>
     <Head :title="page.content || '[untitled]'" />
 
-    <AppLayout :breadcrumbs="breadcrumbs" :current-page-id="page.id">
+    <AppLayout
+        :breadcrumbs="breadcrumbs"
+        :current-page-id="page.id"
+        :current-page-type="page.page_type"
+    >
         <div class="relative">
             <div class="sticky top-4 z-30 flex h-0 justify-end pr-4">
                 <DropdownMenu>
@@ -753,6 +810,29 @@ onBeforeUnmount(() => {
             </div>
             <div class="mx-auto w-full max-w-2xl p-6">
                 <div class="mb-6">
+                    <div
+                        v-if="isDailyNote && page.daily_note_date"
+                        class="mb-3 flex items-center gap-1"
+                    >
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            :title="`Previous daily note (${bindingLabel('previous-daily-note')})`"
+                            aria-label="Previous daily note"
+                            @click="openAdjacentDailyNote(-1)"
+                        >
+                            <ChevronLeft class="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            :title="`Next daily note (${bindingLabel('next-daily-note')})`"
+                            aria-label="Next daily note"
+                            @click="openAdjacentDailyNote(1)"
+                        >
+                            <ChevronRight class="h-4 w-4" />
+                        </Button>
+                    </div>
                     <input
                         v-if="isEditingTitle"
                         ref="titleRef"
@@ -765,8 +845,11 @@ onBeforeUnmount(() => {
                     />
                     <h1
                         v-else
-                        class="cursor-text text-3xl font-bold"
-                        :class="{ 'text-red-500': titleError }"
+                        class="text-3xl font-bold"
+                        :class="[
+                            { 'text-red-500': titleError },
+                            isDailyNote ? 'cursor-default' : 'cursor-text',
+                        ]"
                         @click="startEditingTitle()"
                     >
                         {{ titleContent || '[untitled]' }}

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { List, SquareTerminal } from 'lucide-vue-next';
+import { CalendarDays, List, SquareTerminal } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import AppCommandPalette from '@/components/AppCommandPalette.vue';
 import CloudAccountDialog from '@/components/CloudAccountDialog.vue';
 import KeyBindingsDialog from '@/components/KeyBindingsDialog.vue';
@@ -25,6 +26,7 @@ import {
     useSidebar,
 } from '@/components/ui/sidebar';
 import YeidleWordmark from '@/components/YeidleWordmark.vue';
+import { openDailyNote } from '@/dailyNotes';
 import {
     bindingLabel,
     eventMatchesCommand,
@@ -38,8 +40,9 @@ import { openCommandPalette } from '@/ui/commandPalette';
 const aboutOpen = ref(false);
 const { toggleSidebar } = useSidebar();
 
-defineProps<{
+const props = defineProps<{
     currentPageId?: string;
+    currentPageType?: string | null;
 }>();
 
 const mainNavItems = computed<NavItem[]>(() => [
@@ -49,7 +52,19 @@ const mainNavItems = computed<NavItem[]>(() => [
         icon: List,
         shortcut: bindingLabel('all-pages'),
     },
+    {
+        title: 'Daily Notes',
+        href: '#',
+        icon: CalendarDays,
+        shortcut: bindingLabel('daily-notes'),
+        isActive: props.currentPageType === 'daily_note',
+        action: () => void openDailyNote().catch(showDailyNoteError),
+    },
 ]);
+
+function showDailyNoteError(): void {
+    toast.error('Could not open the daily note.');
+}
 
 function handleNavigationShortcut(event: KeyboardEvent): void {
     if (eventMatchesCommand(event, 'toggle-left-sidebar')) {
@@ -62,6 +77,13 @@ function handleNavigationShortcut(event: KeyboardEvent): void {
     if (eventMatchesCommand(event, 'all-pages')) {
         event.preventDefault();
         router.visit('/pages');
+
+        return;
+    }
+
+    if (eventMatchesCommand(event, 'daily-notes')) {
+        event.preventDefault();
+        void openDailyNote().catch(showDailyNoteError);
 
         return;
     }

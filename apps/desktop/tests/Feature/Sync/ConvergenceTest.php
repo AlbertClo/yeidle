@@ -53,6 +53,8 @@ class ConvergenceTest extends TestCase
                 'content' => $n->content,
                 'tiptap_content' => $n->tiptap_content,
                 'is_checked' => $n->is_checked,
+                'page_type' => $n->page_type,
+                'daily_note_date' => $n->daily_note_date,
                 'deleted_at' => $n->deleted_at?->format('Y-m-d H:i:s'),
                 'purged' => $n->purged,
                 'field_clocks' => $n->field_clocks,

@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $content
  * @property array|null $tiptap_content
  * @property bool|null $is_checked
+ * @property string|null $page_type
+ * @property string|null $daily_note_date
  * @property array<string, string>|null $field_clocks
  * @property bool $purged
  * @property string $modified_hlc

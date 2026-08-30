@@ -16,6 +16,7 @@ import {
     watch,
 } from 'vue';
 import { toast } from 'vue-sonner';
+import { openDailyNote as openTodayDailyNote } from '@/dailyNotes';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     isHistoryNavigation,
@@ -43,6 +44,7 @@ const props = defineProps<{
     workspaceCloudStatus: 'local' | 'available' | 'syncing' | 'ready' | 'error';
     missingPage?: boolean;
     databaseRecovered?: boolean;
+    openDailyNote?: boolean;
 }>();
 
 const INITIAL_PAGE_COUNT = 40;
@@ -162,6 +164,7 @@ function movePageFocus(event: KeyboardEvent, offset: number): void {
 const themeSetupRequired = ref(props.themeSetupRequired);
 const storageSetupRequired = ref(props.storageSetupRequired);
 const storageSaving = ref(false);
+const openingDailyNote = ref(false);
 const setupRequired = computed(
     () => themeSetupRequired.value || storageSetupRequired.value,
 );
@@ -238,7 +241,20 @@ watch(setupRequired, (required) => {
     renderedPageCount.value = Math.min(INITIAL_PAGE_COUNT, props.pages.length);
     schedulePageHydration();
     void focusPageRow(0);
+    openDefaultDailyNote();
 });
+
+function openDefaultDailyNote(): void {
+    if (!props.openDailyNote || setupRequired.value || openingDailyNote.value) {
+        return;
+    }
+
+    openingDailyNote.value = true;
+    void openTodayDailyNote().catch(() => {
+        openingDailyNote.value = false;
+        toast.error('Could not open today’s daily note.');
+    });
+}
 
 async function saveStorageChoice(storage: 'local' | 'cloud'): Promise<void> {
     if (storageSaving.value) {
@@ -287,6 +303,7 @@ onMounted(() => {
     );
     schedulePageHydration();
     restoreNavigationScrollPosition();
+    openDefaultDailyNote();
 
     if (!setupRequired.value && !restoringPageIndexPosition) {
         void focusPageRow(0, false);

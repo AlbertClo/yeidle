@@ -23,11 +23,20 @@ const { isCurrentUrl } = useCurrentUrl();
             <SidebarMenuItem v-for="item in items" :key="item.title">
                 <SidebarMenuButton
                     as-child
-                    :is-active="isCurrentUrl(item.href)"
+                    :is-active="item.isActive ?? isCurrentUrl(item.href)"
                     :tooltip="item.title"
                     :class="item.shortcut ? 'pr-16' : undefined"
                 >
-                    <Link :href="item.href">
+                    <button
+                        v-if="item.action"
+                        type="button"
+                        class="cursor-pointer"
+                        @click="item.action"
+                    >
+                        <component :is="item.icon" />
+                        <span>{{ item.title }}</span>
+                    </button>
+                    <Link v-else :href="item.href">
                         <component :is="item.icon" />
                         <span>{{ item.title }}</span>
                     </Link>
