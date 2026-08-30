@@ -12,6 +12,11 @@ export type Node = {
     children?: Node[];
 };
 
+export type PageListItem = Pick<
+    Node,
+    'id' | 'content' | 'modified_hlc' | 'updated_at'
+>;
+
 export type NodeLink = {
     id: string;
     source_node_id: string;

@@ -8,9 +8,11 @@ use App\Models\PageVisit;
 use App\Services\NodeTreeLoader;
 use App\Support\PinNodes;
 use App\Support\PreferenceNodes;
+use App\Support\SystemNodes;
 use App\Workspaces\WorkspaceIndex;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -24,8 +26,13 @@ class PageWebController extends Controller
 
     public function index(Request $request): Response
     {
-        $pages = Node::pages()
-            ->orderedByModification()
+        $pages = DB::table('nodes')
+            ->select(['id', 'content', 'modified_hlc', 'updated_at'])
+            ->whereNull('parent_id')
+            ->whereNull('deleted_at')
+            ->whereNotIn('id', SystemNodes::ROOT_IDS)
+            ->orderByDesc('modified_hlc')
+            ->orderByDesc('id')
             ->get();
         $preferences = $this->preferences->listing();
         $workspaceCloudStatus = app()->resolved(WorkspaceIndex::class)

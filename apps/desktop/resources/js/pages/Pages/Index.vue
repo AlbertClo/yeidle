@@ -17,7 +17,7 @@ import { LOCAL_OPS_AVAILABLE_EVENT, opsAffectPageIndex } from '@/sync/localOps';
 import type { LocalOpsAvailableEvent } from '@/sync/localOps';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import type { BreadcrumbItem } from '@/types';
-import type { Node } from '@/types/node';
+import type { PageListItem } from '@/types/node';
 import { openThemeSelector, THEME_SELECTED_EVENT } from '@/ui/themeSelector';
 import {
     openWorkspaceSync,
@@ -25,13 +25,39 @@ import {
 } from '@/ui/workspaceSync';
 
 const props = defineProps<{
-    pages: Node[];
+    pages: PageListItem[];
     themeSetupRequired: boolean;
     storageSetupRequired: boolean;
     workspaceCloudStatus: 'local' | 'available' | 'syncing' | 'ready' | 'error';
     missingPage?: boolean;
     databaseRecovered?: boolean;
 }>();
+
+const INITIAL_PAGE_COUNT = 40;
+const renderedPageCount = ref(Math.min(INITIAL_PAGE_COUNT, props.pages.length));
+const renderedPages = computed(() =>
+    props.pages.slice(0, renderedPageCount.value),
+);
+let pageHydrationFrame: number | null = null;
+let pageHydrationPaintFrame: number | null = null;
+
+function schedulePageHydration(): void {
+    if (
+        renderedPageCount.value >= props.pages.length ||
+        pageHydrationFrame !== null ||
+        pageHydrationPaintFrame !== null
+    ) {
+        return;
+    }
+
+    pageHydrationFrame = requestAnimationFrame(() => {
+        pageHydrationPaintFrame = requestAnimationFrame(() => {
+            pageHydrationFrame = null;
+            pageHydrationPaintFrame = null;
+            renderedPageCount.value = props.pages.length;
+        });
+    });
+}
 
 const themeSetupRequired = ref(props.themeSetupRequired);
 const storageSetupRequired = ref(props.storageSetupRequired);
@@ -84,6 +110,26 @@ watch(
     },
 );
 
+watch(
+    () => props.pages,
+    (pages) => {
+        renderedPageCount.value = Math.min(
+            renderedPageCount.value,
+            pages.length,
+        );
+        schedulePageHydration();
+    },
+);
+
+watch(setupRequired, (required) => {
+    if (required) {
+        return;
+    }
+
+    renderedPageCount.value = Math.min(INITIAL_PAGE_COUNT, props.pages.length);
+    schedulePageHydration();
+});
+
 async function saveStorageChoice(storage: 'local' | 'cloud'): Promise<void> {
     if (storageSaving.value) {
         return;
@@ -129,6 +175,7 @@ onMounted(() => {
         WORKSPACE_SYNC_ENABLED_EVENT,
         handleWorkspaceSyncEnabled,
     );
+    schedulePageHydration();
 });
 
 onBeforeUnmount(() => {
@@ -142,9 +189,17 @@ onBeforeUnmount(() => {
         handleWorkspaceSyncEnabled,
     );
     reloadScheduler.cancel();
+
+    if (pageHydrationFrame !== null) {
+        cancelAnimationFrame(pageHydrationFrame);
+    }
+
+    if (pageHydrationPaintFrame !== null) {
+        cancelAnimationFrame(pageHydrationPaintFrame);
+    }
 });
 
-function modifiedDate(page: Node): string {
+function modifiedDate(page: PageListItem): string {
     const millis = Number.parseInt(page.modified_hlc.slice(0, 15), 10);
     const date = Number.isFinite(millis)
         ? new Date(millis)
@@ -287,10 +342,10 @@ function modifiedDate(page: Node): string {
 
                 <div v-else class="flex flex-col gap-1">
                     <Link
-                        v-for="page in pages"
+                        v-for="page in renderedPages"
                         :key="page.id"
                         :href="`/pages/${page.id}`"
-                        class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent"
+                        class="page-index-item flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent"
                     >
                         <FileText
                             class="h-4 w-4 shrink-0 text-muted-foreground"
@@ -307,3 +362,10 @@ function modifiedDate(page: Node): string {
         </div>
     </AppLayout>
 </template>
+
+<style scoped>
+.page-index-item {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 40px;
+}
+</style>
