@@ -1009,6 +1009,50 @@ const CollapsedNodeDecorations = Extension.create({
                                     },
                                 ),
                             );
+
+                            if (typeof node.attrs.checked === 'boolean') {
+                                const checked = node.attrs.checked;
+
+                                decorations.push(
+                                    Decoration.widget(
+                                        pos + 1,
+                                        () => {
+                                            const checkbox =
+                                                document.createElement('span');
+                                            checkbox.className = [
+                                                'node-checkbox',
+                                                checked ? 'is-checked' : '',
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' ');
+                                            checkbox.dataset.nodeCheckbox =
+                                                'true';
+                                            checkbox.dataset.blockId = blockId;
+                                            checkbox.contentEditable = 'false';
+                                            checkbox.setAttribute(
+                                                'role',
+                                                'checkbox',
+                                            );
+                                            checkbox.setAttribute(
+                                                'aria-checked',
+                                                checked ? 'true' : 'false',
+                                            );
+                                            checkbox.setAttribute(
+                                                'aria-label',
+                                                checked
+                                                    ? 'Mark node incomplete'
+                                                    : 'Mark node complete',
+                                            );
+
+                                            return checkbox;
+                                        },
+                                        {
+                                            key: `node-checkbox:${blockId}:${checked ? 'checked' : 'unchecked'}`,
+                                            side: -1,
+                                        },
+                                    ),
+                                );
+                            }
                         });
 
                         return DecorationSet.create(state.doc, decorations);
@@ -2270,44 +2314,21 @@ function handleCheckboxMouseDown(view: EditorView, event: MouseEvent): boolean {
         return false;
     }
 
-    const listItem = event.target.closest<HTMLLIElement>(
-        '.page-editor-list li[data-checked]',
+    const checkbox = event.target.closest<HTMLElement>(
+        '.node-checkbox[data-node-checkbox="true"]',
     );
 
-    if (!listItem || !view.dom.contains(listItem)) {
+    if (!checkbox || !view.dom.contains(checkbox)) {
         return false;
     }
 
-    const itemStyle = getComputedStyle(listItem);
-    const checkboxStyle = getComputedStyle(listItem, '::before');
-    const itemRect = listItem.getBoundingClientRect();
-    const checkboxLeft =
-        itemRect.left +
-        Number.parseFloat(itemStyle.paddingLeft) +
-        Number.parseFloat(checkboxStyle.marginLeft);
-    const checkboxTop =
-        itemRect.top +
-        Number.parseFloat(itemStyle.paddingTop) +
-        Number.parseFloat(checkboxStyle.marginTop);
-    const checkboxWidth = Number.parseFloat(checkboxStyle.width);
-    const checkboxHeight = Number.parseFloat(checkboxStyle.height);
-    const hitSlop = 4;
+    const blockId = checkbox.dataset.blockId;
+    const found = blockId ? findListItem(blockId, viewEditor(view)) : null;
 
     if (
-        event.clientX < checkboxLeft - hitSlop ||
-        event.clientX > checkboxLeft + checkboxWidth + hitSlop ||
-        event.clientY < checkboxTop - hitSlop ||
-        event.clientY > checkboxTop + checkboxHeight + hitSlop
-    ) {
-        return false;
-    }
-
-    const itemPos = view.posAtDOM(listItem, 0) - 1;
-    const itemNode = view.state.doc.nodeAt(itemPos);
-
-    if (
-        itemNode?.type.name !== 'listItem' ||
-        typeof itemNode.attrs.checked !== 'boolean'
+        !found ||
+        found.node.type.name !== 'listItem' ||
+        typeof found.node.attrs.checked !== 'boolean'
     ) {
         return false;
     }
@@ -2316,9 +2337,9 @@ function handleCheckboxMouseDown(view: EditorView, event: MouseEvent): boolean {
     userHasInteracted = true;
     view.focus();
     view.dispatch(
-        view.state.tr.setNodeMarkup(itemPos, undefined, {
-            ...itemNode.attrs,
-            checked: !itemNode.attrs.checked,
+        view.state.tr.setNodeMarkup(found.pos, undefined, {
+            ...found.node.attrs,
+            checked: !found.node.attrs.checked,
         }),
     );
 
@@ -4099,30 +4120,40 @@ onBeforeUnmount(() => {
     padding: 1px 2px;
 }
 
-/* Checkbox styles for list items */
-.page-editor-list li[data-checked]::before {
-    content: '';
+/* Checkbox control rendered as an editor widget. */
+.node-checkbox {
+    position: relative;
+    z-index: 1;
     float: left;
+    display: flex;
     width: 14px;
     height: 14px;
+    align-items: center;
+    justify-content: center;
     margin-right: 6px;
     margin-top: 3px;
     border: 1.5px solid rgba(128, 128, 128, 0.5);
     border-radius: 3px;
     cursor: pointer;
+    user-select: none;
 }
 
-.page-editor-list li[data-checked='true']::before {
+.node-checkbox.is-checked {
     background: var(--link);
     border-color: var(--link);
-    content: '✓';
-    cursor: pointer !important;
-    user-select: none;
+    color: var(--background);
     font-size: 11px;
     font-weight: 900;
-    line-height: 14px;
-    text-align: center;
-    color: var(--background);
+    line-height: 1;
+}
+
+.node-checkbox.is-checked::before {
+    content: '';
+    width: 4px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-1px) rotate(45deg);
 }
 
 .page-editor-list li[data-checked='true'] > p,
