@@ -776,7 +776,15 @@ function handleGlobalKeydown(e: KeyboardEvent) {
         return;
     }
 
-    if (e.key === 'Enter' && !isEditingTitle.value) {
+    const entersEditor =
+        e.key === 'Enter' ||
+        (e.key === 'ArrowDown' &&
+            !e.ctrlKey &&
+            !e.metaKey &&
+            !e.altKey &&
+            !e.shiftKey);
+
+    if (entersEditor && !isEditingTitle.value) {
         const target = e.target as HTMLElement;
 
         if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {

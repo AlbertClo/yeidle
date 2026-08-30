@@ -101,6 +101,22 @@ const syncWorkspaceId = ref<string | null>(null);
 const deleteWorkspaceId = ref<string | null>(null);
 const showOnDiskWorkspaceId = ref<string | null>(null);
 
+function focusOtherSyncAction(event: KeyboardEvent): void {
+    const current = event.currentTarget;
+
+    if (!(current instanceof HTMLButtonElement)) {
+        return;
+    }
+
+    const actions = current.parentElement?.querySelectorAll<HTMLButtonElement>(
+        ':scope > button:not(:disabled)',
+    );
+
+    Array.from(actions ?? [])
+        .find((action) => action !== current)
+        ?.focus();
+}
+
 const activeWorkspace = computed(
     () =>
         state.value?.workspaces.find(
@@ -1084,6 +1100,8 @@ onMounted(() => {
                         variant="outline"
                         :disabled="workspaceActionId !== null"
                         @click="syncConfirmationOpen = false"
+                        @keydown.left.prevent="focusOtherSyncAction"
+                        @keydown.right.prevent="focusOtherSyncAction"
                     >
                         Cancel
                     </Button>
@@ -1091,6 +1109,8 @@ onMounted(() => {
                         type="button"
                         :disabled="workspaceActionId !== null"
                         @click="enableCloudSync(syncWorkspace)"
+                        @keydown.left.prevent="focusOtherSyncAction"
+                        @keydown.right.prevent="focusOtherSyncAction"
                     >
                         <LoaderCircle
                             v-if="workspaceActionId === syncWorkspace.id"

@@ -201,10 +201,12 @@ onBeforeUnmount(() => {
         class="ml-auto flex h-8 w-64 items-center gap-2 rounded-md bg-sidebar-accent/50 px-3 text-sm text-muted-foreground"
         @click="openSearch"
     >
-        <Search class="h-4 w-4" />
-        <span>Find or Create Page</span>
+        <Search class="h-4 w-4 shrink-0" />
+        <span class="min-w-0 flex-1 truncate text-left whitespace-nowrap"
+            >Find or Create Page</span
+        >
         <kbd
-            class="ml-auto rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+            class="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs whitespace-nowrap text-muted-foreground"
             >{{ bindingLabel('find-page') }}</kbd
         >
     </button>

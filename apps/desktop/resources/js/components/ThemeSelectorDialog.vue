@@ -73,8 +73,16 @@ function handleThemeKeydown(event: KeyboardEvent, index: number): void {
 
     if (event.key === 'ArrowLeft' && index > 0) {
         targetIndex = index - 1;
-    } else if (event.key === 'ArrowRight' && index < THEME_OPTIONS.length - 1) {
-        targetIndex = index + 1;
+    } else if (event.key === 'ArrowRight') {
+        if (index < THEME_OPTIONS.length - 1) {
+            targetIndex = index + 1;
+        } else {
+            event.preventDefault();
+            event.stopPropagation();
+            focusCloseButton();
+
+            return;
+        }
     } else if (event.key === 'ArrowUp' && index >= 3) {
         targetIndex = index - 3;
     } else if (event.key === 'ArrowDown') {
@@ -106,18 +114,25 @@ function handleThemeKeydown(event: KeyboardEvent, index: number): void {
 
 function handleCloseKeydown(event: KeyboardEvent): void {
     if (
-        event.key !== 'ArrowUp' ||
         event.ctrlKey ||
         event.metaKey ||
         event.altKey ||
-        event.shiftKey
+        event.shiftKey ||
+        !['ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)
     ) {
         return;
     }
 
     event.preventDefault();
     event.stopPropagation();
-    focusTheme(lastThemeIndex.value);
+
+    if (event.key === 'ArrowLeft') {
+        focusTheme(THEME_OPTIONS.length - 1);
+    } else if (event.key === 'ArrowRight') {
+        focusTheme(0);
+    } else {
+        focusTheme(lastThemeIndex.value);
+    }
 }
 
 function handleOpenAutoFocus(event: Event): void {

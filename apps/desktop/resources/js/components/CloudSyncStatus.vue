@@ -208,6 +208,22 @@ function handleOpenSyncConfirmation(): void {
     void requestSyncConfirmation();
 }
 
+function focusOtherSyncAction(event: KeyboardEvent): void {
+    const current = event.currentTarget;
+
+    if (!(current instanceof HTMLButtonElement)) {
+        return;
+    }
+
+    const actions = current.parentElement?.querySelectorAll<HTMLButtonElement>(
+        ':scope > button:not(:disabled)',
+    );
+
+    Array.from(actions ?? [])
+        .find((action) => action !== current)
+        ?.focus();
+}
+
 watch(
     () => cloudAccount.value?.signed_in,
     (signedIn) => {
@@ -384,6 +400,8 @@ onBeforeUnmount(() => {
                         variant="outline"
                         :disabled="syncing"
                         @click="confirmSyncOpen = false"
+                        @keydown.left.prevent="focusOtherSyncAction"
+                        @keydown.right.prevent="focusOtherSyncAction"
                     >
                         Cancel
                     </Button>
@@ -391,6 +409,8 @@ onBeforeUnmount(() => {
                         type="button"
                         :disabled="syncing"
                         @click="syncCurrentWorkspace"
+                        @keydown.left.prevent="focusOtherSyncAction"
+                        @keydown.right.prevent="focusOtherSyncAction"
                     >
                         <RefreshCw v-if="syncing" class="animate-spin" />
                         {{ syncing ? 'Syncing…' : 'Sync workspace' }}

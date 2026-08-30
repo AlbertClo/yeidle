@@ -312,7 +312,11 @@ function setOpen(value: boolean): void {
     if (value) {
         sessionStorage.setItem(ACCOUNT_DIALOG_OPEN_KEY, 'true');
         open.value = true;
+
+        return;
     }
+
+    closeDialog();
 }
 
 function closeDialog(): void {
@@ -399,7 +403,6 @@ onBeforeUnmount(() => {
             class="sm:max-w-md"
             :show-close-button="false"
             @open-auto-focus="$event.preventDefault()"
-            @interact-outside="$event.preventDefault()"
         >
             <button
                 type="button"
