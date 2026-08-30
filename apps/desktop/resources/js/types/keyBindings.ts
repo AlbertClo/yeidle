@@ -10,6 +10,11 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Alt+A',
     },
     {
+        id: 'navigation-history',
+        label: 'Open Navigation History',
+        defaultBinding: 'Mod+H',
+    },
+    {
         id: 'toggle-left-sidebar',
         label: 'Toggle Left Sidebar',
         defaultBinding: 'Mod+Backslash',

@@ -4,6 +4,7 @@ import {
     Cloud,
     CloudUpload,
     FileText,
+    History,
     Keyboard,
     Palette,
     PanelLeft,
@@ -65,6 +66,13 @@ const commands = computed<PaletteCommand[]>(() => [
         icon: FileText,
         shortcut: bindingLabel('all-pages'),
         run: () => router.visit('/pages'),
+    },
+    {
+        id: 'navigation-history',
+        label: 'Navigation History',
+        icon: History,
+        shortcut: bindingLabel('navigation-history'),
+        run: () => router.visit('/navigation-history'),
     },
     {
         id: 'toggle-left-sidebar',

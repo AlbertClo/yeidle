@@ -51,6 +51,10 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
+    flushNavigationHistory,
+    reloadNavigationHistory,
+} from '@/navigation/historyNavigation';
+import {
     cloudAccount,
     enableWorkspaceCloudSync,
     loadCloudAccount,
@@ -154,6 +158,8 @@ async function activate(workspace: Workspace): Promise<void> {
     error.value = null;
 
     try {
+        await flushNavigationHistory();
+
         const response = await fetch(
             `/api/workspaces/${workspace.id}/activate`,
             {
@@ -194,6 +200,7 @@ async function activate(workspace: Workspace): Promise<void> {
         await Promise.all([loadPreferences(true), loadKeyBindings(true)]).catch(
             () => undefined,
         );
+        await reloadNavigationHistory('/pages').catch(() => undefined);
         visitPages();
     } catch (reason) {
         error.value =

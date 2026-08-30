@@ -2,12 +2,17 @@ import remote from '@electron/remote';
 import { contextBridge, ipcRenderer } from 'electron';
 
 let nextWindowControlSubscriptionId = 1;
+const navigationCommandChannel = 'yeidle:navigation-command';
 const windowControlSubscriptions = new Map<
     number,
     {
         window: Electron.BrowserWindow;
         listener: () => void;
     }
+>();
+const navigationCommandSubscriptions = new Map<
+    number,
+    (_event: Electron.IpcRendererEvent, direction: 'back' | 'forward') => void
 >();
 
 // -------------------------------------------------------------------
@@ -45,6 +50,25 @@ const Native = {
         },
         close: () => remote.getCurrentWindow().close(),
         isMaximized: () => remote.getCurrentWindow().isMaximized(),
+        subscribeNavigationCommand: (callback: (direction: 'back' | 'forward') => void) => {
+            const id = nextWindowControlSubscriptionId++;
+            const listener = (_event: Electron.IpcRendererEvent, direction: 'back' | 'forward') => callback(direction);
+
+            ipcRenderer.on(navigationCommandChannel, listener);
+            navigationCommandSubscriptions.set(id, listener);
+
+            return id;
+        },
+        unsubscribeNavigationCommand: (id: number) => {
+            const listener = navigationCommandSubscriptions.get(id);
+
+            if (!listener) {
+                return;
+            }
+
+            ipcRenderer.removeListener(navigationCommandChannel, listener);
+            navigationCommandSubscriptions.delete(id);
+        },
         subscribeMaximizedChange: (callback: (maximized: boolean) => void) => {
             const id = nextWindowControlSubscriptionId++;
             const currentWindow = remote.getCurrentWindow();

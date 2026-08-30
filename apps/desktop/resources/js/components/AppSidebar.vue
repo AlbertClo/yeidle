@@ -66,6 +66,13 @@ function handleNavigationShortcut(event: KeyboardEvent): void {
         return;
     }
 
+    if (eventMatchesCommand(event, 'navigation-history')) {
+        event.preventDefault();
+        router.visit('/navigation-history');
+
+        return;
+    }
+
     const pinnedIndex = PINNED_ITEM_COMMANDS.findIndex((command) =>
         eventMatchesCommand(event, command),
     );

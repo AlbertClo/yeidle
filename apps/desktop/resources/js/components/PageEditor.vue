@@ -22,8 +22,14 @@ import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
 import { Fragment } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
+import type { EditorState } from '@tiptap/pm/state';
+import {
+    NodeSelection,
+    Plugin,
+    PluginKey,
+    Selection,
+    TextSelection,
+} from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
@@ -51,17 +57,18 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    countNodes,
+    takeNodePrefix,
+    takeNodeWindow,
+} from '@/editor/progressiveNodes';
 import { BlockEmbed } from '@/extensions/blockembed';
 import { BlockReference } from '@/extensions/blockreference';
 import { FileNode } from '@/extensions/filenode';
 import { SlashCommand } from '@/extensions/slashcommand';
 import { WebLink } from '@/extensions/weblink';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
-import {
-    countNodes,
-    takeNodePrefix,
-    takeNodeWindow,
-} from '@/editor/progressiveNodes';
+import type { EditorSelectionBookmark } from '@/navigation/historyNavigation';
 import { eventMatchesCommand } from '@/stores/keyBindings';
 
 function openExternal(url: string) {
@@ -102,6 +109,7 @@ const props = defineProps<{
     autoFocus?: boolean;
     progressiveInitialNodeCount?: number;
     initialFocusBlockId?: string | null;
+    initialSelection?: EditorSelectionBookmark | null;
 }>();
 
 initPositionMap(props.nodes, props.pageId);
@@ -111,6 +119,9 @@ const emit = defineEmits<{
     focusTitle: [];
     focusBacklinks: [];
     initialFocusApplied: [];
+    initialSelectionApplied: [];
+    selectionChange: [selection: EditorSelectionBookmark];
+    navigationDeparture: [selection: EditorSelectionBookmark];
 }>();
 
 function focusStart() {
@@ -201,6 +212,80 @@ function selectionBlockId(): string | null {
     }
 
     return null;
+}
+
+function selectionBookmark(
+    targetEditor: TiptapEditor,
+    requireFocus = true,
+): EditorSelectionBookmark | null {
+    if (requireFocus && !targetEditor.isFocused) {
+        return null;
+    }
+
+    return selectionBookmarkFromState(targetEditor.state);
+}
+
+function selectionBookmarkFromState(
+    state: EditorState,
+): EditorSelectionBookmark | null {
+    const selection = state.selection;
+    const position =
+        selection instanceof NodeSelection ? selection.from : selection.head;
+    const $position = state.doc.resolve(position);
+
+    for (let depth = $position.depth; depth > 0; depth--) {
+        const node = $position.node(depth);
+
+        if (node.type.name === 'listItem' && node.attrs.blockId) {
+            return {
+                blockId: node.attrs.blockId as string,
+                offset: position - $position.before(depth),
+                selectionType:
+                    selection instanceof NodeSelection ? 'node' : 'text',
+            };
+        }
+    }
+
+    return null;
+}
+
+function emitSelectionBookmark(
+    targetEditor: TiptapEditor,
+    requireFocus = true,
+): void {
+    const bookmark = selectionBookmark(targetEditor, requireFocus);
+
+    if (bookmark) {
+        emit('selectionChange', bookmark);
+    }
+}
+
+function restoreSelectionBookmark(
+    targetEditor: TiptapEditor,
+    bookmark: EditorSelectionBookmark,
+): boolean {
+    const found = findListItem(bookmark.blockId, targetEditor);
+
+    if (!found) {
+        return false;
+    }
+
+    const position = Math.min(
+        found.pos + found.node.nodeSize - 1,
+        Math.max(found.pos + 1, found.pos + bookmark.offset),
+    );
+    const resolved = targetEditor.state.doc.resolve(position);
+    const selection =
+        bookmark.selectionType === 'node' &&
+        resolved.nodeAfter &&
+        NodeSelection.isSelectable(resolved.nodeAfter)
+            ? NodeSelection.create(targetEditor.state.doc, position)
+            : TextSelection.near(resolved, 1);
+
+    targetEditor.view.dispatch(targetEditor.state.tr.setSelection(selection));
+    targetEditor.view.focus();
+
+    return true;
 }
 
 /**
@@ -1398,9 +1483,15 @@ const linkPopover = ref<{
     selectedIndex: 0,
 });
 const popoverRef = ref<HTMLElement>();
+let linkPopoverBookmark: EditorSelectionBookmark | null = null;
 
-function showLinkPopover(view: any) {
+function showLinkPopover(view: EditorView) {
     const sel = view.state.selection;
+
+    if (!(sel instanceof NodeSelection)) {
+        return;
+    }
+
     const node = sel.node;
     const coords = view.coordsAtPos(sel.from);
     const editorEl = document
@@ -1409,6 +1500,12 @@ function showLinkPopover(view: any) {
 
     if (!editorEl) {
         return;
+    }
+
+    linkPopoverBookmark = selectionBookmarkFromState(view.state);
+
+    if (linkPopoverBookmark) {
+        emit('selectionChange', linkPopoverBookmark);
     }
 
     linkPopover.value = {
@@ -1429,10 +1526,33 @@ function showLinkPopover(view: any) {
 
 function hideLinkPopover() {
     linkPopover.value.visible = false;
+    linkPopoverBookmark = null;
 }
 
 function followLink() {
     const { type, pageId, href } = linkPopover.value;
+    const bookmark = linkPopoverBookmark;
+    const activeEditor = editor.value;
+    const followsPage = type === 'mention' && pageId;
+
+    if (bookmark) {
+        emit('selectionChange', bookmark);
+
+        if (followsPage) {
+            emit('navigationDeparture', bookmark);
+        }
+    } else if (activeEditor) {
+        const selection = selectionBookmark(activeEditor, false);
+
+        if (selection) {
+            emit('selectionChange', selection);
+
+            if (followsPage) {
+                emit('navigationDeparture', selection);
+            }
+        }
+    }
+
     hideLinkPopover();
 
     if (type === 'mention' && pageId) {
@@ -2270,6 +2390,20 @@ const editor = useEditor({
 
                 if (node.type.name === 'mention' && node.attrs.id) {
                     event.preventDefault();
+                    const activeEditor = editor.value;
+
+                    if (activeEditor) {
+                        const selection = selectionBookmark(
+                            activeEditor,
+                            false,
+                        );
+
+                        if (selection) {
+                            emit('selectionChange', selection);
+                            emit('navigationDeparture', selection);
+                        }
+                    }
+
                     router.visit(`/pages/${node.attrs.id}`);
 
                     return true;
@@ -2575,9 +2709,21 @@ const editor = useEditor({
         const focusedRequestedBlock = initialFocusBlockId
             ? focusBlockInEditor(editor, initialFocusBlockId)
             : false;
+        const restoredInitialSelection =
+            !focusedRequestedBlock && props.initialSelection
+                ? restoreSelectionBookmark(editor, props.initialSelection)
+                : false;
 
-        if (!focusedRequestedBlock && props.autoFocus !== false) {
+        if (
+            !focusedRequestedBlock &&
+            !restoredInitialSelection &&
+            props.autoFocus !== false
+        ) {
             editor.commands.focus('start');
+        }
+
+        if (restoredInitialSelection) {
+            emit('initialSelectionApplied');
         }
 
         if (focusedRequestedBlock && !progressiveHydrationRequired) {
@@ -2587,8 +2733,12 @@ const editor = useEditor({
 
         scheduleProgressiveHydration(editor);
     },
-    onFocus: () => {
+    onFocus: ({ editor }) => {
         userHasInteracted = true;
+        emitSelectionBookmark(editor);
+    },
+    onSelectionUpdate: ({ editor }) => {
+        emitSelectionBookmark(editor);
     },
     onTransaction: ({ transaction, editor }) => {
         if (!transaction.docChanged) {
@@ -2658,6 +2808,17 @@ function handleEditorClick(e: MouseEvent) {
 
         if (pageId) {
             e.preventDefault();
+            const activeEditor = editor.value;
+
+            if (activeEditor) {
+                const selection = selectionBookmark(activeEditor, false);
+
+                if (selection) {
+                    emit('selectionChange', selection);
+                    emit('navigationDeparture', selection);
+                }
+            }
+
             router.visit(`/pages/${pageId}`);
         }
 

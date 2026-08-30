@@ -10,6 +10,11 @@ import {
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import AppLayout from '@/layouts/AppLayout.vue';
+import {
+    isHistoryNavigation,
+    restoreNavigationScrollPosition,
+} from '@/navigation/historyNavigation';
+import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
 import { bindingLabel } from '@/stores/keyBindings';
 import { saveWorkspaceStoragePreference } from '@/stores/preferences';
 import { workspaceState } from '@/stores/workspaces';
@@ -34,7 +39,11 @@ const props = defineProps<{
 }>();
 
 const INITIAL_PAGE_COUNT = 40;
-const renderedPageCount = ref(Math.min(INITIAL_PAGE_COUNT, props.pages.length));
+const renderedPageCount = ref(
+    isHistoryNavigation() || hasSavedMainScrollPosition()
+        ? props.pages.length
+        : Math.min(INITIAL_PAGE_COUNT, props.pages.length),
+);
 const renderedPages = computed(() =>
     props.pages.slice(0, renderedPageCount.value),
 );
@@ -176,6 +185,7 @@ onMounted(() => {
         handleWorkspaceSyncEnabled,
     );
     schedulePageHydration();
+    restoreNavigationScrollPosition();
 });
 
 onBeforeUnmount(() => {

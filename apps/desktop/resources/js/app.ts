@@ -11,6 +11,11 @@ import { createApp, h } from 'vue';
 import '../css/app.css';
 import { initializeTheme } from '@/composables/useAppearance';
 import { initializeTypography } from '@/composables/useTypography';
+import {
+    initializeHistoryNavigation,
+    navigateBack,
+    navigateForward,
+} from '@/navigation/historyNavigation';
 import { eventMatchesCommand, loadKeyBindings } from '@/stores/keyBindings';
 import { initializeRealtimeSync } from '@/sync/realtime';
 
@@ -33,16 +38,31 @@ function initializeNativeWindowFrame(): void {
 
     const subscriptionId =
         windowControls.subscribeMaximizedChange(updateMaximizedState);
+    const navigationSubscriptionId = windowControls.subscribeNavigationCommand(
+        (direction) => {
+            if (direction === 'back') {
+                void navigateBack();
+            } else {
+                void navigateForward();
+            }
+        },
+    );
 
     window.addEventListener(
         'beforeunload',
-        () => windowControls.unsubscribeMaximizedChange(subscriptionId),
+        () => {
+            windowControls.unsubscribeMaximizedChange(subscriptionId);
+            windowControls.unsubscribeNavigationCommand(
+                navigationSubscriptionId,
+            );
+        },
         { once: true },
     );
 }
 
 initializeNativeWindowFrame();
 initializeTypography();
+initializeHistoryNavigation();
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
@@ -66,44 +86,37 @@ initializeTheme();
 initializeRealtimeSync();
 void loadKeyBindings().catch(() => undefined);
 
-function isTextEditingTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) {
-        return false;
-    }
+document.addEventListener(
+    'keydown',
+    (e) => {
+        if (eventMatchesCommand(e, 'reload')) {
+            e.preventDefault();
 
-    return (
-        target.matches('input, textarea, select') ||
-        target.isContentEditable ||
-        target.closest('[contenteditable="true"]') !== null
-    );
-}
+            if (window.Native?.windowControls) {
+                window.Native.windowControls.reload();
+            } else {
+                window.location.reload();
+            }
 
-document.addEventListener('keydown', (e) => {
-    if (eventMatchesCommand(e, 'reload')) {
-        e.preventDefault();
-
-        if (window.Native?.windowControls) {
-            window.Native.windowControls.reload();
-        } else {
-            window.location.reload();
+            return;
         }
 
-        return;
-    }
+        // Prevent Ctrl+Q from closing the app (Electron default)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
+            e.preventDefault();
+        }
 
-    // Prevent Ctrl+Q from closing the app (Electron default)
-    if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
-        e.preventDefault();
-    }
+        if (eventMatchesCommand(e, 'back')) {
+            e.preventDefault();
+            void navigateBack();
 
-    // Leave text-navigation keys alone while a user is editing content.
-    if (!isTextEditingTarget(e.target) && eventMatchesCommand(e, 'back')) {
-        e.preventDefault();
-        window.history.back();
-    }
+            return;
+        }
 
-    if (!isTextEditingTarget(e.target) && eventMatchesCommand(e, 'forward')) {
-        e.preventDefault();
-        window.history.forward();
-    }
-});
+        if (eventMatchesCommand(e, 'forward')) {
+            e.preventDefault();
+            void navigateForward();
+        }
+    },
+    true,
+);

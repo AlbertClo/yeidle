@@ -4,6 +4,7 @@ use App\Http\Controllers\CloudAccountController;
 use App\Http\Controllers\CloudController;
 use App\Http\Controllers\KeyBindingController;
 use App\Http\Controllers\MediaController;
+use App\Http\Controllers\NavigationHistoryController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PinController;
@@ -63,6 +64,10 @@ Route::put('preferences/typography', [PreferenceController::class, 'updateTypogr
 Route::put('preferences/workspace-storage', [PreferenceController::class, 'updateWorkspaceStorage']);
 Route::get('key-bindings', [KeyBindingController::class, 'show']);
 Route::put('key-bindings', [KeyBindingController::class, 'update']);
+Route::get('navigation-history', [NavigationHistoryController::class, 'show']);
+Route::delete('navigation-history', [NavigationHistoryController::class, 'clear']);
+Route::put('navigation-history/locations/{locationId}', [NavigationHistoryController::class, 'save']);
+Route::put('navigation-history/current', [NavigationHistoryController::class, 'setCurrent']);
 // Before pages/{node} so "title-exists" isn't captured as a node id
 Route::get('pages/title-exists', [PageController::class, 'titleExists']);
 Route::get('pages/{node}', [PageController::class, 'show']);

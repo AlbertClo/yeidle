@@ -6,6 +6,10 @@ interface NativeWindowControls {
     toggleMaximize: () => boolean;
     close: () => void;
     isMaximized: () => boolean;
+    subscribeNavigationCommand: (
+        callback: (direction: 'back' | 'forward') => void,
+    ) => number;
+    unsubscribeNavigationCommand: (id: number) => void;
     subscribeMaximizedChange: (
         callback: (maximized: boolean) => void,
     ) => number;

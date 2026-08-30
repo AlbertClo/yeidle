@@ -76,4 +76,8 @@ describe('key bindings', () => {
         expect(DEFAULT_KEY_BINDINGS[PINNED_ITEM_COMMANDS[8]]).toBe('Alt+9');
         expect(DEFAULT_KEY_BINDINGS[PINNED_ITEM_COMMANDS[9]]).toBe('Alt+0');
     });
+
+    it('opens navigation history with Ctrl or Command H', () => {
+        expect(DEFAULT_KEY_BINDINGS['navigation-history']).toBe('Mod+H');
+    });
 });

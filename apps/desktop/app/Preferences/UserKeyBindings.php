@@ -15,6 +15,7 @@ final class UserKeyBindings
     public const DEFAULTS = [
         'command-palette' => 'Mod+P',
         'all-pages' => 'Alt+A',
+        'navigation-history' => 'Mod+H',
         'toggle-left-sidebar' => 'Mod+Backslash',
         'find-page' => 'Mod+U',
         'toggle-pin' => 'Alt+P',

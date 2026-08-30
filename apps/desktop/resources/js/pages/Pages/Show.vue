@@ -22,6 +22,15 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import AppLayout from '@/layouts/AppLayout.vue';
+import {
+    isHistoryNavigation,
+    prepareEditorNavigation,
+    recalledEditorSelection,
+    rememberEditorSelection,
+    restoreNavigationScrollPosition,
+} from '@/navigation/historyNavigation';
+import type { EditorSelectionBookmark } from '@/navigation/historyNavigation';
+import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
 import { bindingLabel } from '@/stores/keyBindings';
 import {
     getCachedPage,
@@ -90,6 +99,19 @@ const requestedBlock = ref(
         ? null
         : new URLSearchParams(window.location.search).get('block'),
 );
+const editorHistoryKey =
+    typeof window === 'undefined'
+        ? `/pages/${props.page.id}`
+        : `${window.location.pathname}${window.location.search}`;
+const restoringHistoryNavigation = isHistoryNavigation();
+const initialEditorSelection = ref<EditorSelectionBookmark | null>(
+    restoringHistoryNavigation
+        ? recalledEditorSelection(editorHistoryKey)
+        : null,
+);
+const restoringHistoryPosition =
+    restoringHistoryNavigation || hasSavedMainScrollPosition();
+const progressiveInitialNodeCount = restoringHistoryPosition ? 0 : 40;
 
 let hasPendingSync = false;
 let pendingNodes: Node[] = [];
@@ -440,7 +462,7 @@ function handleLocalOpsAvailable() {
 let pullCursor = props.syncCursor ?? 0;
 let pullTimer: ReturnType<typeof setInterval> | null = null;
 let pulling = false;
-const editorAutoFocus = ref(true);
+const editorAutoFocus = ref(!restoringHistoryPosition);
 // Content updates that couldn't apply because the cursor was inside the
 // target node; retried each tick until the node is free
 const pendingContentIds = new Set<string>();
@@ -656,6 +678,16 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     }
 }
 
+function handleEditorSelectionChange(selection: EditorSelectionBookmark): void {
+    rememberEditorSelection(editorHistoryKey, selection);
+}
+
+function handleEditorNavigationDeparture(
+    selection: EditorSelectionBookmark,
+): void {
+    prepareEditorNavigation(editorHistoryKey, selection);
+}
+
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
@@ -663,6 +695,7 @@ onMounted(() => {
     document.addEventListener('keydown', handleGlobalKeydown);
     refreshBacklinks();
     pullTimer = setInterval(pollRemoteOps, 1500);
+    restoreNavigationScrollPosition();
 });
 
 onBeforeUnmount(() => {
@@ -747,12 +780,20 @@ onBeforeUnmount(() => {
                         :nodes="pageNodes"
                         :page-id="page.id"
                         :auto-focus="editorAutoFocus"
-                        :progressive-initial-node-count="40"
+                        :progressive-initial-node-count="
+                            progressiveInitialNodeCount
+                        "
                         :initial-focus-block-id="requestedBlock"
+                        :initial-selection="initialEditorSelection"
                         @update="handleNodesUpdate"
                         @focus-title="startEditingTitle()"
                         @focus-backlinks="focusFirstBacklink"
                         @initial-focus-applied="requestedBlock = null"
+                        @initial-selection-applied="
+                            initialEditorSelection = null
+                        "
+                        @selection-change="handleEditorSelectionChange"
+                        @navigation-departure="handleEditorNavigationDeparture"
                     />
                 </div>
 
