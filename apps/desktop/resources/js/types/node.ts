@@ -1,5 +1,6 @@
 export type Node = {
     id: string;
+    page_id?: string;
     parent_id: string | null;
     position: string;
     content: string;
@@ -10,6 +11,11 @@ export type Node = {
     updated_at: string;
     children?: Node[];
 };
+
+export type PageListItem = Pick<
+    Node,
+    'id' | 'content' | 'modified_hlc' | 'updated_at'
+>;
 
 export type NodeLink = {
     id: string;

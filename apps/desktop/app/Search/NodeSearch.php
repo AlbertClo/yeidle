@@ -215,6 +215,8 @@ final class NodeSearch
                 }
 
                 if ($current->parent_id === null) {
+                    $node->setAttribute('page_id', $current->id);
+
                     return true;
                 }
 

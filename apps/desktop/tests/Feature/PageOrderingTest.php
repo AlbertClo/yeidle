@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class PageOrderingTest extends TestCase
@@ -23,6 +24,32 @@ class PageOrderingTest extends TestCase
             ->assertJsonPath('1.id', $tieHigh->id)
             ->assertJsonPath('2.id', $tieLow->id)
             ->assertJsonPath('3.id', $oldest->id);
+    }
+
+    public function test_page_index_only_sends_fields_used_by_the_list(): void
+    {
+        $page = $this->page(
+            '00000000-0000-7000-8000-000000000005',
+            'Page',
+            '000000000000300-0000-a',
+        );
+
+        $this->get('/pages')
+            ->assertSuccessful()
+            ->assertInertia(fn (Assert $response) => $response
+                ->component('Pages/Index')
+                ->where('pages.0.id', $page->id)
+                ->hasAll([
+                    'pages.0.content',
+                    'pages.0.modified_hlc',
+                    'pages.0.updated_at',
+                ])
+                ->missingAll([
+                    'pages.0.parent_id',
+                    'pages.0.position',
+                    'pages.0.tiptap_content',
+                    'pages.0.created_at',
+                ]));
     }
 
     public function test_siblings_are_ordered_by_position_with_a_deterministic_id_tie_breaker(): void

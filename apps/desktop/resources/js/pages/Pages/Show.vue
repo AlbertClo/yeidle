@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import { EllipsisVertical, Pin, Trash2 } from 'lucide-vue-next';
-import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import PageEditor from '@/components/PageEditor.vue';
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,6 @@ const pageNodes = ref<Node[]>(cached?.children ?? props.page.children ?? []);
 const pageBacklinks = ref(props.backlinks);
 const editorKey = ref(0);
 const pagePinned = computed(() => isNodePinned(props.page.id));
-
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'All Pages', href: '/pages' },
     {
@@ -78,7 +77,19 @@ const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     },
 ]);
 const titleRef = ref<HTMLInputElement>();
-const pageEditorRef = ref<InstanceType<typeof PageEditor>>();
+type PageEditorHandle = {
+    focusStart: () => void;
+    focusBlock: (blockId: string) => void;
+    selectionBlockId: () => string | null;
+    applyRemoteContent: (node: Node) => boolean;
+};
+
+const pageEditorRef = ref<PageEditorHandle>();
+const requestedBlock = ref(
+    typeof window === 'undefined'
+        ? null
+        : new URLSearchParams(window.location.search).get('block'),
+);
 
 let hasPendingSync = false;
 let pendingNodes: Node[] = [];
@@ -641,8 +652,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
         }
 
         e.preventDefault();
-        const editorEl = document.querySelector('.ProseMirror') as HTMLElement;
-        editorEl?.focus();
+        pageEditorRef.value?.focusStart();
     }
 }
 
@@ -653,14 +663,6 @@ onMounted(() => {
     document.addEventListener('keydown', handleGlobalKeydown);
     refreshBacklinks();
     pullTimer = setInterval(pollRemoteOps, 1500);
-
-    const requestedBlock = new URLSearchParams(window.location.search).get(
-        'block',
-    );
-
-    if (requestedBlock) {
-        void nextTick(() => pageEditorRef.value?.focusBlock(requestedBlock));
-    }
 });
 
 onBeforeUnmount(() => {
@@ -745,9 +747,12 @@ onBeforeUnmount(() => {
                         :nodes="pageNodes"
                         :page-id="page.id"
                         :auto-focus="editorAutoFocus"
+                        :progressive-initial-node-count="40"
+                        :initial-focus-block-id="requestedBlock"
                         @update="handleNodesUpdate"
                         @focus-title="startEditingTitle()"
                         @focus-backlinks="focusFirstBacklink"
+                        @initial-focus-applied="requestedBlock = null"
                     />
                 </div>
 
