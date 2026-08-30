@@ -27,7 +27,11 @@ import {
     DropdownMenuShortcut,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { adjacentDate, openDailyNote } from '@/dailyNotes';
+import {
+    adjacentDate,
+    openDailyNote,
+    startDailyNoteTraversal,
+} from '@/dailyNotes';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     isHistoryNavigation,
@@ -667,12 +671,15 @@ function openAdjacentDailyNote(offset: -1 | 1): void {
     }
 
     void openDailyNote(adjacentDate(props.page.daily_note_date, offset)).catch(
-        () =>
-            toast.error(
-                offset < 0
-                    ? 'Could not open the previous daily note.'
-                    : 'Could not open the next daily note.',
-            ),
+        () => showAdjacentDailyNoteError(offset),
+    );
+}
+
+function showAdjacentDailyNoteError(offset: -1 | 1): void {
+    toast.error(
+        offset < 0
+            ? 'Could not open the previous daily note.'
+            : 'Could not open the next daily note.',
     );
 }
 
@@ -698,7 +705,9 @@ function handleGlobalKeydown(e: KeyboardEvent) {
         eventMatchesCommand(e, 'previous-daily-note')
     ) {
         e.preventDefault();
-        openAdjacentDailyNote(-1);
+        startDailyNoteTraversal(props.page.daily_note_date, -1, () =>
+            showAdjacentDailyNoteError(-1),
+        );
 
         return;
     }
@@ -709,7 +718,9 @@ function handleGlobalKeydown(e: KeyboardEvent) {
         eventMatchesCommand(e, 'next-daily-note')
     ) {
         e.preventDefault();
-        openAdjacentDailyNote(1);
+        startDailyNoteTraversal(props.page.daily_note_date, 1, () =>
+            showAdjacentDailyNoteError(1),
+        );
 
         return;
     }
