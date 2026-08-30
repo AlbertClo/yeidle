@@ -6,6 +6,7 @@ use App\Models\Node;
 use App\Models\Op;
 use App\Models\PageVisit;
 use App\Services\NodeTreeLoader;
+use App\Support\CollapsedNodes;
 use App\Support\PinNodes;
 use App\Support\PreferenceNodes;
 use App\Support\SystemNodes;
@@ -20,6 +21,7 @@ class PageWebController extends Controller
 {
     public function __construct(
         private PinNodes $pins,
+        private CollapsedNodes $collapsedNodes,
         private PreferenceNodes $preferences,
         private NodeTreeLoader $trees,
     ) {}
@@ -76,6 +78,7 @@ class PageWebController extends Controller
         $syncCursor = (int) (Op::max('id') ?? 0);
 
         $pageTree = $this->trees->load($page->id);
+        $collapseState = $this->collapsedNodes->listing();
 
         PageVisit::create([
             'node_id' => $page->id,
@@ -85,6 +88,8 @@ class PageWebController extends Controller
         return Inertia::render('Pages/Show', [
             'page' => $pageTree,
             'pinned' => $this->pins->isPinned($page),
+            'collapsedNodeIds' => $collapseState['node_ids'],
+            'collapsedNodesRootId' => $collapseState['root_id'],
             // Show.vue refreshes backlinks after mounting and after edits.
             'backlinks' => [],
             'syncCursor' => $syncCursor,

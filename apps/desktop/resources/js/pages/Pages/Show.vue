@@ -43,6 +43,11 @@ import {
 } from '@/navigation/historyNavigation';
 import type { EditorSelectionBookmark } from '@/navigation/historyNavigation';
 import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
+import {
+    initializeCollapsedNodes,
+    loadCollapsedNodes,
+    opsAffectCollapsedNodes,
+} from '@/stores/collapsedNodes';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import {
     getCachedPage,
@@ -57,6 +62,7 @@ import {
     setNodePinned,
     updatePinnedItemTitle,
 } from '@/stores/pins';
+import type { LocalOpsAvailableEvent } from '@/sync/localOps';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import { notifyLocalNodesChanged } from '@/sync/nodeChanges';
 import {
@@ -78,7 +84,11 @@ const props = defineProps<{
     pinned: boolean;
     backlinks: { id: string; page_id: string; page_title: string }[];
     syncCursor?: number;
+    collapsedNodeIds: string[];
+    collapsedNodesRootId: string;
 }>();
+
+initializeCollapsedNodes(props.collapsedNodesRootId, props.collapsedNodeIds);
 
 markCachedPageActive(props.page.id);
 rememberPinState({ ...props.page, children: undefined }, props.pinned);
@@ -487,7 +497,13 @@ function handleNodesUpdate(nodes: Node[]) {
     syncDebounced(nodes);
 }
 
-function handleLocalOpsAvailable() {
+function handleLocalOpsAvailable(event: Event) {
+    const detail = (event as LocalOpsAvailableEvent).detail;
+
+    if (opsAffectCollapsedNodes(detail?.ops ?? null)) {
+        void loadCollapsedNodes(true);
+    }
+
     void pollRemoteOps();
 }
 

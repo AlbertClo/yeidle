@@ -44,8 +44,9 @@ import {
 } from 'lucide-vue-next';
 import { GapCursor } from 'prosemirror-gapcursor';
 import { uuidv7 } from 'uuidv7';
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, watch } from 'vue';
 import { onBeforeUnmount } from 'vue';
+import { toast } from 'vue-sonner';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -69,6 +70,12 @@ import { SlashCommand } from '@/extensions/slashcommand';
 import { WebLink } from '@/extensions/weblink';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import type { EditorSelectionBookmark } from '@/navigation/historyNavigation';
+import {
+    collapseNode,
+    collapsedNodeIds,
+    expandNodes,
+    isNodeCollapsed,
+} from '@/stores/collapsedNodes';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 
 function openExternal(url: string) {
@@ -136,9 +143,7 @@ function focusBoundaryInEditor(
     if (boundary === 'end') {
         e.view.focus();
         e.view.dispatch(
-            e.state.tr
-                .setSelection(Selection.atEnd(doc))
-                .scrollIntoView(),
+            e.state.tr.setSelection(Selection.atEnd(doc)).scrollIntoView(),
         );
 
         return;
@@ -183,6 +188,165 @@ function focusStart() {
     if (e) {
         focusBoundaryInEditor(e, 'start');
     }
+}
+
+function treePathToNode(
+    nodes: Node[],
+    targetId: string,
+    ancestors: Node[] = [],
+): Node[] | null {
+    for (const node of nodes) {
+        if (node.id === targetId) {
+            return ancestors;
+        }
+
+        const path = treePathToNode(node.children ?? [], targetId, [
+            ...ancestors,
+            node,
+        ]);
+
+        if (path) {
+            return path;
+        }
+    }
+
+    return null;
+}
+
+function treeNodeById(nodes: Node[], targetId: string): Node | null {
+    for (const node of nodes) {
+        if (node.id === targetId) {
+            return node;
+        }
+
+        const child = treeNodeById(node.children ?? [], targetId);
+
+        if (child) {
+            return child;
+        }
+    }
+
+    return null;
+}
+
+function collectTreeSubtreeIds(node: Node): string[] {
+    return [node.id, ...(node.children ?? []).flatMap(collectTreeSubtreeIds)];
+}
+
+function collectPmSubtreeIds(node: PmNode): string[] {
+    const ids: string[] = [];
+
+    if (node.type.name === 'listItem' && node.attrs.blockId) {
+        ids.push(node.attrs.blockId as string);
+    }
+
+    node.descendants((descendant) => {
+        if (descendant.type.name === 'listItem' && descendant.attrs.blockId) {
+            ids.push(descendant.attrs.blockId as string);
+        }
+    });
+
+    return ids;
+}
+
+function editorAncestorIds(
+    targetEditor: TiptapEditor,
+    blockId: string,
+): string[] | null {
+    const found = findListItem(blockId, targetEditor);
+
+    if (!found) {
+        return null;
+    }
+
+    const $position = targetEditor.state.doc.resolve(found.pos + 1);
+    const ids: string[] = [];
+
+    for (let depth = 1; depth <= $position.depth; depth++) {
+        const node = $position.node(depth);
+
+        if (
+            node.type.name === 'listItem' &&
+            node.attrs.blockId &&
+            node.attrs.blockId !== blockId
+        ) {
+            ids.push(node.attrs.blockId as string);
+        }
+    }
+
+    return ids;
+}
+
+function subtreeIdsForBlock(
+    blockId: string,
+    targetEditor?: TiptapEditor,
+): string[] {
+    if (targetEditor) {
+        const found = findListItem(blockId, targetEditor);
+
+        if (found) {
+            return collectPmSubtreeIds(found.node);
+        }
+    }
+
+    const treeNode = treeNodeById(props.nodes, blockId);
+
+    return treeNode ? collectTreeSubtreeIds(treeNode) : [blockId];
+}
+
+function refreshCollapseDecorations(targetEditor: TiptapEditor): void {
+    const transaction = targetEditor.state.tr
+        .setMeta(collapseDecorationsKey, {
+            nodeIds: [...collapsedNodeIds.value],
+        })
+        .setMeta('addToHistory', false);
+    targetEditor.view.dispatch(transaction);
+}
+
+function refreshCollapseHoverDecoration(
+    targetEditor: TiptapEditor,
+    nodeId: string | null,
+): void {
+    const transaction = targetEditor.state.tr
+        .setMeta(collapseDecorationsKey, { hoveredNodeId: nodeId })
+        .setMeta('addToHistory', false);
+    targetEditor.view.dispatch(transaction);
+}
+
+function revealBlockAncestors(
+    blockId: string,
+    targetEditor?: TiptapEditor,
+): void {
+    const ancestorIds =
+        (targetEditor && editorAncestorIds(targetEditor, blockId)) ??
+        treePathToNode(props.nodes, blockId)?.map((node) => node.id) ??
+        [];
+    const collapsedAncestors = ancestorIds.filter(isNodeCollapsed);
+
+    if (collapsedAncestors.length === 0) {
+        return;
+    }
+
+    const affectedIds = [
+        ...new Set(
+            collapsedAncestors.flatMap((ancestorId) =>
+                subtreeIdsForBlock(ancestorId, targetEditor),
+            ),
+        ),
+    ];
+    const persistence = expandNodes(collapsedAncestors, affectedIds);
+
+    if (targetEditor) {
+        refreshCollapseDecorations(targetEditor);
+    }
+
+    void persistence.catch(() => {
+        if (targetEditor) {
+            refreshCollapseDecorations(targetEditor);
+        }
+
+        toast.error('Could not expand the node.');
+    });
 }
 
 // --- Remote sync support (sync design §7) ---
@@ -284,6 +448,7 @@ function restoreSelectionBookmark(
     targetEditor: TiptapEditor,
     bookmark: EditorSelectionBookmark,
 ): boolean {
+    revealBlockAncestors(bookmark.blockId, targetEditor);
     const found = findListItem(bookmark.blockId, targetEditor);
 
     if (!found) {
@@ -378,6 +543,7 @@ function applyRemoteContent(nodeData: Node): boolean {
 
 /** Restore focus to a block after a structural refresh remount. */
 function focusBlockInEditor(e: TiptapEditor, blockId: string): boolean {
+    revealBlockAncestors(blockId, e);
     const found = findListItem(blockId, e);
 
     if (!found) {
@@ -397,6 +563,7 @@ function focusBlockInEditor(e: TiptapEditor, blockId: string): boolean {
 }
 
 function focusBlock(blockId: string) {
+    revealBlockAncestors(blockId, editor.value ?? undefined);
     const e = editor.value;
 
     if (!e) {
@@ -711,6 +878,112 @@ const ActiveLineHighlight = Extension.create({
                                 }
                             });
                         }
+
+                        return DecorationSet.create(state.doc, decorations);
+                    },
+                },
+            }),
+        ];
+    },
+});
+
+interface CollapseDecorationState {
+    nodeIds: Set<string>;
+    hoveredNodeId: string | null;
+}
+
+interface CollapseDecorationMeta {
+    nodeIds?: string[];
+    hoveredNodeId?: string | null;
+}
+
+const collapseDecorationsKey = new PluginKey<CollapseDecorationState>(
+    'collapsedNodeDecorations',
+);
+
+const CollapsedNodeDecorations = Extension.create({
+    name: 'collapsedNodeDecorations',
+    addProseMirrorPlugins() {
+        return [
+            new Plugin<CollapseDecorationState>({
+                key: collapseDecorationsKey,
+                state: {
+                    init: () => ({
+                        nodeIds: new Set(collapsedNodeIds.value),
+                        hoveredNodeId: null,
+                    }),
+                    apply: (transaction, previous) => {
+                        const meta = transaction.getMeta(
+                            collapseDecorationsKey,
+                        ) as CollapseDecorationMeta | undefined;
+
+                        if (!meta) {
+                            return previous;
+                        }
+
+                        return {
+                            nodeIds: meta.nodeIds
+                                ? new Set(meta.nodeIds)
+                                : previous.nodeIds,
+                            hoveredNodeId:
+                                meta.hoveredNodeId !== undefined
+                                    ? meta.hoveredNodeId
+                                    : previous.hoveredNodeId,
+                        };
+                    },
+                },
+                props: {
+                    decorations: (state) => {
+                        const collapseState =
+                            collapseDecorationsKey.getState(state);
+                        const decorations: Decoration[] = [];
+
+                        state.doc.descendants((node, pos) => {
+                            if (node.type.name !== 'listItem') {
+                                return;
+                            }
+
+                            const hasChildren =
+                                node.lastChild?.type.name === 'bulletList' &&
+                                (node.lastChild?.childCount ?? 0) > 0;
+
+                            if (!hasChildren) {
+                                return;
+                            }
+
+                            const collapsed = collapseState?.nodeIds.has(
+                                node.attrs.blockId as string,
+                            );
+                            const attributes: Record<string, string> = {
+                                'data-has-children': 'true',
+                                'aria-expanded': collapsed ? 'false' : 'true',
+                            };
+                            const classes: string[] = [];
+
+                            if (collapsed) {
+                                classes.push('is-collapsed');
+                                attributes['data-collapsed'] = 'true';
+                            }
+
+                            if (
+                                collapseState?.hoveredNodeId ===
+                                node.attrs.blockId
+                            ) {
+                                classes.push('collapse-marker-hover');
+                            }
+
+                            if (classes.length > 0) {
+                                attributes.class = classes.join(' ');
+                            }
+
+                            decorations.push(
+                                Decoration.node(
+                                    pos,
+                                    pos + node.nodeSize,
+                                    attributes,
+                                ),
+                            );
+                        });
 
                         return DecorationSet.create(state.doc, decorations);
                     },
@@ -2026,6 +2299,353 @@ function handleCheckboxMouseDown(view: EditorView, event: MouseEvent): boolean {
     return true;
 }
 
+function setListItemCollapsed(
+    view: EditorView,
+    itemNode: PmNode,
+    itemPos: number,
+    collapsed: boolean,
+): boolean {
+    const blockId = itemNode.attrs.blockId as string | null;
+    const nestedList =
+        itemNode.lastChild?.type.name === 'bulletList'
+            ? itemNode.lastChild
+            : null;
+
+    if (!blockId || !nestedList || nestedList.childCount === 0) {
+        return false;
+    }
+
+    const subtreeIds = collectPmSubtreeIds(itemNode);
+    const currentlyCollapsed = isNodeCollapsed(blockId);
+
+    if (collapsed && !currentlyCollapsed) {
+        let nestedListOffset = 0;
+
+        for (let index = 0; index < itemNode.childCount - 1; index++) {
+            nestedListOffset += itemNode.child(index).nodeSize;
+        }
+
+        const nestedListStart = itemPos + 1 + nestedListOffset;
+
+        if (view.state.selection.from >= nestedListStart) {
+            view.dispatch(
+                view.state.tr.setSelection(
+                    TextSelection.near(
+                        view.state.doc.resolve(nestedListStart),
+                        -1,
+                    ),
+                ),
+            );
+        }
+    }
+
+    if (
+        collapsed === currentlyCollapsed &&
+        (collapsed || !subtreeIds.some(isNodeCollapsed))
+    ) {
+        return true;
+    }
+
+    const persistence = collapsed
+        ? collapseNode(blockId, subtreeIds)
+        : expandNodes([blockId], subtreeIds);
+    refreshCollapseDecorations(viewEditor(view));
+
+    void persistence.catch(() => {
+        refreshCollapseDecorations(viewEditor(view));
+        toast.error(
+            collapsed
+                ? 'Could not collapse the node.'
+                : 'Could not expand the node.',
+        );
+    });
+
+    return true;
+}
+
+function viewEditor(view: EditorView): TiptapEditor {
+    const current = editor.value;
+
+    if (!current || current.view !== view) {
+        throw new Error('The page editor is not available.');
+    }
+
+    return current;
+}
+
+function collapseMarkerAtPointer(
+    view: EditorView,
+    event: MouseEvent,
+): HTMLLIElement | null {
+    if (!(event.target instanceof Element)) {
+        return null;
+    }
+
+    const listItem = event.target.closest<HTMLLIElement>(
+        ".page-editor-list li[data-has-children='true']:not([data-checked])",
+    );
+
+    if (!listItem || !view.dom.contains(listItem)) {
+        return null;
+    }
+
+    const bulletStyle = getComputedStyle(listItem, '::before');
+    const itemRect = listItem.getBoundingClientRect();
+    const left = Number.parseFloat(bulletStyle.left);
+    const top = Number.parseFloat(bulletStyle.top);
+    const width = Number.parseFloat(bulletStyle.width);
+    const height = Number.parseFloat(bulletStyle.height);
+    const bulletLeft = itemRect.left + (Number.isFinite(left) ? left : -16);
+    const bulletTop = itemRect.top + (Number.isFinite(top) ? top : 8);
+    const hitTargetWidth = Number.isFinite(width) ? width : 28;
+    const hitTargetHeight = Number.isFinite(height) ? height : 28;
+
+    if (
+        event.clientX < bulletLeft ||
+        event.clientX > bulletLeft + hitTargetWidth ||
+        event.clientY < bulletTop ||
+        event.clientY > bulletTop + hitTargetHeight
+    ) {
+        return null;
+    }
+
+    return listItem;
+}
+
+let hoveredCollapseMarkerId: string | null = null;
+
+function clearCollapseMarkerHover(): void {
+    if (hoveredCollapseMarkerId === null) {
+        return;
+    }
+
+    hoveredCollapseMarkerId = null;
+
+    if (editor.value) {
+        refreshCollapseHoverDecoration(editor.value, null);
+    }
+}
+
+function handleCollapseMouseMove(view: EditorView, event: MouseEvent): boolean {
+    const listItem = collapseMarkerAtPointer(view, event);
+    const itemPos = listItem ? view.posAtDOM(listItem, 0) - 1 : null;
+    const itemNode = itemPos === null ? null : view.state.doc.nodeAt(itemPos);
+    const blockId =
+        itemNode?.type.name === 'listItem'
+            ? (itemNode.attrs.blockId as string | null)
+            : null;
+
+    if (blockId === hoveredCollapseMarkerId) {
+        return false;
+    }
+
+    hoveredCollapseMarkerId = blockId;
+    refreshCollapseHoverDecoration(viewEditor(view), blockId);
+
+    return false;
+}
+
+function handleEditorMouseMove(event: MouseEvent): void {
+    const current = editor.value;
+
+    if (current) {
+        handleCollapseMouseMove(current.view, event);
+    }
+}
+
+function handleCollapseMouseDown(view: EditorView, event: MouseEvent): boolean {
+    if (event.button !== 0) {
+        return false;
+    }
+
+    const listItem = collapseMarkerAtPointer(view, event);
+
+    if (!listItem) {
+        return false;
+    }
+
+    const itemPos = view.posAtDOM(listItem, 0) - 1;
+    const itemNode = view.state.doc.nodeAt(itemPos);
+
+    if (itemNode?.type.name !== 'listItem') {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    view.focus();
+
+    return setListItemCollapsed(
+        view,
+        itemNode,
+        itemPos,
+        !isNodeCollapsed(itemNode.attrs.blockId as string),
+    );
+}
+
+function handleEditorMouseDown(view: EditorView, event: MouseEvent): boolean {
+    return (
+        handleCheckboxMouseDown(view, event) ||
+        handleCollapseMouseDown(view, event)
+    );
+}
+
+function setCurrentNodeCollapsed(
+    view: EditorView,
+    collapsed: boolean,
+): boolean {
+    const $position = view.state.selection.$head;
+
+    for (let depth = $position.depth; depth > 0; depth--) {
+        const node = $position.node(depth);
+
+        if (node.type.name === 'listItem') {
+            return setListItemCollapsed(
+                view,
+                node,
+                $position.before(depth),
+                collapsed,
+            );
+        }
+    }
+
+    return false;
+}
+
+interface VisibleListItem {
+    node: PmNode;
+    pos: number;
+}
+
+function visibleListItems(doc: PmNode): VisibleListItem[] {
+    const items: VisibleListItem[] = [];
+
+    doc.descendants((node, pos) => {
+        if (node.type.name !== 'listItem') {
+            return;
+        }
+
+        items.push({ node, pos });
+
+        if (isNodeCollapsed(node.attrs.blockId as string)) {
+            return false;
+        }
+    });
+
+    return items;
+}
+
+function directContentSize(item: PmNode): number {
+    let size = 0;
+
+    for (let index = 0; index < item.childCount; index++) {
+        const child = item.child(index);
+
+        if (child.type.name === 'bulletList') {
+            break;
+        }
+
+        size += child.nodeSize;
+    }
+
+    return size;
+}
+
+function boundarySelectionHead(
+    view: EditorView,
+    item: VisibleListItem,
+    boundary: 'start' | 'end',
+): number {
+    const position =
+        boundary === 'start'
+            ? item.pos + 1
+            : item.pos + 1 + directContentSize(item.node);
+
+    return TextSelection.near(
+        view.state.doc.resolve(position),
+        boundary === 'start' ? 1 : -1,
+    ).head;
+}
+
+function moveAcrossCollapsedBoundary(
+    view: EditorView,
+    event: KeyboardEvent,
+): boolean {
+    if (
+        (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !view.state.selection.empty ||
+        document.querySelector('.tippy-box')
+    ) {
+        return false;
+    }
+
+    const blockId = selectionBookmarkFromState(view.state)?.blockId;
+
+    if (!blockId) {
+        return false;
+    }
+
+    const items = visibleListItems(view.state.doc);
+    const index = items.findIndex(
+        (item) => item.node.attrs.blockId === blockId,
+    );
+
+    if (index < 0) {
+        return false;
+    }
+
+    const current = items[index];
+    let target: VisibleListItem | undefined;
+    let targetBoundary: 'start' | 'end';
+
+    if (
+        event.key === 'ArrowDown' &&
+        isNodeCollapsed(blockId) &&
+        view.state.selection.head ===
+            boundarySelectionHead(view, current, 'end')
+    ) {
+        target = items[index + 1];
+        targetBoundary = 'start';
+    } else if (
+        event.key === 'ArrowUp' &&
+        index > 0 &&
+        isNodeCollapsed(items[index - 1].node.attrs.blockId as string) &&
+        view.state.selection.head ===
+            boundarySelectionHead(view, current, 'start')
+    ) {
+        target = items[index - 1];
+        targetBoundary = 'end';
+    } else {
+        return false;
+    }
+
+    if (!target) {
+        return false;
+    }
+
+    event.preventDefault();
+    view.dispatch(
+        view.state.tr
+            .setSelection(
+                TextSelection.near(
+                    view.state.doc.resolve(
+                        targetBoundary === 'start'
+                            ? target.pos + 1
+                            : target.pos + 1 + directContentSize(target.node),
+                    ),
+                    targetBoundary === 'start' ? 1 : -1,
+                ),
+            )
+            .scrollIntoView(),
+    );
+
+    return true;
+}
+
 function cycleChecklistState(view: EditorView): boolean {
     const { from, to } = view.state.selection;
     const listItems: { node: PmNode; pos: number }[] = [];
@@ -2099,6 +2719,7 @@ const editor = useEditor({
         CustomListItem,
         AlwaysSplitListItem,
         ActiveLineHighlight,
+        CollapsedNodeDecorations,
         History,
         Bold,
         Italic,
@@ -2305,13 +2926,29 @@ const editor = useEditor({
             class: 'outline-none',
         },
         handleDOMEvents: {
-            mousedown: (view, event) => handleCheckboxMouseDown(view, event),
+            mousedown: (view, event) => handleEditorMouseDown(view, event),
         },
         handleKeyDown: (view, event) => {
             if (eventMatchesCommand(event, 'toggle-checkbox')) {
                 event.preventDefault();
 
                 return cycleChecklistState(view);
+            }
+
+            if (eventMatchesCommand(event, 'collapse-node')) {
+                event.preventDefault();
+
+                return setCurrentNodeCollapsed(view, true);
+            }
+
+            if (eventMatchesCommand(event, 'expand-node')) {
+                event.preventDefault();
+
+                return setCurrentNodeCollapsed(view, false);
+            }
+
+            if (moveAcrossCollapsedBoundary(view, event)) {
+                return true;
             }
 
             if (navigateAcrossDailyNoteBoundary(view, event)) {
@@ -2842,6 +3479,14 @@ const editor = useEditor({
     },
 });
 
+watch(collapsedNodeIds, () => {
+    const current = editor.value;
+
+    if (current) {
+        refreshCollapseDecorations(current);
+    }
+});
+
 function handleEditorClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
 
@@ -2964,6 +3609,8 @@ function scheduleProgressiveHydration(editor: TiptapEditor) {
 }
 
 onBeforeUnmount(() => {
+    clearCollapseMarkerHover();
+
     if (progressiveHydrationFrame !== null) {
         cancelAnimationFrame(progressiveHydrationFrame);
     }
@@ -2977,7 +3624,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div @click="handleEditorClick" class="relative">
+    <div
+        class="relative"
+        @click="handleEditorClick"
+        @mousemove="handleEditorMouseMove"
+        @mouseleave="clearCollapseMarkerHover"
+    >
         <EditorContent v-if="editor" :editor="editor" />
 
         <div
@@ -3248,6 +3900,52 @@ onBeforeUnmount(() => {
     height: 5px;
     border-radius: 50%;
     background: var(--muted-foreground);
+}
+
+.page-editor-list li[data-has-children='true']:not([data-checked])::before {
+    left: calc(-1em - 11.5px);
+    top: calc(0.65em - 11.5px);
+    width: 28px;
+    height: 28px;
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.page-editor-list
+    li.collapse-marker-hover[data-has-children='true']:not(
+        [data-checked]
+    )::before {
+    border-radius: 9999px;
+    background: var(--muted);
+}
+
+.page-editor-list li[data-has-children='true']:not([data-checked])::after {
+    content: '';
+    position: absolute;
+    left: -1em;
+    top: 0.65em;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--muted-foreground);
+    pointer-events: none;
+}
+
+.page-editor-list li.is-collapsed > .page-editor-list {
+    display: none;
+}
+
+.page-editor-list li.is-collapsed:not([data-checked])::after {
+    top: 0.49em;
+    left: -1.05em;
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid var(--muted-foreground);
+    border-radius: 0;
+    background: transparent;
 }
 
 .page-editor-list li.active-line > p,

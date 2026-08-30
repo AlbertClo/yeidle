@@ -97,6 +97,11 @@ describe('key bindings', () => {
         expect(DEFAULT_KEY_BINDINGS['follow-link']).toBe('Ctrl+O');
     });
 
+    it("uses Roam Research's node collapse and expansion shortcuts", () => {
+        expect(DEFAULT_KEY_BINDINGS['collapse-node']).toBe('Mod+ArrowUp');
+        expect(DEFAULT_KEY_BINDINGS['expand-node']).toBe('Mod+ArrowDown');
+    });
+
     it("opens daily notes with Roam Research's shortcuts", () => {
         expect(DEFAULT_KEY_BINDINGS['daily-notes']).toBe('Alt+D');
         expect(DEFAULT_KEY_BINDINGS['previous-daily-note']).toBe('Ctrl+Alt+P');

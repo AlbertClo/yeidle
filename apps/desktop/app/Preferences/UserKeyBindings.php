@@ -33,6 +33,8 @@ final class UserKeyBindings
         'pinned-item-9' => 'Alt+9',
         'pinned-item-10' => 'Alt+0',
         'toggle-checkbox' => 'Mod+Enter',
+        'collapse-node' => 'Mod+ArrowUp',
+        'expand-node' => 'Mod+ArrowDown',
         'follow-link' => 'Ctrl+O',
         'reload' => 'Mod+R',
         'back' => 'Mod+ArrowLeft',

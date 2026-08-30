@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CloudAccountController;
 use App\Http\Controllers\CloudController;
+use App\Http\Controllers\CollapsedNodeController;
 use App\Http\Controllers\DailyNoteController;
 use App\Http\Controllers\KeyBindingController;
 use App\Http\Controllers\MediaController;
@@ -60,6 +61,8 @@ Route::get('pins', [PinController::class, 'index']);
 Route::put('pins/order', [PinController::class, 'reorder']);
 Route::put('nodes/{node}/pin', [PinController::class, 'store']);
 Route::delete('nodes/{node}/pin', [PinController::class, 'destroy']);
+Route::get('collapsed-nodes', [CollapsedNodeController::class, 'index']);
+Route::put('collapsed-nodes', [CollapsedNodeController::class, 'update']);
 Route::get('preferences', [PreferenceController::class, 'show']);
 Route::put('preferences/theme', [PreferenceController::class, 'updateTheme']);
 Route::put('preferences/typography', [PreferenceController::class, 'updateTypography']);
