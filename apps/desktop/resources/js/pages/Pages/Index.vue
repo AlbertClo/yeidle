@@ -7,7 +7,14 @@ import {
     Palette,
     TriangleAlert,
 } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from 'vue';
 import { toast } from 'vue-sonner';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
@@ -39,14 +46,18 @@ const props = defineProps<{
 }>();
 
 const INITIAL_PAGE_COUNT = 40;
+const restoringPageIndexPosition =
+    isHistoryNavigation() || hasSavedMainScrollPosition();
 const renderedPageCount = ref(
-    isHistoryNavigation() || hasSavedMainScrollPosition()
+    restoringPageIndexPosition
         ? props.pages.length
         : Math.min(INITIAL_PAGE_COUNT, props.pages.length),
 );
 const renderedPages = computed(() =>
     props.pages.slice(0, renderedPageCount.value),
 );
+const pageListRef = ref<HTMLElement>();
+let rovingPageElement: HTMLAnchorElement | null = null;
 let pageHydrationFrame: number | null = null;
 let pageHydrationPaintFrame: number | null = null;
 
@@ -66,6 +77,86 @@ function schedulePageHydration(): void {
             renderedPageCount.value = props.pages.length;
         });
     });
+}
+
+function pageRow(element: Element | null): HTMLAnchorElement | null {
+    return element?.matches('[data-page-row]')
+        ? (element as HTMLAnchorElement)
+        : null;
+}
+
+function adoptPageFocus(element: HTMLAnchorElement): void {
+    if (rovingPageElement !== element) {
+        rovingPageElement?.setAttribute('tabindex', '-1');
+        rovingPageElement = element;
+    }
+
+    element.setAttribute('tabindex', '0');
+}
+
+function focusPageElement(element: HTMLAnchorElement): void {
+    adoptPageFocus(element);
+    element.focus();
+}
+
+async function focusPageRow(index: number, reveal = true): Promise<void> {
+    if (props.pages.length === 0) {
+        return;
+    }
+
+    const boundedIndex = Math.max(0, Math.min(index, props.pages.length - 1));
+    renderedPageCount.value = Math.max(
+        renderedPageCount.value,
+        boundedIndex + 1,
+    );
+    await nextTick();
+    const element = pageRow(
+        pageListRef.value?.children.item(boundedIndex) ?? null,
+    );
+
+    if (element) {
+        adoptPageFocus(element);
+
+        if (reveal) {
+            element.focus();
+        } else {
+            element.focus({ preventScroll: true });
+        }
+    }
+}
+
+function handlePageFocus(event: FocusEvent): void {
+    const element = pageRow(event.currentTarget as Element);
+
+    if (element) {
+        adoptPageFocus(element);
+    }
+}
+
+function movePageFocus(event: KeyboardEvent, offset: number): void {
+    const current = pageRow(event.currentTarget as Element);
+
+    if (!current) {
+        return;
+    }
+
+    const adjacent = pageRow(
+        offset < 0
+            ? current.previousElementSibling
+            : current.nextElementSibling,
+    );
+
+    if (adjacent) {
+        focusPageElement(adjacent);
+
+        return;
+    }
+
+    const currentIndex = Number(current.dataset.pageIndex);
+
+    if (Number.isInteger(currentIndex)) {
+        void focusPageRow(currentIndex + offset);
+    }
 }
 
 const themeSetupRequired = ref(props.themeSetupRequired);
@@ -126,6 +217,15 @@ watch(
             renderedPageCount.value,
             pages.length,
         );
+
+        if (
+            rovingPageElement !== null &&
+            !pages.some((page) => page.id === rovingPageElement?.dataset.pageId)
+        ) {
+            rovingPageElement = null;
+            void focusPageRow(0);
+        }
+
         schedulePageHydration();
     },
 );
@@ -137,6 +237,7 @@ watch(setupRequired, (required) => {
 
     renderedPageCount.value = Math.min(INITIAL_PAGE_COUNT, props.pages.length);
     schedulePageHydration();
+    void focusPageRow(0);
 });
 
 async function saveStorageChoice(storage: 'local' | 'cloud'): Promise<void> {
@@ -186,6 +287,10 @@ onMounted(() => {
     );
     schedulePageHydration();
     restoreNavigationScrollPosition();
+
+    if (!setupRequired.value && !restoringPageIndexPosition) {
+        void focusPageRow(0, false);
+    }
 });
 
 onBeforeUnmount(() => {
@@ -350,12 +455,21 @@ function modifiedDate(page: PageListItem): string {
                     </p>
                 </div>
 
-                <div v-else class="flex flex-col gap-1">
+                <div v-else ref="pageListRef" class="flex flex-col gap-1">
                     <Link
-                        v-for="page in renderedPages"
+                        v-for="(page, index) in renderedPages"
                         :key="page.id"
                         :href="`/pages/${page.id}`"
-                        class="page-index-item flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent"
+                        data-page-row
+                        :data-page-id="page.id"
+                        :data-page-index="index"
+                        :tabindex="index === 0 ? 0 : -1"
+                        class="page-index-item flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent focus:bg-accent focus:outline-none"
+                        @focus="handlePageFocus"
+                        @keydown.down.prevent="movePageFocus($event, 1)"
+                        @keydown.up.prevent="movePageFocus($event, -1)"
+                        @keydown.home.prevent="focusPageRow(0)"
+                        @keydown.end.prevent="focusPageRow(pages.length - 1)"
                     >
                         <FileText
                             class="h-4 w-4 shrink-0 text-muted-foreground"
