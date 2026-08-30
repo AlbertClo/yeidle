@@ -16,12 +16,7 @@ export type Node = {
 
 export type PageListItem = Pick<
     Node,
-    | 'id'
-    | 'content'
-    | 'page_type'
-    | 'daily_note_date'
-    | 'modified_hlc'
-    | 'updated_at'
+    'id' | 'content' | 'page_type' | 'daily_note_date' | 'created_at'
 >;
 
 export type NodeLink = {

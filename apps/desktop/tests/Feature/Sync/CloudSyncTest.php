@@ -623,6 +623,7 @@ class CloudSyncTest extends TestCase
         $node->id = $pageId;
         $node->content = 'Existing Page';
         $node->position = 'a0';
+        $node->created_at = '2021-01-02 03:04:05.678';
         $node->save();
 
         Http::fake(function ($request) {
@@ -660,7 +661,8 @@ class CloudSyncTest extends TestCase
 
             return $ops->contains(fn ($op) => $op['type'] === 'node.set'
                 && $op['payload']['id'] === $pageId
-                && $op['payload']['fields']['content'] === 'Existing Page');
+                && $op['payload']['fields']['content'] === 'Existing Page'
+                && $op['payload']['fields']['created_at'] === '2021-01-02T03:04:05.000Z');
         });
     }
 
@@ -766,7 +768,8 @@ class CloudSyncTest extends TestCase
                     ['id' => $pageId, 'parent_id' => null, 'position' => 'a0', 'content' => 'Cloud Page',
                         'tiptap_content' => null, 'is_checked' => null,
                         'field_clocks' => null, 'modified_hlc' => '000000000000090-0000-x',
-                        'purged' => false, 'deleted_at' => null],
+                        'purged' => false, 'deleted_at' => null,
+                        'created_at' => '2021-01-02T03:04:05.678Z'],
                 ],
                 'media' => [],
             ]),
@@ -783,6 +786,10 @@ class CloudSyncTest extends TestCase
         $response->assertOk();
         $this->assertTrue($response->json('bootstrapped'));
         $this->assertSame('Cloud Page', Node::find($pageId)->content);
+        $this->assertSame(
+            '2021-01-02 03:04:05',
+            Node::find($pageId)->created_at->format('Y-m-d H:i:s'),
+        );
         $this->assertSame('000000000000090-0000-x', Node::find($pageId)->modified_hlc);
         $this->assertSame($pageId, Node::find($childId)->parent_id);
         $this->assertSame('000000000000100-0000-x', Node::find($childId)->modified_hlc);

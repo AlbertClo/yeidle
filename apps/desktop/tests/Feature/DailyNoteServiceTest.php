@@ -27,6 +27,7 @@ class DailyNoteServiceTest extends TestCase
         $this->assertSame('August 30, 2026', $first->content);
         $this->assertSame('daily_note', $first->page_type);
         $this->assertSame('2026-08-30', $first->daily_note_date);
+        $this->assertSame('2026-08-30', $first->created_at->format('Y-m-d'));
         $this->assertSame(1, Node::count());
         $this->assertSame(1, Op::count());
     }

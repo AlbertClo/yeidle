@@ -32,8 +32,7 @@ class PageWebController extends Controller
                 'content',
                 'page_type',
                 'daily_note_date',
-                'modified_hlc',
-                'updated_at',
+                'created_at',
             ])
             ->whereNull('parent_id')
             ->whereNull('deleted_at')

@@ -36,6 +36,7 @@ class OpApplier
         'is_checked',
         'page_type',
         'daily_note_date',
+        'created_at',
     ];
 
     public function __construct(
@@ -99,6 +100,14 @@ class OpApplier
                     $value = null;
                 }
 
+                if ($field === 'created_at') {
+                    $value = $this->normalizeTimestamp($value);
+
+                    if ($value === null) {
+                        continue;
+                    }
+                }
+
                 $node->{$field} = $value;
                 $clocks[$field] = $hlc;
 
@@ -121,6 +130,12 @@ class OpApplier
         ksort($clocks);
         $node->field_clocks = $clocks;
         $node->modified_hlc = $clocks === [] ? HlcGenerator::EPOCH : max($clocks);
+
+        if ($node->page_type === 'daily_note'
+            && $this->isValidDate($node->daily_note_date)) {
+            $node->created_at = $node->daily_note_date.' 00:00:00.000000';
+        }
+
         $node->save();
 
         if ($tiptapChanged) {
@@ -292,5 +307,19 @@ class OpApplier
         }
 
         return checkdate((int) $matches[2], (int) $matches[3], (int) $matches[1]);
+    }
+
+    private function normalizeTimestamp(mixed $value): ?string
+    {
+        if (! is_string($value)
+            || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/D', $value) !== 1) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->utc()->format('Y-m-d H:i:s.u');
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

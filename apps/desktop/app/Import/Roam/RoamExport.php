@@ -3,6 +3,7 @@
 namespace App\Import\Roam;
 
 use App\DailyNotes\DailyNotes;
+use Carbon\CarbonImmutable;
 use JsonException;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
@@ -11,7 +12,7 @@ final class RoamExport
 {
     public const UUID_NAMESPACE = '8bf7d75e-9d19-5aca-b853-36da04773e3f';
 
-    /** @var list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int, page_type: ?string, daily_note_date: ?string}> */
+    /** @var list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int, page_type: ?string, daily_note_date: ?string, created_at: ?string}> */
     private array $records = [];
 
     /** @var array<string, string> */
@@ -59,7 +60,7 @@ final class RoamExport
         return new self($pages, $workspaceId);
     }
 
-    /** @return list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int, page_type: ?string, daily_note_date: ?string}> */
+    /** @return list<array{uid: string, id: string, page_id: string, parent_id: ?string, position: string, content: string, heading: ?int, page_type: ?string, daily_note_date: ?string, created_at: ?string}> */
     public function records(): array
     {
         return $this->records;
@@ -150,6 +151,9 @@ final class RoamExport
                 'heading' => null,
                 'page_type' => $dailyNoteDate === null ? null : DailyNotes::PAGE_TYPE,
                 'daily_note_date' => $dailyNoteDate,
+                'created_at' => $dailyNoteDate === null
+                    ? $this->createdAt($page)
+                    : $dailyNoteDate.'T00:00:00.000Z',
             ];
 
             $this->walkChildren($page['children'] ?? [], $pageId, $pageId, "page [{$uid}]");
@@ -188,6 +192,7 @@ final class RoamExport
                 'heading' => isset($block['heading']) && is_int($block['heading']) ? $block['heading'] : null,
                 'page_type' => null,
                 'daily_note_date' => null,
+                'created_at' => $this->createdAt($block),
             ];
 
             $this->analyseText($content);
@@ -223,6 +228,20 @@ final class RoamExport
         }
 
         return sprintf('%04d-%02d-%02d', $year, $month, $day);
+    }
+
+    /** @param array<string, mixed> $node */
+    private function createdAt(array $node): ?string
+    {
+        $milliseconds = $node['create-time'] ?? null;
+
+        if (! is_int($milliseconds) || $milliseconds < 0) {
+            return null;
+        }
+
+        return CarbonImmutable::createFromTimestampMs($milliseconds)
+            ->utc()
+            ->format('Y-m-d\TH:i:s.v\Z');
     }
 
     private function analyseText(string $content): void

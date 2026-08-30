@@ -74,7 +74,15 @@ class RoamImporterTest extends TestCase
 
         $this->assertSame(7, Node::count());
         $this->assertSame('Project Notes', Node::findOrFail($pageId)->content);
+        $this->assertSame(
+            '2021-01-01 00:00:00',
+            Node::findOrFail($pageId)->created_at->format('Y-m-d H:i:s'),
+        );
         $this->assertSame($pageId, Node::findOrFail($sourceId)->parent_id);
+        $this->assertSame(
+            '2021-01-02 00:00:00',
+            Node::findOrFail($sourceId)->created_at->format('Y-m-d H:i:s'),
+        );
         $this->assertSame('a0', Node::findOrFail($sourceId)->position);
         $this->assertSame('a1', Node::findOrFail($embedId)->position);
         $this->assertSame('a2', Node::findOrFail($fileId)->position);
@@ -167,6 +175,7 @@ class RoamImporterTest extends TestCase
             [
                 'uid' => '08-30-2026',
                 'title' => 'August 30th, 2026',
+                'create-time' => 1609459200123,
                 'children' => [
                     ['uid' => 'daily-child', 'string' => 'Plan the day'],
                 ],
@@ -174,8 +183,13 @@ class RoamImporterTest extends TestCase
             [
                 'uid' => 'ordinary-page',
                 'title' => 'Ordinary Page',
+                'create-time' => 1609545600456,
                 'children' => [
-                    ['uid' => 'daily-link', 'string' => 'See [[August 30th, 2026]]'],
+                    [
+                        'uid' => 'daily-link',
+                        'string' => 'See [[August 30th, 2026]]',
+                        'create-time' => 1609632000789,
+                    ],
                 ],
             ],
         ], JSON_THROW_ON_ERROR));
@@ -192,11 +206,21 @@ class RoamImporterTest extends TestCase
 
         $dailyId = DailyNotes::pageId($workspaceId, '2026-08-30');
         $daily = Node::findOrFail($dailyId);
+        $ordinary = Node::findOrFail(RoamExport::nodeId('ordinary-page', $workspaceId));
         $link = Node::findOrFail(RoamExport::nodeId('daily-link', $workspaceId));
 
         $this->assertSame('daily_note', $daily->page_type);
         $this->assertSame('2026-08-30', $daily->daily_note_date);
+        $this->assertSame('2026-08-30', $daily->created_at->format('Y-m-d'));
         $this->assertSame('August 30, 2026', $daily->content);
+        $this->assertSame(
+            '2021-01-02 00:00:00',
+            $ordinary->created_at->format('Y-m-d H:i:s'),
+        );
+        $this->assertSame(
+            '2021-01-03 00:00:00',
+            $link->created_at->format('Y-m-d H:i:s'),
+        );
         $this->assertSame($dailyId, $link->tiptap_content['content'][1]['attrs']['id']);
     }
 

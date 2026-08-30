@@ -41,6 +41,7 @@ final class DailyNoteService
                     'is_checked' => null,
                     'page_type' => DailyNotes::PAGE_TYPE,
                     'daily_note_date' => $date,
+                    'created_at' => $date.'T00:00:00.000Z',
                 ],
             ],
         ]]);

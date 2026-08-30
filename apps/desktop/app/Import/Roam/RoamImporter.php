@@ -97,6 +97,10 @@ final class RoamImporter
                 ];
             }
 
+            if ($record['created_at'] !== null) {
+                $fields['created_at'] = $record['created_at'];
+            }
+
             $payload = [
                 'v' => 1,
                 'id' => $record['id'],

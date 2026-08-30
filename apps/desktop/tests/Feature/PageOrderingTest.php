@@ -41,14 +41,16 @@ class PageOrderingTest extends TestCase
                 ->where('pages.0.id', $page->id)
                 ->hasAll([
                     'pages.0.content',
-                    'pages.0.modified_hlc',
-                    'pages.0.updated_at',
+                    'pages.0.page_type',
+                    'pages.0.daily_note_date',
+                    'pages.0.created_at',
                 ])
                 ->missingAll([
                     'pages.0.parent_id',
                     'pages.0.position',
                     'pages.0.tiptap_content',
-                    'pages.0.created_at',
+                    'pages.0.modified_hlc',
+                    'pages.0.updated_at',
                 ]));
     }
 

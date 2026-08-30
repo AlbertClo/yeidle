@@ -193,6 +193,34 @@ function movePageFocus(event: KeyboardEvent, offset: number): void {
     }
 }
 
+function handleUnselectedPageListKeydown(event: KeyboardEvent): void {
+    if (
+        event.key !== 'ArrowDown' ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        setupRequired.value ||
+        props.pages.length === 0 ||
+        document.querySelector('[role="dialog"], [role="menu"]') !== null ||
+        pageRow(document.activeElement) !== null
+    ) {
+        return;
+    }
+
+    const target = event.target;
+
+    if (
+        target instanceof HTMLElement &&
+        (target.matches('input, textarea, select') || target.isContentEditable)
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    void focusPageRow(0);
+}
+
 const themeSetupRequired = ref(props.themeSetupRequired);
 const storageSetupRequired = ref(props.storageSetupRequired);
 const storageSaving = ref(false);
@@ -327,6 +355,7 @@ function handleWorkspaceSyncEnabled(event: Event): void {
 }
 
 onMounted(() => {
+    document.addEventListener('keydown', handleUnselectedPageListKeydown);
     window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
     window.addEventListener(THEME_SELECTED_EVENT, handleThemeSelected);
     window.addEventListener(
@@ -352,6 +381,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+    document.removeEventListener('keydown', handleUnselectedPageListKeydown);
     window.removeEventListener(
         LOCAL_OPS_AVAILABLE_EVENT,
         handleLocalOpsAvailable,
@@ -372,13 +402,20 @@ onBeforeUnmount(() => {
     }
 });
 
-function modifiedDate(page: PageListItem): string {
-    const millis = Number.parseInt(page.modified_hlc.slice(0, 15), 10);
-    const date = Number.isFinite(millis)
-        ? new Date(millis)
-        : new Date(page.updated_at);
+function createdDate(page: PageListItem): string {
+    if (page.page_type === 'daily_note' && page.daily_note_date) {
+        const [year, month, day] = page.daily_note_date
+            .split('-')
+            .map((part) => Number.parseInt(part, 10));
 
-    return date.toLocaleDateString();
+        return new Date(year, month - 1, day).toLocaleDateString();
+    }
+
+    const timestamp = page.created_at.includes('T')
+        ? page.created_at
+        : `${page.created_at.replace(' ', 'T')}Z`;
+
+    return new Date(timestamp).toLocaleDateString();
 }
 </script>
 
@@ -541,7 +578,7 @@ function modifiedDate(page: PageListItem): string {
                             {{ page.content || '[untitled]' }}
                         </span>
                         <span class="text-xs text-muted-foreground">
-                            {{ modifiedDate(page) }}
+                            {{ createdDate(page) }}
                         </span>
                     </Link>
                 </div>

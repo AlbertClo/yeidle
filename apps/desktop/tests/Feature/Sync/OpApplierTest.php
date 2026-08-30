@@ -62,6 +62,22 @@ class OpApplierTest extends TestCase
         $node = Node::findOrFail($id);
         $this->assertSame('daily_note', $node->page_type);
         $this->assertSame('2026-08-30', $node->daily_note_date);
+        $this->assertSame('2026-08-30 00:00:00.000000', $node->created_at->format('Y-m-d H:i:s.u'));
+    }
+
+    public function test_applies_an_original_creation_timestamp(): void
+    {
+        $id = fake()->uuid();
+
+        $this->applier->apply($this->set($id, [
+            'content' => 'Imported page',
+            'created_at' => '2021-01-02T03:04:05.678Z',
+        ], 100));
+
+        $this->assertSame(
+            '2021-01-02 03:04:05',
+            Node::findOrFail($id)->created_at->format('Y-m-d H:i:s'),
+        );
     }
 
     public function test_invalid_daily_note_metadata_cannot_wedge_the_log(): void

@@ -845,6 +845,7 @@ class CloudSyncService
                         'is_checked' => $node->is_checked,
                         'page_type' => $node->page_type,
                         'daily_note_date' => $node->daily_note_date,
+                        'created_at' => $node->created_at?->utc()->format('Y-m-d\TH:i:s.v\Z'),
                     ],
                 ],
             ];
@@ -950,7 +951,7 @@ class CloudSyncService
                         'purged' => $n['purged'] ?? false,
                         'modified_hlc' => $this->snapshotModifiedHlc($n),
                         'deleted_at' => $n['deleted_at'],
-                        'created_at' => now(),
+                        'created_at' => $n['created_at'] ?? now(),
                         'updated_at' => now(),
                     ]);
                     $inserted[$n['id']] = true;

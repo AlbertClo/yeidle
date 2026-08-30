@@ -84,12 +84,31 @@ test('daily note metadata is relayed and projected', function () {
             'content' => 'August 30, 2026',
             'page_type' => 'daily_note',
             'daily_note_date' => '2026-08-30',
+            'created_at' => '2021-01-02T03:04:05.678Z',
         ], 100)],
     ])->assertSuccessful();
 
     $node = Node::findOrFail($id);
     expect($node->page_type)->toBe('daily_note')
-        ->and($node->daily_note_date)->toBe('2026-08-30');
+        ->and($node->daily_note_date)->toBe('2026-08-30')
+        ->and($node->created_at->format('Y-m-d'))->toBe('2026-08-30');
+});
+
+test('original creation timestamps are relayed and projected', function () {
+    $user = User::factory()->create();
+    Sanctum::actingAs($user);
+    $id = fake()->uuid();
+
+    $this->postJson(syncUrl('push'), [
+        'client_id' => 'device-a',
+        'ops' => [setOp($id, [
+            'content' => 'Imported page',
+            'created_at' => '2021-01-02T03:04:05.000Z',
+        ], 100)],
+    ])->assertSuccessful();
+
+    expect(Node::findOrFail($id)->created_at->format('Y-m-d H:i:s'))
+        ->toBe('2021-01-02 03:04:05');
 });
 
 test('push broadcasts newly committed ops in pull wire format', function () {
@@ -286,7 +305,10 @@ test('bootstrap returns the projection with clocks and a consistent cursor', fun
 
     $id = fake()->uuid();
     $this->postJson(syncUrl('push'), ['client_id' => 'd', 'ops' => [
-        setOp($id, ['content' => 'snapshot me'], 100),
+        setOp($id, [
+            'content' => 'snapshot me',
+            'created_at' => '2021-01-02T03:04:05.000Z',
+        ], 100),
         makeOp('node.delete', ['v' => 1, 'id' => $id, 'page_id' => $id], 200),
     ]])->assertOk();
 
@@ -297,6 +319,7 @@ test('bootstrap returns the projection with clocks and a consistent cursor', fun
     expect($node)->not->toBeNull();
     expect($node['field_clocks'])->toHaveKey('deleted');
     expect($node['modified_hlc'])->toBe($node['field_clocks']['deleted']);
+    expect($node['created_at'])->toStartWith('2021-01-02T03:04:05');
     expect($node['deleted_at'])->not->toBeNull();
     expect($bootstrap->json('latest_seq'))->toBe($this->getJson(syncUrl('pull').'?since=0')->json('latest_seq'));
 });
