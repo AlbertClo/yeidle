@@ -20,6 +20,7 @@ import Mention from '@tiptap/extension-mention';
 import Paragraph from '@tiptap/extension-paragraph';
 import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
+import { isHistoryTransaction } from '@tiptap/pm/history';
 import { Fragment } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import type { EditorState } from '@tiptap/pm/state';
@@ -834,6 +835,78 @@ const ActiveLineHighlight = Extension.create({
 
                         return DecorationSet.create(state.doc, decorations);
                     },
+                },
+            }),
+        ];
+    },
+});
+
+const historySelectionScrollKey = new PluginKey<number>(
+    'historySelectionScroll',
+);
+
+function scrollHistorySelectionIntoView(view: EditorView): void {
+    const targetEditor = viewEditor(view);
+    const bookmark = selectionBookmarkFromState(view.state);
+
+    if (bookmark) {
+        revealBlockAncestors(bookmark.blockId, targetEditor);
+
+        const listItem = view.dom.querySelector<HTMLElement>(
+            `li[data-block-id="${CSS.escape(bookmark.blockId)}"]`,
+        );
+
+        if (listItem) {
+            listItem.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+
+            return;
+        }
+    }
+
+    const domAtSelection = view.domAtPos(view.state.selection.head).node;
+    const element =
+        domAtSelection instanceof HTMLElement
+            ? domAtSelection
+            : domAtSelection.parentElement;
+    element?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+const HistorySelectionScroll = Extension.create({
+    name: 'historySelectionScroll',
+    addProseMirrorPlugins() {
+        return [
+            new Plugin<number>({
+                key: historySelectionScrollKey,
+                state: {
+                    init: () => 0,
+                    apply: (transaction, revision) =>
+                        isHistoryTransaction(transaction)
+                            ? revision + 1
+                            : revision,
+                },
+                view: (view) => {
+                    let revision =
+                        historySelectionScrollKey.getState(view.state) ?? 0;
+
+                    return {
+                        update: (updatedView) => {
+                            const nextRevision =
+                                historySelectionScrollKey.getState(
+                                    updatedView.state,
+                                ) ?? 0;
+
+                            if (nextRevision === revision) {
+                                return;
+                            }
+
+                            revision = nextRevision;
+                            requestAnimationFrame(() => {
+                                if (updatedView.dom.isConnected) {
+                                    scrollHistorySelectionIntoView(updatedView);
+                                }
+                            });
+                        },
+                    };
                 },
             }),
         ];
@@ -2832,6 +2905,7 @@ const editor = useEditor({
         ActiveLineHighlight,
         CollapsedNodeDecorations,
         History,
+        HistorySelectionScroll,
         Bold,
         Italic,
         Strike,
