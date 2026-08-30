@@ -7,6 +7,8 @@ const HOLD_REPEAT_MS = 120;
 
 type DailyNoteDirection = -1 | 1;
 
+export type DailyNoteFocus = 'start' | 'end';
+
 type DailyNoteTraversal = {
     date: string;
     direction: DailyNoteDirection;
@@ -32,7 +34,10 @@ export function adjacentDate(date: string, offset: number): string {
     return localDateString(shifted);
 }
 
-export async function openDailyNote(date = localDateString()): Promise<void> {
+export async function openDailyNote(
+    date = localDateString(),
+    focus?: DailyNoteFocus,
+): Promise<void> {
     const response = await fetch('/api/daily-notes', {
         method: 'POST',
         headers: {
@@ -49,7 +54,9 @@ export async function openDailyNote(date = localDateString()): Promise<void> {
     const page = (await response.json()) as { id: string };
     void requestCloudExchange();
     await new Promise<void>((resolve) => {
-        router.visit(`/pages/${page.id}`, {
+        const query = focus ? `?dailyFocus=${focus}` : '';
+
+        router.visit(`/pages/${page.id}${query}`, {
             onFinish: () => resolve(),
         });
     });

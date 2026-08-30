@@ -32,6 +32,7 @@ import {
     openDailyNote,
     startDailyNoteTraversal,
 } from '@/dailyNotes';
+import type { DailyNoteFocus } from '@/dailyNotes';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     isHistoryNavigation,
@@ -115,6 +116,17 @@ const requestedBlock = ref(
         ? null
         : new URLSearchParams(window.location.search).get('block'),
 );
+const requestedDailyNoteFocus = (() => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    const focus = new URLSearchParams(window.location.search).get(
+        'dailyFocus',
+    );
+
+    return focus === 'start' || focus === 'end' ? focus : null;
+})();
 const editorHistoryKey =
     typeof window === 'undefined'
         ? `/pages/${props.page.id}`
@@ -127,13 +139,15 @@ const initialEditorSelection = ref<EditorSelectionBookmark | null>(
 );
 const restoringHistoryPosition =
     restoringHistoryNavigation || hasSavedMainScrollPosition();
-const progressiveInitialNodeCount = restoringHistoryPosition ? 0 : 40;
+const progressiveInitialNodeCount =
+    restoringHistoryPosition || requestedDailyNoteFocus ? 0 : 40;
 
 let hasPendingSync = false;
 let pendingNodes: Node[] = [];
 let syncing = false;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelay = 1000;
+let navigatingDailyNoteBoundary = false;
 const syncScheduler = createMaxWaitScheduler(() => void runSync(), 300, 1000);
 
 function startEditingTitle(cursorPos?: number) {
@@ -675,6 +689,27 @@ function openAdjacentDailyNote(offset: -1 | 1): void {
     );
 }
 
+async function crossDailyNoteBoundary(
+    offset: -1 | 1,
+    focus: DailyNoteFocus,
+): Promise<void> {
+    if (!props.page.daily_note_date || navigatingDailyNoteBoundary) {
+        return;
+    }
+
+    navigatingDailyNoteBoundary = true;
+
+    try {
+        await openDailyNote(
+            adjacentDate(props.page.daily_note_date, offset),
+            focus,
+        );
+    } catch {
+        navigatingDailyNoteBoundary = false;
+        showAdjacentDailyNoteError(offset);
+    }
+}
+
 function showAdjacentDailyNoteError(offset: -1 | 1): void {
     toast.error(
         offset < 0
@@ -879,6 +914,8 @@ onBeforeUnmount(() => {
                         "
                         :initial-focus-block-id="requestedBlock"
                         :initial-selection="initialEditorSelection"
+                        :initial-focus-boundary="requestedDailyNoteFocus"
+                        :navigate-across-daily-notes="isDailyNote"
                         @update="handleNodesUpdate"
                         @focus-title="startEditingTitle()"
                         @focus-backlinks="focusFirstBacklink"
@@ -888,6 +925,7 @@ onBeforeUnmount(() => {
                         "
                         @selection-change="handleEditorSelectionChange"
                         @navigation-departure="handleEditorNavigationDeparture"
+                        @daily-note-boundary="crossDailyNoteBoundary"
                     />
                 </div>
 

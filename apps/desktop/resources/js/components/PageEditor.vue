@@ -110,6 +110,8 @@ const props = defineProps<{
     progressiveInitialNodeCount?: number;
     initialFocusBlockId?: string | null;
     initialSelection?: EditorSelectionBookmark | null;
+    initialFocusBoundary?: 'start' | 'end' | null;
+    navigateAcrossDailyNotes?: boolean;
 }>();
 
 initPositionMap(props.nodes, props.pageId);
@@ -122,16 +124,26 @@ const emit = defineEmits<{
     initialSelectionApplied: [];
     selectionChange: [selection: EditorSelectionBookmark];
     navigationDeparture: [selection: EditorSelectionBookmark];
+    dailyNoteBoundary: [offset: -1 | 1, focus: 'start' | 'end'];
 }>();
 
-function focusStart() {
-    const e = editor.value;
+function focusBoundaryInEditor(
+    e: TiptapEditor,
+    boundary: 'start' | 'end',
+): void {
+    const doc = e.state.doc;
 
-    if (!e) {
+    if (boundary === 'end') {
+        e.view.focus();
+        e.view.dispatch(
+            e.state.tr
+                .setSelection(Selection.atEnd(doc))
+                .scrollIntoView(),
+        );
+
         return;
     }
 
-    const doc = e.state.doc;
     let firstItemPos = -1;
     let firstItemNode: any = null;
     doc.descendants((node, pos) => {
@@ -163,6 +175,14 @@ function focusStart() {
     }
 
     e.commands.focus('start');
+}
+
+function focusStart() {
+    const e = editor.value;
+
+    if (e) {
+        focusBoundaryInEditor(e, 'start');
+    }
 }
 
 // --- Remote sync support (sync design §7) ---
@@ -1908,6 +1928,44 @@ function moveAcrossAtomOnlyTextblock(
     return true;
 }
 
+function navigateAcrossDailyNoteBoundary(
+    view: EditorView,
+    event: KeyboardEvent,
+): boolean {
+    if (
+        !props.navigateAcrossDailyNotes ||
+        (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        document.querySelector('.tippy-box') ||
+        !(view.state.selection instanceof TextSelection) ||
+        !view.state.selection.empty
+    ) {
+        return false;
+    }
+
+    const boundarySelection =
+        event.key === 'ArrowUp'
+            ? Selection.atStart(view.state.doc)
+            : Selection.atEnd(view.state.doc);
+
+    if (view.state.selection.head !== boundarySelection.head) {
+        return false;
+    }
+
+    event.preventDefault();
+
+    if (event.key === 'ArrowDown') {
+        emit('dailyNoteBoundary', -1, 'start');
+    } else {
+        emit('dailyNoteBoundary', 1, 'end');
+    }
+
+    return true;
+}
+
 function handleCheckboxMouseDown(view: EditorView, event: MouseEvent): boolean {
     if (event.button !== 0 || !(event.target instanceof Element)) {
         return false;
@@ -2254,6 +2312,10 @@ const editor = useEditor({
                 event.preventDefault();
 
                 return cycleChecklistState(view);
+            }
+
+            if (navigateAcrossDailyNoteBoundary(view, event)) {
+                return true;
             }
 
             if (moveAcrossAtomOnlyTextblock(view, event)) {
@@ -2712,10 +2774,22 @@ const editor = useEditor({
             !focusedRequestedBlock && props.initialSelection
                 ? restoreSelectionBookmark(editor, props.initialSelection)
                 : false;
+        let focusedRequestedBoundary = false;
 
         if (
             !focusedRequestedBlock &&
             !restoredInitialSelection &&
+            props.autoFocus !== false &&
+            props.initialFocusBoundary
+        ) {
+            focusBoundaryInEditor(editor, props.initialFocusBoundary);
+            focusedRequestedBoundary = true;
+        }
+
+        if (
+            !focusedRequestedBlock &&
+            !restoredInitialSelection &&
+            !focusedRequestedBoundary &&
             props.autoFocus !== false
         ) {
             editor.commands.focus('start');
