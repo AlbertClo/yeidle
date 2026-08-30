@@ -48,7 +48,7 @@ let restoringLocation: NavigationLocation | null = null;
 let treeVisitInFlight = false;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let persistenceQueue = Promise.resolve();
-let pendingEditorDeparture: {
+let pendingSelectionDeparture: {
     url: string;
     selection: EditorSelectionBookmark;
 } | null = null;
@@ -115,7 +115,7 @@ function newLocation(url: string, parentId: string | null): NavigationLocation {
     };
 }
 
-function applyEditorSelection(
+function applySelection(
     location: NavigationLocation,
     selection: EditorSelectionBookmark,
 ): void {
@@ -124,7 +124,7 @@ function applyEditorSelection(
     location.selectionType = selection.selectionType;
 }
 
-function hasEditorSelection(
+function hasSelection(
     location: NavigationLocation,
     selection: EditorSelectionBookmark,
 ): boolean {
@@ -269,11 +269,11 @@ async function recordNormalNavigation(
 ): Promise<void> {
     await ensureLoaded(sourceUrl);
 
-    const editorDeparture =
-        pendingEditorDeparture?.url === sourceUrl
-            ? pendingEditorDeparture.selection
+    const selectionDeparture =
+        pendingSelectionDeparture?.url === sourceUrl
+            ? pendingSelectionDeparture.selection
             : null;
-    pendingEditorDeparture = null;
+    pendingSelectionDeparture = null;
 
     if (!isTrackedNavigationUrl(destinationUrl)) {
         updateCurrentPosition(sourceScrollTop);
@@ -292,22 +292,22 @@ async function recordNormalNavigation(
         currentId = source.id;
     }
 
-    // Following a link from inside the editor records the exact departure as
-    // its own location. This preserves both where the page was entered and
-    // the node containing the followed link.
-    if (editorDeparture && isTrackedNavigationUrl(sourceUrl)) {
+    // Navigation from a selected editor node or list row records the exact
+    // departure. This preserves both where the page was entered and the
+    // location from which the user left it.
+    if (selectionDeparture && isTrackedNavigationUrl(sourceUrl)) {
         if (
             source &&
             source.url === sourceUrl &&
-            hasEditorSelection(source, editorDeparture)
+            hasSelection(source, selectionDeparture)
         ) {
             source.scrollTop = sourceScrollTop;
-            applyEditorSelection(source, editorDeparture);
+            applySelection(source, selectionDeparture);
             persistLocation(source);
         } else {
             const departure = newLocation(sourceUrl, source?.id ?? null);
             departure.scrollTop = sourceScrollTop;
-            applyEditorSelection(departure, editorDeparture);
+            applySelection(departure, selectionDeparture);
             locations.set(departure.id, departure);
             source = departure;
             currentId = departure.id;
@@ -318,7 +318,7 @@ async function recordNormalNavigation(
     if (source && source.url === sourceUrl) {
         source.scrollTop = sourceScrollTop;
 
-        if (!editorDeparture) {
+        if (!selectionDeparture) {
             persistLocation(source);
         }
     }
@@ -368,7 +368,7 @@ function handleBeforeVisit(event: DocumentEventMap['inertia:before']): void {
     const destinationUrl = normalizeUrl(visit.url);
 
     if (sourceUrl === destinationUrl) {
-        pendingEditorDeparture = null;
+        pendingSelectionDeparture = null;
 
         return;
     }
@@ -536,6 +536,13 @@ export function rememberEditorSelection(
     key: string,
     selection: EditorSelectionBookmark,
 ): void {
+    rememberSelection(key, selection);
+}
+
+function rememberSelection(
+    key: string,
+    selection: EditorSelectionBookmark,
+): void {
     const current = currentNavigationLocation();
     const url = canonicalNavigationUrl(key);
 
@@ -543,7 +550,7 @@ export function rememberEditorSelection(
         return;
     }
 
-    applyEditorSelection(current, selection);
+    applySelection(current, selection);
     scheduleCurrentPersistence();
 }
 
@@ -557,10 +564,42 @@ export function prepareEditorNavigation(
     key: string,
     selection: EditorSelectionBookmark,
 ): void {
-    pendingEditorDeparture = {
+    prepareSelectionNavigation(key, selection);
+}
+
+function prepareSelectionNavigation(
+    key: string,
+    selection: EditorSelectionBookmark,
+): void {
+    pendingSelectionDeparture = {
         url: canonicalNavigationUrl(key),
         selection: { ...selection },
     };
+}
+
+function pageIndexSelection(pageId: string): EditorSelectionBookmark {
+    return {
+        blockId: pageId,
+        offset: 0,
+        selectionType: 'node',
+    };
+}
+
+export function rememberPageIndexSelection(pageId: string): void {
+    rememberSelection('/pages', pageIndexSelection(pageId));
+}
+
+export function preparePageIndexNavigation(pageId: string): void {
+    prepareSelectionNavigation('/pages', pageIndexSelection(pageId));
+}
+
+export function recalledPageIndexSelection(): string | null {
+    const location =
+        restoringLocation?.url === canonicalNavigationUrl('/pages')
+            ? restoringLocation
+            : null;
+
+    return location?.selectionType === 'node' ? location.blockId : null;
 }
 
 export function recalledEditorSelection(
@@ -631,7 +670,7 @@ export async function reloadNavigationHistory(
     restoringLocation = null;
     historyNavigation = false;
     treeVisitInFlight = false;
-    pendingEditorDeparture = null;
+    pendingSelectionDeparture = null;
     loadPromise = load(initialUrl);
     await loadPromise;
 }

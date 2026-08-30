@@ -20,6 +20,9 @@ import { openDailyNote as openTodayDailyNote } from '@/dailyNotes';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     isHistoryNavigation,
+    preparePageIndexNavigation,
+    recalledPageIndexSelection,
+    rememberPageIndexSelection,
     restoreNavigationScrollPosition,
 } from '@/navigation/historyNavigation';
 import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
@@ -50,10 +53,19 @@ const props = defineProps<{
 const INITIAL_PAGE_COUNT = 40;
 const restoringPageIndexPosition =
     isHistoryNavigation() || hasSavedMainScrollPosition();
+const restoredPageId = isHistoryNavigation()
+    ? recalledPageIndexSelection()
+    : null;
+const restoredPageIndex = restoredPageId
+    ? props.pages.findIndex((page) => page.id === restoredPageId)
+    : -1;
+const restoringSelectedPageLayout = ref(restoredPageIndex >= 0);
 const renderedPageCount = ref(
-    restoringPageIndexPosition
-        ? props.pages.length
-        : Math.min(INITIAL_PAGE_COUNT, props.pages.length),
+    restoredPageIndex >= 0
+        ? Math.max(INITIAL_PAGE_COUNT, restoredPageIndex + 1)
+        : restoringPageIndexPosition
+          ? props.pages.length
+          : Math.min(INITIAL_PAGE_COUNT, props.pages.length),
 );
 const renderedPages = computed(() =>
     props.pages.slice(0, renderedPageCount.value),
@@ -66,6 +78,7 @@ let pageHydrationPaintFrame: number | null = null;
 function schedulePageHydration(): void {
     if (
         renderedPageCount.value >= props.pages.length ||
+        restoringSelectedPageLayout.value ||
         pageHydrationFrame !== null ||
         pageHydrationPaintFrame !== null
     ) {
@@ -127,11 +140,30 @@ async function focusPageRow(index: number, reveal = true): Promise<void> {
     }
 }
 
+function restorePageRowFocus(index: number): void {
+    void focusPageRow(index, false).then(() => {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                void focusPageRow(index).then(() => {
+                    requestAnimationFrame(() => {
+                        restoringSelectedPageLayout.value = false;
+                        schedulePageHydration();
+                    });
+                });
+            });
+        });
+    });
+}
+
 function handlePageFocus(event: FocusEvent): void {
     const element = pageRow(event.currentTarget as Element);
 
     if (element) {
         adoptPageFocus(element);
+
+        if (element.dataset.pageId) {
+            rememberPageIndexSelection(element.dataset.pageId);
+        }
     }
 }
 
@@ -305,7 +337,16 @@ onMounted(() => {
     restoreNavigationScrollPosition();
     openDefaultDailyNote();
 
-    if (!setupRequired.value && !restoringPageIndexPosition) {
+    if (!setupRequired.value) {
+        if (restoredPageId) {
+            if (restoredPageIndex >= 0) {
+                restorePageRowFocus(restoredPageIndex);
+
+                return;
+            }
+        }
+
+        restoringSelectedPageLayout.value = false;
         void focusPageRow(0, false);
     }
 });
@@ -482,7 +523,12 @@ function modifiedDate(page: PageListItem): string {
                         :data-page-index="index"
                         :tabindex="index === 0 ? 0 : -1"
                         class="page-index-item flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent focus:bg-accent focus:outline-none"
+                        :class="{
+                            'page-index-item-restoring':
+                                restoringSelectedPageLayout,
+                        }"
                         @focus="handlePageFocus"
+                        @click="preparePageIndexNavigation(page.id)"
                         @keydown.down.prevent="movePageFocus($event, 1)"
                         @keydown.up.prevent="movePageFocus($event, -1)"
                         @keydown.home.prevent="focusPageRow(0)"
@@ -508,5 +554,9 @@ function modifiedDate(page: PageListItem): string {
 .page-index-item {
     content-visibility: auto;
     contain-intrinsic-block-size: auto 40px;
+}
+
+.page-index-item-restoring {
+    content-visibility: visible;
 }
 </style>
