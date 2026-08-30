@@ -30,12 +30,13 @@ final class UserKeyBindings
         'pinned-item-9' => 'Alt+9',
         'pinned-item-10' => 'Alt+0',
         'toggle-checkbox' => 'Mod+Enter',
+        'follow-link' => 'Ctrl+O',
         'reload' => 'Mod+R',
         'back' => 'Mod+ArrowLeft',
         'forward' => 'Mod+ArrowRight',
     ];
 
-    private const MODIFIERS = ['Mod', 'Alt', 'Shift'];
+    private const MODIFIERS = ['Mod', 'Ctrl', 'Meta', 'Alt', 'Shift'];
 
     private const KEYS = [
         'Enter',
@@ -226,6 +227,11 @@ final class UserKeyBindings
             if (! in_array($modifier, self::MODIFIERS, true)) {
                 throw new InvalidArgumentException("Shortcut modifier [{$modifier}] is not supported.");
             }
+        }
+
+        if (in_array('Mod', $parts, true)
+            && (in_array('Ctrl', $parts, true) || in_array('Meta', $parts, true))) {
+            throw new InvalidArgumentException('Mod cannot be combined with Ctrl or Meta.');
         }
 
         $ordered = array_values(array_filter(

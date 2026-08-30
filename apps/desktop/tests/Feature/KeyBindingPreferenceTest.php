@@ -41,6 +41,7 @@ class KeyBindingPreferenceTest extends TestCase
             ->assertJsonPath('bindings.navigation-history', 'Mod+H')
             ->assertJsonPath('bindings.toggle-left-sidebar', 'Mod+Backslash')
             ->assertJsonPath('bindings.toggle-checkbox', 'Mod+Enter')
+            ->assertJsonPath('bindings.follow-link', 'Ctrl+O')
             ->assertJsonPath('bindings.pinned-item-1', 'Alt+1')
             ->assertJsonPath('bindings.pinned-item-10', 'Alt+0');
 

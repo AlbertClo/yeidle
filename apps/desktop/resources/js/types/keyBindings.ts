@@ -85,6 +85,11 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Mod+Enter',
     },
     {
+        id: 'follow-link',
+        label: 'Follow Link Under Cursor',
+        defaultBinding: 'Ctrl+O',
+    },
+    {
         id: 'reload',
         label: 'Reload Window',
         defaultBinding: 'Mod+R',
@@ -169,7 +174,7 @@ const namedKeys = new Set([
     'Backquote',
 ]);
 
-export function keyBindingFromEvent(event: KeyboardEvent): string | null {
+function keyFromEvent(event: KeyboardEvent): string | null {
     if (['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) {
         return null;
     }
@@ -186,8 +191,21 @@ export function keyBindingFromEvent(event: KeyboardEvent): string | null {
         return null;
     }
 
+    return key;
+}
+
+export function keyBindingFromEvent(event: KeyboardEvent): string | null {
+    const key = keyFromEvent(event);
+
+    if (key === null) {
+        return null;
+    }
+
+    const functionKey = /^F(?:[1-9]|1[0-2])$/.test(key);
+
     const modifiers = [
-        event.ctrlKey || event.metaKey ? 'Mod' : null,
+        event.ctrlKey ? 'Ctrl' : null,
+        event.metaKey ? 'Meta' : null,
         event.altKey ? 'Alt' : null,
         event.shiftKey ? 'Shift' : null,
     ].filter((modifier): modifier is string => modifier !== null);
@@ -203,7 +221,36 @@ export function eventMatchesKeyBinding(
     event: KeyboardEvent,
     binding: string | null,
 ): boolean {
-    return binding !== null && keyBindingFromEvent(event) === binding;
+    if (binding === null) {
+        return false;
+    }
+
+    const parts = binding.split('+');
+    const expectedKey = parts.pop();
+    const modifiers = new Set(parts);
+    const eventKey = keyFromEvent(event);
+
+    if (eventKey === null || eventKey !== expectedKey) {
+        return false;
+    }
+
+    const expectsMod = modifiers.has('Mod');
+
+    if (expectsMod) {
+        if (!event.ctrlKey && !event.metaKey) {
+            return false;
+        }
+    } else if (
+        event.ctrlKey !== modifiers.has('Ctrl') ||
+        event.metaKey !== modifiers.has('Meta')
+    ) {
+        return false;
+    }
+
+    return (
+        event.altKey === modifiers.has('Alt') &&
+        event.shiftKey === modifiers.has('Shift')
+    );
 }
 
 export function formatKeyBinding(binding: string | null): string {
@@ -223,6 +270,14 @@ export function formatKeyBinding(binding: string | null): string {
         .map((part) => {
             if (part === 'Mod') {
                 return isMac ? '⌘' : 'Ctrl';
+            }
+
+            if (part === 'Ctrl') {
+                return 'Ctrl';
+            }
+
+            if (part === 'Meta') {
+                return isMac ? '⌘' : 'Meta';
             }
 
             if (part === 'Alt') {

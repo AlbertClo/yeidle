@@ -22,12 +22,12 @@ function keyboardEvent(
 }
 
 describe('key bindings', () => {
-    it('normalizes control and command to Mod', () => {
+    it('preserves physical control and command modifiers', () => {
         expect(keyBindingFromEvent(keyboardEvent('k', { ctrlKey: true }))).toBe(
-            'Mod+K',
+            'Ctrl+K',
         );
         expect(keyBindingFromEvent(keyboardEvent('k', { metaKey: true }))).toBe(
-            'Mod+K',
+            'Meta+K',
         );
     });
 
@@ -39,13 +39,13 @@ describe('key bindings', () => {
             keyBindingFromEvent(
                 keyboardEvent('P', { ctrlKey: true, shiftKey: true }),
             ),
-        ).toBe('Mod+Shift+P');
+        ).toBe('Ctrl+Shift+P');
         expect(keyBindingFromEvent(keyboardEvent('/', { ctrlKey: true }))).toBe(
-            'Mod+Slash',
+            'Ctrl+Slash',
         );
         expect(
             keyBindingFromEvent(keyboardEvent('\\', { ctrlKey: true })),
-        ).toBe('Mod+Backslash');
+        ).toBe('Ctrl+Backslash');
     });
 
     it('rejects unmodified typing keys and matches exact modifiers', () => {
@@ -60,6 +60,18 @@ describe('key bindings', () => {
             eventMatchesKeyBinding(
                 keyboardEvent('k', { ctrlKey: true, shiftKey: true }),
                 'Mod+K',
+            ),
+        ).toBe(false);
+        expect(
+            eventMatchesKeyBinding(
+                keyboardEvent('o', { ctrlKey: true }),
+                'Ctrl+O',
+            ),
+        ).toBe(true);
+        expect(
+            eventMatchesKeyBinding(
+                keyboardEvent('o', { metaKey: true }),
+                'Ctrl+O',
             ),
         ).toBe(false);
     });
@@ -79,5 +91,9 @@ describe('key bindings', () => {
 
     it('opens navigation history with Ctrl or Command H', () => {
         expect(DEFAULT_KEY_BINDINGS['navigation-history']).toBe('Mod+H');
+    });
+
+    it("follows the link under the cursor with Roam Research's shortcut", () => {
+        expect(DEFAULT_KEY_BINDINGS['follow-link']).toBe('Ctrl+O');
     });
 });

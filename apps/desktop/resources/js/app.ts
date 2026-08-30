@@ -101,11 +101,6 @@ document.addEventListener(
             return;
         }
 
-        // Prevent Ctrl+Q from closing the app (Electron default)
-        if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
-            e.preventDefault();
-        }
-
         if (eventMatchesCommand(e, 'back')) {
             e.preventDefault();
             void navigateBack();
@@ -120,3 +115,11 @@ document.addEventListener(
     },
     true,
 );
+
+// Prevent Electron's Ctrl+Q default after editor and app commands have had a
+// chance to handle the key. Preventing it during capture blocks ProseMirror.
+document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'q') {
+        event.preventDefault();
+    }
+});

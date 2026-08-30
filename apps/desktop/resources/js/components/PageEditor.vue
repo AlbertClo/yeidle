@@ -69,7 +69,7 @@ import { SlashCommand } from '@/extensions/slashcommand';
 import { WebLink } from '@/extensions/weblink';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import type { EditorSelectionBookmark } from '@/navigation/historyNavigation';
-import { eventMatchesCommand } from '@/stores/keyBindings';
+import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 
 function openExternal(url: string) {
     fetch('/api/open-external', {
@@ -1583,7 +1583,7 @@ function handlePopoverKeydown(e: KeyboardEvent) {
     } else if (e.key === 'Enter') {
         e.preventDefault();
         actions[linkPopover.value.selectedIndex]();
-    } else if (e.key === 'q' && (e.ctrlKey || e.metaKey)) {
+    } else if (eventMatchesCommand(e, 'follow-link')) {
         e.preventDefault();
         followLink();
     } else if (e.key === 'Escape') {
@@ -2380,10 +2380,9 @@ const editor = useEditor({
                 }
             }
 
-            // Ctrl+Q on selected link (mention or web link) follows it
+            // Follow the selected page mention or web link.
             if (
-                event.key === 'q' &&
-                (event.ctrlKey || event.metaKey) &&
+                eventMatchesCommand(event, 'follow-link') &&
                 view.state.selection instanceof NodeSelection
             ) {
                 const node = view.state.selection.node;
@@ -2931,7 +2930,9 @@ onBeforeUnmount(() => {
             >
                 <ExternalLink class="h-4 w-4" />
                 <span class="flex-1">Follow link</span>
-                <kbd class="ml-4 text-xs text-muted-foreground">Ctrl+Q</kbd>
+                <kbd class="ml-4 text-xs text-muted-foreground">
+                    {{ bindingLabel('follow-link') }}
+                </kbd>
             </button>
             <button
                 class="flex w-full items-center gap-2 px-3 py-2 text-sm"
