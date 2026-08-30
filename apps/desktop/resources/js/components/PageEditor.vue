@@ -2710,8 +2710,11 @@ function moveAcrossCollapsedBoundary(
     if (
         event.key === 'ArrowDown' &&
         isNodeCollapsed(blockId) &&
-        view.state.selection.head ===
-            boundarySelectionHead(view, current, 'end')
+        caretIsOnBoundaryLine(
+            view,
+            view.state.selection.head,
+            boundarySelectionHead(view, current, 'end'),
+        )
     ) {
         target = items[index + 1];
         targetBoundary = 'start';
@@ -2719,8 +2722,11 @@ function moveAcrossCollapsedBoundary(
         event.key === 'ArrowUp' &&
         index > 0 &&
         isNodeCollapsed(items[index - 1].node.attrs.blockId as string) &&
-        view.state.selection.head ===
-            boundarySelectionHead(view, current, 'start')
+        caretIsOnBoundaryLine(
+            view,
+            view.state.selection.head,
+            boundarySelectionHead(view, current, 'start'),
+        )
     ) {
         target = items[index - 1];
         targetBoundary = 'end';
