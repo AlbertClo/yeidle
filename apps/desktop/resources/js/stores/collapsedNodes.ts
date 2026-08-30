@@ -60,31 +60,32 @@ export function isNodeCollapsed(nodeId: string): boolean {
     return collapsedNodeIds.value.has(nodeId);
 }
 
-export async function collapseNode(
-    nodeId: string,
-    subtreeIds: string[],
-): Promise<void> {
-    const next = new Set(collapsedNodeIds.value);
-
-    for (const id of subtreeIds) {
-        next.delete(id);
-    }
-
-    next.add(nodeId);
-    await persistCollapseState([nodeId], true, next);
-}
-
-export async function expandNodes(
-    nodeIds: string[],
-    affectedIds: string[] = nodeIds,
-): Promise<void> {
+export async function collapseNodes(nodeIds: string[]): Promise<void> {
     if (nodeIds.length === 0) {
         return;
     }
 
     const next = new Set(collapsedNodeIds.value);
 
-    for (const id of affectedIds) {
+    for (const id of nodeIds) {
+        next.add(id);
+    }
+
+    await persistCollapseState(nodeIds, true, next);
+}
+
+export async function collapseNode(nodeId: string): Promise<void> {
+    await collapseNodes([nodeId]);
+}
+
+export async function expandNodes(nodeIds: string[]): Promise<void> {
+    if (nodeIds.length === 0) {
+        return;
+    }
+
+    const next = new Set(collapsedNodeIds.value);
+
+    for (const id of nodeIds) {
         next.delete(id);
     }
 

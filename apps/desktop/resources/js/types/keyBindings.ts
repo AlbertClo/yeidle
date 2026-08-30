@@ -110,6 +110,16 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Mod+ArrowDown',
     },
     {
+        id: 'collapse-all-nodes',
+        label: 'Collapse Current Node and Descendants',
+        defaultBinding: 'Mod+Shift+ArrowUp',
+    },
+    {
+        id: 'expand-all-nodes',
+        label: 'Expand Current Node and Descendants',
+        defaultBinding: 'Mod+Shift+ArrowDown',
+    },
+    {
         id: 'follow-link',
         label: 'Follow Link Under Cursor',
         defaultBinding: 'Ctrl+O',

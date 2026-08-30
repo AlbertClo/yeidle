@@ -43,6 +43,8 @@ class KeyBindingPreferenceTest extends TestCase
             ->assertJsonPath('bindings.toggle-checkbox', 'Mod+Enter')
             ->assertJsonPath('bindings.collapse-node', 'Mod+ArrowUp')
             ->assertJsonPath('bindings.expand-node', 'Mod+ArrowDown')
+            ->assertJsonPath('bindings.collapse-all-nodes', 'Mod+Shift+ArrowUp')
+            ->assertJsonPath('bindings.expand-all-nodes', 'Mod+Shift+ArrowDown')
             ->assertJsonPath('bindings.follow-link', 'Ctrl+O')
             ->assertJsonPath('bindings.pinned-item-1', 'Alt+1')
             ->assertJsonPath('bindings.pinned-item-10', 'Alt+0');

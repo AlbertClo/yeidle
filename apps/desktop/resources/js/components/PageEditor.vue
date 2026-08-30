@@ -72,6 +72,7 @@ import { wikiLinkSuggestion } from '@/extensions/wikilink';
 import type { EditorSelectionBookmark } from '@/navigation/historyNavigation';
 import {
     collapseNode,
+    collapseNodes,
     collapsedNodeIds,
     expandNodes,
     isNodeCollapsed,
@@ -229,26 +230,6 @@ function treeNodeById(nodes: Node[], targetId: string): Node | null {
     return null;
 }
 
-function collectTreeSubtreeIds(node: Node): string[] {
-    return [node.id, ...(node.children ?? []).flatMap(collectTreeSubtreeIds)];
-}
-
-function collectPmSubtreeIds(node: PmNode): string[] {
-    const ids: string[] = [];
-
-    if (node.type.name === 'listItem' && node.attrs.blockId) {
-        ids.push(node.attrs.blockId as string);
-    }
-
-    node.descendants((descendant) => {
-        if (descendant.type.name === 'listItem' && descendant.attrs.blockId) {
-            ids.push(descendant.attrs.blockId as string);
-        }
-    });
-
-    return ids;
-}
-
 function editorAncestorIds(
     targetEditor: TiptapEditor,
     blockId: string,
@@ -277,23 +258,6 @@ function editorAncestorIds(
     return ids;
 }
 
-function subtreeIdsForBlock(
-    blockId: string,
-    targetEditor?: TiptapEditor,
-): string[] {
-    if (targetEditor) {
-        const found = findListItem(blockId, targetEditor);
-
-        if (found) {
-            return collectPmSubtreeIds(found.node);
-        }
-    }
-
-    const treeNode = treeNodeById(props.nodes, blockId);
-
-    return treeNode ? collectTreeSubtreeIds(treeNode) : [blockId];
-}
-
 function refreshCollapseDecorations(targetEditor: TiptapEditor): void {
     const transaction = targetEditor.state.tr
         .setMeta(collapseDecorationsKey, {
@@ -317,14 +281,7 @@ function revealBlockAncestors(
         return;
     }
 
-    const affectedIds = [
-        ...new Set(
-            collapsedAncestors.flatMap((ancestorId) =>
-                subtreeIdsForBlock(ancestorId, targetEditor),
-            ),
-        ),
-    ];
-    const persistence = expandNodes(collapsedAncestors, affectedIds);
+    const persistence = expandNodes(collapsedAncestors);
 
     if (targetEditor) {
         refreshCollapseDecorations(targetEditor);
@@ -567,7 +524,13 @@ function focusBlock(blockId: string) {
     }
 }
 
-defineExpose({ focusStart, applyRemoteContent, selectionBlockId, focusBlock });
+defineExpose({
+    focusStart,
+    applyRemoteContent,
+    selectionBlockId,
+    focusBlock,
+    expandAllPageNodes,
+});
 
 // Custom document schema: doc must contain a bulletList
 const CustomDocument = Document.extend({
@@ -2362,7 +2325,6 @@ function setListItemCollapsed(
         return false;
     }
 
-    const subtreeIds = collectPmSubtreeIds(itemNode);
     const currentlyCollapsed = isNodeCollapsed(blockId);
 
     if (collapsed && !currentlyCollapsed) {
@@ -2386,16 +2348,13 @@ function setListItemCollapsed(
         }
     }
 
-    if (
-        collapsed === currentlyCollapsed &&
-        (collapsed || !subtreeIds.some(isNodeCollapsed))
-    ) {
+    if (collapsed === currentlyCollapsed) {
         return true;
     }
 
     const persistence = collapsed
-        ? collapseNode(blockId, subtreeIds)
-        : expandNodes([blockId], subtreeIds);
+        ? collapseNode(blockId)
+        : expandNodes([blockId]);
     refreshCollapseDecorations(viewEditor(view));
 
     void persistence.catch(() => {
@@ -2497,6 +2456,165 @@ function setCurrentNodeCollapsed(
     }
 
     return false;
+}
+
+function pmListItemIds(node: PmNode, onlyWithChildren: boolean): string[] {
+    const nodeIds: string[] = [];
+    const collect = (candidate: PmNode): void => {
+        const nestedList = candidate.lastChild;
+
+        if (
+            candidate.type.name === 'listItem' &&
+            typeof candidate.attrs.blockId === 'string' &&
+            (!onlyWithChildren ||
+                (nestedList?.type.name === 'bulletList' &&
+                    nestedList.childCount > 0))
+        ) {
+            nodeIds.push(candidate.attrs.blockId);
+        }
+    };
+
+    collect(node);
+    node.descendants((descendant) => collect(descendant));
+
+    return nodeIds;
+}
+
+function subtreeListItemIds(
+    blockId: string,
+    itemNode: PmNode,
+    onlyWithChildren: boolean,
+): string[] {
+    const nodeIds = new Set(pmListItemIds(itemNode, onlyWithChildren));
+    const treeNode = treeNodeById(props.nodes, blockId);
+
+    if (treeNode) {
+        for (const nodeId of treeListItemIds([treeNode], onlyWithChildren)) {
+            nodeIds.add(nodeId);
+        }
+    }
+
+    return [...nodeIds];
+}
+
+function setCurrentNodeSubtreeCollapsed(
+    view: EditorView,
+    collapsed: boolean,
+): boolean {
+    const $position = view.state.selection.$head;
+
+    for (let depth = $position.depth; depth > 0; depth--) {
+        const node = $position.node(depth);
+        const blockId = node.attrs.blockId as string | null;
+
+        if (node.type.name !== 'listItem' || !blockId) {
+            continue;
+        }
+
+        const nodeIds = subtreeListItemIds(blockId, node, collapsed).filter(
+            (nodeId) =>
+                collapsed ? !isNodeCollapsed(nodeId) : isNodeCollapsed(nodeId),
+        );
+
+        if (nodeIds.length === 0) {
+            return true;
+        }
+
+        const persistence = collapsed
+            ? collapseNodes(nodeIds)
+            : expandNodes(nodeIds);
+        refreshCollapseDecorations(viewEditor(view));
+
+        void persistence.catch(() => {
+            refreshCollapseDecorations(viewEditor(view));
+            toast.error(
+                collapsed
+                    ? 'Could not collapse the node subtree.'
+                    : 'Could not expand the node subtree.',
+            );
+        });
+
+        return true;
+    }
+
+    return false;
+}
+
+function treeListItemIds(nodes: Node[], onlyWithChildren: boolean): string[] {
+    const nodeIds: string[] = [];
+
+    for (const node of nodes) {
+        if (!onlyWithChildren || (node.children?.length ?? 0) > 0) {
+            nodeIds.push(node.id);
+        }
+
+        nodeIds.push(...treeListItemIds(node.children ?? [], onlyWithChildren));
+    }
+
+    return nodeIds;
+}
+
+function pageListItemIds(onlyWithChildren: boolean): string[] {
+    const nodeIds = new Set(treeListItemIds(props.nodes, onlyWithChildren));
+    const current = editor.value;
+
+    current?.state.doc.descendants((node) => {
+        const nestedList = node.lastChild;
+
+        if (
+            node.type.name === 'listItem' &&
+            typeof node.attrs.blockId === 'string' &&
+            (!onlyWithChildren ||
+                (nestedList?.type.name === 'bulletList' &&
+                    nestedList.childCount > 0))
+        ) {
+            nodeIds.add(node.attrs.blockId);
+        }
+    });
+
+    return [...nodeIds];
+}
+
+function setPageNodesCollapsed(collapsed: boolean): boolean {
+    const current = editor.value;
+
+    if (!current) {
+        return false;
+    }
+
+    const nodeIds = pageListItemIds(collapsed).filter((nodeId) =>
+        collapsed ? !isNodeCollapsed(nodeId) : isNodeCollapsed(nodeId),
+    );
+
+    if (nodeIds.length === 0) {
+        return true;
+    }
+
+    if (collapsed) {
+        current.view.dispatch(
+            current.state.tr.setSelection(Selection.atStart(current.state.doc)),
+        );
+    }
+
+    const persistence = collapsed
+        ? collapseNodes(nodeIds)
+        : expandNodes(nodeIds);
+    refreshCollapseDecorations(current);
+
+    void persistence.catch(() => {
+        refreshCollapseDecorations(current);
+        toast.error(
+            collapsed
+                ? 'Could not collapse all nodes.'
+                : 'Could not expand all nodes.',
+        );
+    });
+
+    return true;
+}
+
+function expandAllPageNodes(): boolean {
+    return setPageNodesCollapsed(false);
 }
 
 interface VisibleListItem {
@@ -2920,6 +3038,18 @@ const editor = useEditor({
                 event.preventDefault();
 
                 return cycleChecklistState(view);
+            }
+
+            if (eventMatchesCommand(event, 'collapse-all-nodes')) {
+                event.preventDefault();
+
+                return setCurrentNodeSubtreeCollapsed(view, true);
+            }
+
+            if (eventMatchesCommand(event, 'expand-all-nodes')) {
+                event.preventDefault();
+
+                return setCurrentNodeSubtreeCollapsed(view, false);
             }
 
             if (eventMatchesCommand(event, 'collapse-node')) {

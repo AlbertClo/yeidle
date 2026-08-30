@@ -100,6 +100,12 @@ describe('key bindings', () => {
     it("uses Roam Research's node collapse and expansion shortcuts", () => {
         expect(DEFAULT_KEY_BINDINGS['collapse-node']).toBe('Mod+ArrowUp');
         expect(DEFAULT_KEY_BINDINGS['expand-node']).toBe('Mod+ArrowDown');
+        expect(DEFAULT_KEY_BINDINGS['collapse-all-nodes']).toBe(
+            'Mod+Shift+ArrowUp',
+        );
+        expect(DEFAULT_KEY_BINDINGS['expand-all-nodes']).toBe(
+            'Mod+Shift+ArrowDown',
+        );
     });
 
     it("opens daily notes with Roam Research's shortcuts", () => {

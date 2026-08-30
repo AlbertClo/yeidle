@@ -10,6 +10,7 @@ vi.mock('@/sync/cloud', () => ({
 
 import {
     collapseNode,
+    collapseNodes,
     collapsedNodeIds,
     collapsedNodesRootId,
     expandNodes,
@@ -24,21 +25,21 @@ describe('collapsed node store', () => {
         vi.restoreAllMocks();
     });
 
-    it('optimistically collapses a node and clears descendant folds', async () => {
+    it('optimistically collapses a node and preserves descendant folds', async () => {
         initializeCollapsedNodes('user-root', ['child']);
         const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
                     root_id: 'user-root',
-                    node_ids: ['parent'],
+                    node_ids: ['child', 'parent'],
                 }),
                 { status: 200 },
             ),
         );
 
-        const persistence = collapseNode('parent', ['parent', 'child']);
+        const persistence = collapseNode('parent');
 
-        expect([...collapsedNodeIds.value]).toEqual(['parent']);
+        expect([...collapsedNodeIds.value]).toEqual(['child', 'parent']);
         await persistence;
         expect(fetchMock).toHaveBeenCalledWith('/api/collapsed-nodes', {
             method: 'PUT',
@@ -54,7 +55,7 @@ describe('collapsed node store', () => {
         expect(requestCloudExchangeMock).toHaveBeenCalledOnce();
     });
 
-    it('expands multiple ancestors and their complete subtrees at once', async () => {
+    it('expands exactly the requested nodes in one batch', async () => {
         initializeCollapsedNodes('user-root', [
             'grandparent',
             'parent',
@@ -70,14 +71,28 @@ describe('collapsed node store', () => {
             ),
         );
 
-        const persistence = expandNodes(
-            ['grandparent', 'parent'],
-            ['grandparent', 'parent', 'target'],
-        );
+        const persistence = expandNodes(['grandparent', 'parent']);
 
         expect([...collapsedNodeIds.value]).toEqual(['unrelated']);
         await persistence;
         expect([...collapsedNodeIds.value]).toEqual(['unrelated']);
+    });
+
+    it('collapses multiple nodes in one request', async () => {
+        vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    root_id: 'user-root',
+                    node_ids: ['parent', 'child'],
+                }),
+                { status: 200 },
+            ),
+        );
+
+        const persistence = collapseNodes(['parent', 'child']);
+
+        expect([...collapsedNodeIds.value]).toEqual(['parent', 'child']);
+        await persistence;
     });
 
     it('detects operations for the active personal collapse root', () => {

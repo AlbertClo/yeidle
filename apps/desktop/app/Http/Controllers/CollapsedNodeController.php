@@ -21,7 +21,7 @@ class CollapsedNodeController extends Controller
     public function update(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'node_ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'node_ids' => ['required', 'array', 'min:1', 'max:25000'],
             'node_ids.*' => ['required', 'string', 'uuid', 'distinct'],
             'collapsed' => ['required', 'boolean'],
         ]);
@@ -30,8 +30,7 @@ class CollapsedNodeController extends Controller
         abort_unless($nodes->count() === count($validated['node_ids']), 404);
 
         if ($validated['collapsed']) {
-            abort_unless($nodes->count() === 1, 422);
-            $this->collapsedNodes->collapse($nodes->sole());
+            $this->collapsedNodes->collapse($nodes->all());
         } else {
             $this->collapsedNodes->expand($nodes->all());
         }

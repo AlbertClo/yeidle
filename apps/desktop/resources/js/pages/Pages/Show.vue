@@ -3,6 +3,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import {
     ChevronLeft,
     ChevronRight,
+    ChevronsDown,
     EllipsisVertical,
     Pin,
     Trash2,
@@ -118,6 +119,7 @@ type PageEditorHandle = {
     focusBlock: (blockId: string) => void;
     selectionBlockId: () => string | null;
     applyRemoteContent: (node: Node) => boolean;
+    expandAllPageNodes: () => boolean;
 };
 
 const pageEditorRef = ref<PageEditorHandle>();
@@ -131,9 +133,7 @@ const requestedDailyNoteFocus = (() => {
         return null;
     }
 
-    const focus = new URLSearchParams(window.location.search).get(
-        'dailyFocus',
-    );
+    const focus = new URLSearchParams(window.location.search).get('dailyFocus');
 
     return focus === 'start' || focus === 'end' ? focus : null;
 })();
@@ -849,6 +849,13 @@ onBeforeUnmount(() => {
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                            @select="pageEditorRef?.expandAllPageNodes()"
+                        >
+                            <ChevronsDown class="mr-2 h-4 w-4" />
+                            Expand all
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem @select="toggleCurrentPagePin">
                             <Pin
                                 class="mr-2 h-4 w-4"

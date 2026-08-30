@@ -35,6 +35,8 @@ final class UserKeyBindings
         'toggle-checkbox' => 'Mod+Enter',
         'collapse-node' => 'Mod+ArrowUp',
         'expand-node' => 'Mod+ArrowDown',
+        'collapse-all-nodes' => 'Mod+Shift+ArrowUp',
+        'expand-all-nodes' => 'Mod+Shift+ArrowDown',
         'follow-link' => 'Ctrl+O',
         'reload' => 'Mod+R',
         'back' => 'Mod+ArrowLeft',

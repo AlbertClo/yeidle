@@ -47,10 +47,14 @@ class CollapsedNodeTest extends TestCase
                 ->where('collapsedNodesRootId', $rootId));
     }
 
-    public function test_expanding_a_node_recursively_clears_descendant_state(): void
+    public function test_expanding_a_node_preserves_descendant_state(): void
     {
         [, $parent, $child] = $this->tree();
 
+        $this->putJson('/api/collapsed-nodes', [
+            'node_ids' => [$parent->id],
+            'collapsed' => true,
+        ])->assertSuccessful();
         $this->putJson('/api/collapsed-nodes', [
             'node_ids' => [$child->id],
             'collapsed' => true,
@@ -58,17 +62,17 @@ class CollapsedNodeTest extends TestCase
         $this->putJson('/api/collapsed-nodes', [
             'node_ids' => [$parent->id],
             'collapsed' => false,
-        ])->assertSuccessful()->assertJsonPath('node_ids', []);
+        ])->assertSuccessful()->assertJsonPath('node_ids', [$child->id]);
 
         $rootId = $this->getJson('/api/collapsed-nodes')->json('root_id');
         $entry = Node::withTrashed()
             ->where('parent_id', $rootId)
             ->where('content', $child->id)
             ->sole();
-        $this->assertNotNull($entry->deleted_at);
+        $this->assertNull($entry->deleted_at);
     }
 
-    public function test_collapsing_a_parent_discards_descendant_folds(): void
+    public function test_collapsing_a_parent_preserves_descendant_folds(): void
     {
         [, $parent, $child] = $this->tree();
 
@@ -81,7 +85,25 @@ class CollapsedNodeTest extends TestCase
             'collapsed' => true,
         ])->assertSuccessful();
 
-        $response->assertJsonPath('node_ids', [$parent->id]);
+        $this->assertEqualsCanonicalizing(
+            [$parent->id, $child->id],
+            $response->json('node_ids'),
+        );
+    }
+
+    public function test_multiple_nodes_can_be_collapsed_in_one_request(): void
+    {
+        [, $parent, $child] = $this->tree();
+
+        $response = $this->putJson('/api/collapsed-nodes', [
+            'node_ids' => [$parent->id, $child->id],
+            'collapsed' => true,
+        ])->assertSuccessful();
+
+        $this->assertEqualsCanonicalizing(
+            [$parent->id, $child->id],
+            $response->json('node_ids'),
+        );
     }
 
     public function test_multiple_ancestor_paths_can_be_expanded_in_one_request(): void

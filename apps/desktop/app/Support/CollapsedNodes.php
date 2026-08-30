@@ -18,8 +18,8 @@ use Ramsey\Uuid\Uuid;
  *
  *   hidden workspace root -> hidden account root -> collapsed node IDs
  *
- * Expansion is represented by the absence of an entry. Collapsing a node
- * clears entries below it; expanding clears the complete requested subtree.
+ * Expansion is represented by the absence of an entry. Each entry only
+ * controls its own node, so nested collapse choices remain independent.
  */
 final class CollapsedNodes
 {
@@ -45,28 +45,36 @@ final class CollapsedNodes
         ];
     }
 
-    public function collapse(Node $node): void
+    /** @param list<Node> $nodes */
+    public function collapse(array $nodes): void
     {
-        abort_unless(! $node->isPage() && $node->isReachable()
-            && ! $node->isSystemNode(), 404);
+        $nodes = collect($nodes);
+        $validNodes = $nodes
+            ->filter(fn (Node $node): bool => ! $node->isPage()
+                && ! SystemNodes::isRoot($node->id))
+            ->values();
 
-        DB::transaction(function () use ($node): void {
+        abort_unless(
+            $validNodes->isNotEmpty() && $validNodes->count() === $nodes->count(),
+            404,
+        );
+
+        DB::transaction(function () use ($validNodes): void {
             $rootId = $this->activeRootId();
-            $subtreeIds = $this->subtreeIds([$node->id]);
             $clock = $this->clock();
             $hlc = $clock->now();
             $ops = $this->containerOps($rootId, $clock);
+            $existingEntries = $this->entriesForNodeIds(
+                $rootId,
+                $validNodes->pluck('id')->all(),
+            )->keyBy('content');
 
-            foreach ($this->entriesForNodeIds($rootId, $subtreeIds) as $entry) {
-                if ($entry->content !== $node->id) {
-                    $ops[] = $this->deleteOp($entry->id, $rootId, $hlc);
+            foreach ($validNodes as $node) {
+                if ($existingEntries->has($node->id)) {
+                    continue;
                 }
-            }
 
-            $entryId = $this->entryId($rootId, $node->id);
-
-            if (! Node::query()->whereKey($entryId)->whereNull('deleted_at')->exists()) {
-                $ops[] = $this->setOp($entryId, $rootId, $hlc, [
+                $ops[] = $this->setOp($this->entryId($rootId, $node->id), $rootId, $hlc, [
                     'parent_id' => $rootId,
                     'position' => RoamPosition::at(0),
                     'content' => $node->id,
@@ -84,20 +92,17 @@ final class CollapsedNodes
     {
         DB::transaction(function () use ($nodes): void {
             $rootId = $this->activeRootId();
-            $subtreeIds = $this->subtreeIds(
-                collect($nodes)
-                    ->filter(fn (Node $node): bool => ! $node->isPage()
-                        && $node->isReachable()
-                        && ! $node->isSystemNode())
-                    ->pluck('id')
-                    ->all(),
-            );
+            $nodeIds = collect($nodes)
+                ->filter(fn (Node $node): bool => ! $node->isPage()
+                    && ! SystemNodes::isRoot($node->id))
+                ->pluck('id')
+                ->all();
 
-            if ($subtreeIds === []) {
+            if ($nodeIds === []) {
                 return;
             }
 
-            $entries = $this->entriesForNodeIds($rootId, $subtreeIds);
+            $entries = $this->entriesForNodeIds($rootId, $nodeIds);
 
             if ($entries->isEmpty()) {
                 return;
@@ -205,37 +210,6 @@ final class CollapsedNodes
         return $this->entries($rootId)
             ->filter(fn (Node $entry): bool => isset($nodeIdSet[$entry->content]))
             ->values();
-    }
-
-    /** @param list<string> $rootIds @return list<string> */
-    private function subtreeIds(array $rootIds): array
-    {
-        if ($rootIds === []) {
-            return [];
-        }
-
-        $placeholders = implode(', ', array_fill(0, count($rootIds), '?'));
-        $rows = DB::select(<<<SQL
-            WITH RECURSIVE subtree AS (
-                SELECT id
-                FROM nodes
-                WHERE id IN ({$placeholders})
-                    AND deleted_at IS NULL
-
-                UNION
-
-                SELECT nodes.id
-                FROM nodes
-                INNER JOIN subtree ON nodes.parent_id = subtree.id
-                WHERE nodes.deleted_at IS NULL
-            )
-            SELECT id FROM subtree
-        SQL, $rootIds);
-
-        return array_values(array_map(
-            fn (object $row): string => $row->id,
-            $rows,
-        ));
     }
 
     /** @return list<array<string, mixed>> */
