@@ -18,6 +18,7 @@ import {
 } from '@/navigation/historyNavigation';
 import { eventMatchesCommand, loadKeyBindings } from '@/stores/keyBindings';
 import { initializeRealtimeSync } from '@/sync/realtime';
+import { hasOpenModal } from '@/ui/modal';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -40,6 +41,10 @@ function initializeNativeWindowFrame(): void {
         windowControls.subscribeMaximizedChange(updateMaximizedState);
     const navigationSubscriptionId = windowControls.subscribeNavigationCommand(
         (direction) => {
+            if (hasOpenModal()) {
+                return;
+            }
+
             if (direction === 'back') {
                 void navigateBack();
             } else {

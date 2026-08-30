@@ -79,6 +79,7 @@ import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/realtimeOps';
 import { applyOpsToTree, findInTree } from '@/sync/tree';
 import type { BreadcrumbItem } from '@/types';
 import type { Node } from '@/types/node';
+import { hasOpenModal } from '@/ui/modal';
 
 const props = defineProps<{
     page: Node;
@@ -750,6 +751,10 @@ async function deletePage() {
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
+    if (hasOpenModal()) {
+        return;
+    }
+
     if (
         isDailyNote.value &&
         props.page.daily_note_date &&

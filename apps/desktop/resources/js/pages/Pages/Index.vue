@@ -34,6 +34,7 @@ import type { LocalOpsAvailableEvent } from '@/sync/localOps';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import type { BreadcrumbItem } from '@/types';
 import type { PageListItem } from '@/types/node';
+import { hasOpenModal } from '@/ui/modal';
 import { openThemeSelector, THEME_SELECTED_EVENT } from '@/ui/themeSelector';
 import {
     openWorkspaceSync,
@@ -202,7 +203,8 @@ function handleUnselectedPageListKeydown(event: KeyboardEvent): void {
         event.metaKey ||
         setupRequired.value ||
         props.pages.length === 0 ||
-        document.querySelector('[role="dialog"], [role="menu"]') !== null ||
+        hasOpenModal() ||
+        document.querySelector('[role="menu"]') !== null ||
         pageRow(document.activeElement) !== null
     ) {
         return;

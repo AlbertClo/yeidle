@@ -6,6 +6,7 @@ import {
     KEY_BINDING_DEFINITIONS,
 } from '../types/keyBindings';
 import type { KeyBindingCommand, KeyBindings } from '../types/keyBindings';
+import { hasOpenModal } from '../ui/modal';
 
 export const keyBindings = ref<KeyBindings>({ ...DEFAULT_KEY_BINDINGS });
 
@@ -109,5 +110,9 @@ export function eventMatchesCommand(
     event: KeyboardEvent,
     command: KeyBindingCommand,
 ): boolean {
+    if (hasOpenModal()) {
+        return false;
+    }
+
     return eventMatchesKeyBinding(event, bindingFor(command));
 }
