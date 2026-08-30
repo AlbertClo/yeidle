@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Check } from 'lucide-vue-next';
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,9 +28,104 @@ import {
 
 const isOpen = ref(false);
 const saving = ref(false);
+const selectedIndex = ref<number | null>(null);
+const lastThemeIndex = ref(0);
+const themeButtonRefs = ref<(HTMLButtonElement | null)[]>([]);
 
 function openDialog(): void {
     isOpen.value = true;
+}
+
+function setThemeButtonRef(index: number, element: unknown): void {
+    themeButtonRefs.value[index] =
+        element instanceof HTMLButtonElement ? element : null;
+}
+
+function focusTheme(index: number, focus = true): void {
+    const nextIndex = Math.max(0, Math.min(index, THEME_OPTIONS.length - 1));
+    selectedIndex.value = nextIndex;
+    lastThemeIndex.value = nextIndex;
+
+    if (!focus) {
+        return;
+    }
+
+    void nextTick(() => {
+        const button = themeButtonRefs.value[nextIndex];
+        button?.focus({ preventScroll: true });
+        button?.scrollIntoView({ block: 'nearest' });
+    });
+}
+
+function focusCloseButton(): void {
+    selectedIndex.value = null;
+    document
+        .querySelector<HTMLButtonElement>('[data-theme-close="true"]')
+        ?.focus({ preventScroll: true });
+}
+
+function handleThemeKeydown(event: KeyboardEvent, index: number): void {
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+        return;
+    }
+
+    let targetIndex: number | null = null;
+
+    if (event.key === 'ArrowLeft' && index > 0) {
+        targetIndex = index - 1;
+    } else if (event.key === 'ArrowRight' && index < THEME_OPTIONS.length - 1) {
+        targetIndex = index + 1;
+    } else if (event.key === 'ArrowUp' && index >= 3) {
+        targetIndex = index - 3;
+    } else if (event.key === 'ArrowDown') {
+        if (index + 3 < THEME_OPTIONS.length) {
+            targetIndex = index + 3;
+        } else {
+            event.preventDefault();
+            event.stopPropagation();
+            focusCloseButton();
+
+            return;
+        }
+    } else if (event.key === 'Enter') {
+        event.preventDefault();
+        event.stopPropagation();
+        void selectTheme(THEME_OPTIONS[index].value);
+
+        return;
+    }
+
+    if (targetIndex === null) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    focusTheme(targetIndex);
+}
+
+function handleCloseKeydown(event: KeyboardEvent): void {
+    if (
+        event.key !== 'ArrowUp' ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    focusTheme(lastThemeIndex.value);
+}
+
+function handleOpenAutoFocus(event: Event): void {
+    event.preventDefault();
+    const currentIndex = THEME_OPTIONS.findIndex(
+        ({ value }) => value === themePreference.value,
+    );
+    focusTheme(currentIndex < 0 ? 0 : currentIndex);
 }
 
 async function selectTheme(theme: Theme): Promise<void> {
@@ -61,6 +156,12 @@ function handleLocalOps(event: Event): void {
     }
 }
 
+watch(isOpen, (open) => {
+    if (!open) {
+        selectedIndex.value = null;
+    }
+});
+
 onMounted(() => {
     void loadPreferences(true);
     window.addEventListener(OPEN_THEME_SELECTOR_EVENT, openDialog);
@@ -75,7 +176,10 @@ onBeforeUnmount(() => {
 
 <template>
     <Dialog v-model:open="isOpen">
-        <DialogContent class="max-h-[85svh] overflow-y-auto sm:max-w-5xl">
+        <DialogContent
+            class="max-h-[85svh] overflow-y-auto sm:max-w-5xl"
+            @open-auto-focus="handleOpenAutoFocus"
+        >
             <div
                 class="grid gap-6 md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]"
             >
@@ -89,18 +193,27 @@ onBeforeUnmount(() => {
 
                     <div class="grid grid-cols-3 gap-3">
                         <button
-                            v-for="theme in THEME_OPTIONS"
+                            v-for="(theme, index) in THEME_OPTIONS"
                             :key="theme.value"
+                            :ref="
+                                (element) => setThemeButtonRef(index, element)
+                            "
                             type="button"
                             :aria-pressed="themePreference === theme.value"
-                            :disabled="saving"
-                            class="relative flex cursor-pointer flex-col items-stretch justify-start rounded-lg border p-3 text-left hover:bg-accent"
-                            :class="
+                            :aria-busy="saving"
+                            class="relative flex cursor-pointer flex-col items-stretch justify-start rounded-lg border p-3 text-left outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            :class="[
                                 themePreference === theme.value
                                     ? 'border-ring ring-1 ring-ring'
-                                    : 'border-border'
-                            "
+                                    : 'border-border',
+                                selectedIndex === index
+                                    ? 'bg-accent'
+                                    : undefined,
+                            ]"
                             @click="selectTheme(theme.value)"
+                            @focus="focusTheme(index, false)"
+                            @mouseenter="focusTheme(index, false)"
+                            @keydown="handleThemeKeydown($event, index)"
                         >
                             <div
                                 class="mb-3 flex h-10 overflow-hidden rounded-md border border-black/10 dark:border-white/10"
@@ -204,8 +317,10 @@ onBeforeUnmount(() => {
                         type="button"
                         variant="outline"
                         class="absolute right-4 bottom-4"
-                        :disabled="saving"
+                        :aria-busy="saving"
+                        data-theme-close="true"
                         @click="isOpen = false"
+                        @keydown="handleCloseKeydown"
                     >
                         Close
                     </Button>
