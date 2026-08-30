@@ -1,5 +1,6 @@
 export type Node = {
     id: string;
+    page_id?: string;
     parent_id: string | null;
     position: string;
     content: string;

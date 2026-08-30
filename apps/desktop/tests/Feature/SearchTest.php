@@ -20,8 +20,22 @@ class SearchTest extends TestCase
         $this->getJson('/api/search?q=Research')
             ->assertOk()
             ->assertJsonPath('0.id', $exactPage->id)
+            ->assertJsonPath('0.page_id', $exactPage->id)
             ->assertJsonPath('1.id', $exactBlock->id)
+            ->assertJsonPath('1.page_id', $container->id)
             ->assertJsonPath('2.id', $prefixPage->id);
+    }
+
+    public function test_block_results_include_their_root_page_id(): void
+    {
+        $page = $this->node('Page');
+        $parent = $this->node('Parent', $page->id);
+        $match = $this->node('Deep searchable result', $parent->id);
+
+        $this->getJson('/api/search?q=searchable')
+            ->assertOk()
+            ->assertJsonPath('0.id', $match->id)
+            ->assertJsonPath('0.page_id', $page->id);
     }
 
     public function test_it_finds_long_and_short_typographical_errors(): void

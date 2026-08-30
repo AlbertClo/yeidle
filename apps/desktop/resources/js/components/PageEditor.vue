@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
 import { Extension } from '@tiptap/core';
+import type { Editor as TiptapEditor } from '@tiptap/core';
 import Blockquote from '@tiptap/extension-blockquote';
 import Bold from '@tiptap/extension-bold';
 import BulletList from '@tiptap/extension-bullet-list';
@@ -22,7 +23,7 @@ import Text from '@tiptap/extension-text';
 import { Fragment } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { NodeSelection, TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
@@ -56,6 +57,11 @@ import { FileNode } from '@/extensions/filenode';
 import { SlashCommand } from '@/extensions/slashcommand';
 import { WebLink } from '@/extensions/weblink';
 import { wikiLinkSuggestion } from '@/extensions/wikilink';
+import {
+    countNodes,
+    takeNodePrefix,
+    takeNodeWindow,
+} from '@/editor/progressiveNodes';
 import { eventMatchesCommand } from '@/stores/keyBindings';
 
 function openExternal(url: string) {
@@ -94,6 +100,8 @@ const props = defineProps<{
     // Sync-triggered remounts pass false so the rebuilt editor doesn't
     // steal focus
     autoFocus?: boolean;
+    progressiveInitialNodeCount?: number;
+    initialFocusBlockId?: string | null;
 }>();
 
 initPositionMap(props.nodes, props.pageId);
@@ -102,6 +110,7 @@ const emit = defineEmits<{
     update: [nodes: Node[]];
     focusTitle: [];
     focusBacklinks: [];
+    initialFocusApplied: [];
 }>();
 
 function focusStart() {
@@ -147,8 +156,11 @@ function focusStart() {
 
 // --- Remote sync support (sync design §7) ---
 
-function findListItem(blockId: string): { pos: number; node: PmNode } | null {
-    const e = editor.value;
+function findListItem(
+    blockId: string,
+    targetEditor?: TiptapEditor,
+): { pos: number; node: PmNode } | null {
+    const e = targetEditor ?? editor.value;
 
     if (!e) {
         return null;
@@ -260,17 +272,11 @@ function applyRemoteContent(nodeData: Node): boolean {
 }
 
 /** Restore focus to a block after a structural refresh remount. */
-function focusBlock(blockId: string) {
-    const e = editor.value;
-
-    if (!e) {
-        return;
-    }
-
-    const found = findListItem(blockId);
+function focusBlockInEditor(e: TiptapEditor, blockId: string): boolean {
+    const found = findListItem(blockId, e);
 
     if (!found) {
-        return;
+        return false;
     }
 
     e.view.focus();
@@ -281,6 +287,22 @@ function focusBlock(blockId: string) {
             )
             .scrollIntoView(),
     );
+
+    return true;
+}
+
+function focusBlock(blockId: string) {
+    const e = editor.value;
+
+    if (!e) {
+        pendingProgressiveFocusBlockId = blockId;
+
+        return;
+    }
+
+    if (!focusBlockInEditor(e, blockId) && !progressiveHydrationComplete) {
+        pendingProgressiveFocusBlockId = blockId;
+    }
 }
 
 defineExpose({ focusStart, applyRemoteContent, selectionBlockId, focusBlock });
@@ -1197,6 +1219,24 @@ function listItemToNode(
 
 let userHasInteracted = false;
 let lastArrowDirection = 0; // -1 for up, 1 for down, 0 for none
+const progressiveNodeLimit = props.progressiveInitialNodeCount ?? 0;
+const progressiveHydrationRequired =
+    progressiveNodeLimit > 0 && countNodes(props.nodes) > progressiveNodeLimit;
+const initialEditorNodes = progressiveHydrationRequired
+    ? props.initialFocusBlockId
+        ? takeNodeWindow(
+              props.nodes,
+              props.initialFocusBlockId,
+              progressiveNodeLimit,
+          )
+        : takeNodePrefix(props.nodes, progressiveNodeLimit)
+    : props.nodes;
+let progressiveHydrationComplete = !progressiveHydrationRequired;
+let progressiveHydrationFrame: number | null = null;
+let progressiveHydrationPaintFrame: number | null = null;
+let hydratingProgressiveContent = false;
+let pendingProgressiveFocusBlockId: string | null =
+    props.initialFocusBlockId ?? null;
 
 // Media menu popover
 const mediaMenu = ref<{
@@ -1868,7 +1908,7 @@ function cycleChecklistState(view: EditorView): boolean {
 }
 
 const editor = useEditor({
-    content: nodesToTiptap(props.nodes),
+    content: nodesToTiptap(initialEditorNodes),
     extensions: [
         CustomDocument,
         Text,
@@ -2531,16 +2571,31 @@ const editor = useEditor({
         },
     },
     onCreate: ({ editor }) => {
-        // Focus the start of the first node on page load
-        if (props.autoFocus !== false) {
+        const initialFocusBlockId = pendingProgressiveFocusBlockId;
+        const focusedRequestedBlock = initialFocusBlockId
+            ? focusBlockInEditor(editor, initialFocusBlockId)
+            : false;
+
+        if (!focusedRequestedBlock && props.autoFocus !== false) {
             editor.commands.focus('start');
         }
+
+        if (focusedRequestedBlock && !progressiveHydrationRequired) {
+            pendingProgressiveFocusBlockId = null;
+            emit('initialFocusApplied');
+        }
+
+        scheduleProgressiveHydration(editor);
     },
     onFocus: () => {
         userHasInteracted = true;
     },
     onTransaction: ({ transaction, editor }) => {
         if (!transaction.docChanged) {
+            return;
+        }
+
+        if (hydratingProgressiveContent) {
             return;
         }
 
@@ -2621,7 +2676,68 @@ function handleEditorClick(e: MouseEvent) {
     }
 }
 
+function scheduleProgressiveHydration(editor: TiptapEditor) {
+    if (!progressiveHydrationRequired) {
+        return;
+    }
+
+    // Two animation frames guarantee the initial visible node window reaches
+    // the screen before the complete document is constructed.
+    progressiveHydrationFrame = requestAnimationFrame(() => {
+        progressiveHydrationPaintFrame = requestAnimationFrame(() => {
+            progressiveHydrationFrame = null;
+            progressiveHydrationPaintFrame = null;
+
+            const wasFocused = editor.isFocused;
+            const selection = editor.state.selection.toJSON();
+
+            hydratingProgressiveContent = true;
+
+            try {
+                editor.commands.setContent(nodesToTiptap(props.nodes), {
+                    emitUpdate: false,
+                });
+            } finally {
+                hydratingProgressiveContent = false;
+                progressiveHydrationComplete = true;
+            }
+
+            if (pendingProgressiveFocusBlockId) {
+                const blockId = pendingProgressiveFocusBlockId;
+                pendingProgressiveFocusBlockId = null;
+
+                if (focusBlockInEditor(editor, blockId)) {
+                    emit('initialFocusApplied');
+                }
+
+                return;
+            }
+
+            if (wasFocused) {
+                try {
+                    editor.view.dispatch(
+                        editor.state.tr.setSelection(
+                            Selection.fromJSON(editor.state.doc, selection),
+                        ),
+                    );
+                    editor.view.focus();
+                } catch {
+                    editor.commands.focus('start');
+                }
+            }
+        });
+    });
+}
+
 onBeforeUnmount(() => {
+    if (progressiveHydrationFrame !== null) {
+        cancelAnimationFrame(progressiveHydrationFrame);
+    }
+
+    if (progressiveHydrationPaintFrame !== null) {
+        cancelAnimationFrame(progressiveHydrationPaintFrame);
+    }
+
     editor.value?.destroy();
 });
 </script>

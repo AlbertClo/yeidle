@@ -164,11 +164,14 @@ function createPage() {
 }
 
 function navigate(node: Node) {
-    const pageId = node.parent_id ?? node.id;
+    const pageId = node.page_id ?? node.parent_id ?? node.id;
+    const blockQuery = node.parent_id
+        ? `?block=${encodeURIComponent(node.id)}`
+        : '';
     isOpen.value = false;
     lastSearch = '';
     results.value = [];
-    router.visit(`/pages/${pageId}`);
+    router.visit(`/pages/${pageId}${blockQuery}`);
 }
 
 function openSearch() {
