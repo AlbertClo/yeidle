@@ -13,7 +13,6 @@ import HardBreak from '@tiptap/extension-hard-break';
 import Heading from '@tiptap/extension-heading';
 import Highlight from '@tiptap/extension-highlight';
 import History from '@tiptap/extension-history';
-import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import Italic from '@tiptap/extension-italic';
 import ListItem from '@tiptap/extension-list-item';
 import Mention from '@tiptap/extension-mention';
@@ -66,6 +65,7 @@ import {
 } from '@/editor/progressiveNodes';
 import { BlockEmbed } from '@/extensions/blockembed';
 import { BlockReference } from '@/extensions/blockreference';
+import { CompactHorizontalRule } from '@/extensions/compact-horizontal-rule';
 import { FileNode } from '@/extensions/filenode';
 import { SlashCommand } from '@/extensions/slashcommand';
 import { WebLink } from '@/extensions/weblink';
@@ -2275,6 +2275,46 @@ function caretIsOnBoundaryLine(
     return Math.abs(cursor.top - boundary.top) <= 2;
 }
 
+function moveWithinCurrentVisualLine(
+    view: EditorView,
+    event: KeyboardEvent,
+): boolean {
+    if (
+        (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        document.querySelector('.tippy-box') ||
+        !(view.state.selection instanceof TextSelection) ||
+        !view.state.selection.empty ||
+        !view.state.selection.$head.parent.isTextblock
+    ) {
+        return false;
+    }
+
+    const direction = event.key === 'ArrowUp' ? 'up' : 'down';
+
+    if (view.endOfTextblock(direction)) {
+        return false;
+    }
+
+    const selection = view.dom.ownerDocument.getSelection();
+
+    if (!selection || typeof selection.modify !== 'function') {
+        return false;
+    }
+
+    event.preventDefault();
+    selection.modify(
+        'move',
+        direction === 'up' ? 'backward' : 'forward',
+        'line',
+    );
+
+    return true;
+}
+
 function moveAcrossAtomOnlyTextblock(
     view: EditorView,
     event: KeyboardEvent,
@@ -2940,7 +2980,7 @@ const editor = useEditor({
             exitOnArrowDown: false,
         }),
         Heading.configure({ levels: [1, 2, 3] }),
-        HorizontalRule,
+        CompactHorizontalRule,
         Blockquote,
         Highlight,
         Gapcursor,
@@ -3167,6 +3207,10 @@ const editor = useEditor({
                 event.preventDefault();
 
                 return setCurrentNodeCollapsed(view, false);
+            }
+
+            if (moveWithinCurrentVisualLine(view, event)) {
+                return true;
             }
 
             if (moveAcrossCollapsedBoundary(view, event)) {

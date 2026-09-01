@@ -203,7 +203,7 @@ final class RoamContentConverter
     private function inlineContent(string $text): array
     {
         $nodes = [];
-        $pattern = '~\[\[([^\]]+)\]\]|\(\(([^\)]+)\)\)|\[([^\]]+)\]\((https?://[^\s\)]+)\)|(https?://[^\s]+)~iu';
+        $pattern = '~(?<!`)`([^`\r\n]+)`(?!`)|\[\[([^\]]+)\]\]|\(\(([^\)]+)\)\)|\[([^\]]+)\]\((https?://[^\s\)]+)\)|(https?://[^\s]+)~iu';
         $codeRanges = RoamSyntax::codeRanges($text);
         $componentNameRanges = RoamSyntax::componentNameRanges($text);
         $cursor = 0;
@@ -219,12 +219,18 @@ final class RoamContentConverter
             $length = strlen($match[0][0]);
             $this->appendText($nodes, substr($text, $cursor, $offset - $cursor));
 
-            if (RoamSyntax::overlaps($offset, $length, $codeRanges)
-                || (($match[1][1] ?? -1) >= 0
+            if (($match[1][1] ?? -1) >= 0) {
+                $nodes[] = [
+                    'type' => 'text',
+                    'text' => $match[1][0],
+                    'marks' => [['type' => 'code']],
+                ];
+            } elseif (RoamSyntax::overlaps($offset, $length, $codeRanges)
+                || (($match[2][1] ?? -1) >= 0
                     && RoamSyntax::overlaps($offset, $length, $componentNameRanges))) {
                 $this->appendText($nodes, $match[0][0]);
-            } elseif (($match[1][1] ?? -1) >= 0) {
-                $title = $match[1][0];
+            } elseif (($match[2][1] ?? -1) >= 0) {
+                $title = $match[2][0];
                 $pageId = $this->pageIdsByTitle[$title]
                     ?? $this->caseInsensitivePageId($title);
 
@@ -238,8 +244,8 @@ final class RoamContentConverter
                     $this->warnAboutPageReference($title);
                     $this->appendText($nodes, $match[0][0]);
                 }
-            } elseif (($match[2][1] ?? -1) >= 0) {
-                $uid = $match[2][0];
+            } elseif (($match[3][1] ?? -1) >= 0) {
+                $uid = $match[3][0];
                 $targetId = $this->nodeIdsByUid[$uid] ?? null;
 
                 if ($targetId) {
@@ -256,15 +262,15 @@ final class RoamContentConverter
                     $this->warnAboutBlockReference($uid);
                     $this->appendText($nodes, $match[0][0]);
                 }
-            } elseif (($match[4][1] ?? -1) >= 0) {
+            } elseif (($match[5][1] ?? -1) >= 0) {
                 $nodes[] = [
                     'type' => 'webLink',
-                    'attrs' => ['href' => $match[4][0], 'label' => $match[3][0]],
+                    'attrs' => ['href' => $match[5][0], 'label' => $match[4][0]],
                 ];
             } else {
                 $nodes[] = [
                     'type' => 'webLink',
-                    'attrs' => ['href' => $match[5][0], 'label' => null],
+                    'attrs' => ['href' => $match[6][0], 'label' => null],
                 ];
             }
 

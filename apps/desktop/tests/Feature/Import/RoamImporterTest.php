@@ -277,4 +277,32 @@ ROAM;
             'Unresolved page reference [[Missing Page]] was preserved as text.',
         ], $report->warnings);
     }
+
+    public function test_inline_code_is_imported_as_tiptap_code_marks(): void
+    {
+        $report = new RoamImportReport;
+        $converter = new RoamContentConverter([], [], [], [], $report);
+        $source = 'replace `composer dev` with `php artisan dev`';
+
+        $converted = $converter->convert($source);
+
+        $this->assertSame($source, $converted['content']);
+        $this->assertSame([
+            'type' => 'paragraph',
+            'content' => [
+                ['type' => 'text', 'text' => 'replace '],
+                [
+                    'type' => 'text',
+                    'text' => 'composer dev',
+                    'marks' => [['type' => 'code']],
+                ],
+                ['type' => 'text', 'text' => ' with '],
+                [
+                    'type' => 'text',
+                    'text' => 'php artisan dev',
+                    'marks' => [['type' => 'code']],
+                ],
+            ],
+        ], $converted['tiptap_content']);
+    }
 }
