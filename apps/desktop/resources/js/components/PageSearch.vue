@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
 import { Clock, FileText, Plus, Search } from 'lucide-vue-next';
-import {
-    ref,
-    computed,
-    watch,
-    nextTick,
-    onMounted,
-    onBeforeUnmount,
-} from 'vue';
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import {
     CommandDialog,
     CommandEmpty,
@@ -30,47 +23,71 @@ const results = ref<Node[]>([]);
 const recentPages = ref<Node[]>([]);
 const searchQuery = ref('');
 let lastSearch: string | null = null;
+let initialData: { recentPages: Node[]; results: Node[] } | null = null;
+let initialDataRequest: Promise<{
+    recentPages: Node[];
+    results: Node[];
+}> | null = null;
+let openRequestId = 0;
+let searchRequestId = 0;
+let searchAbortController: AbortController | null = null;
 
-watch(isOpen, (open) => {
-    if (open) {
-        lastSearch = null;
-        Promise.all([fetchRecentPages(), fetchInitialResults()]).then(() => {
-            autoHighlightFirst();
-        });
+function uniqueResults(data: Node[]): Node[] {
+    const pageMap = new Map<string, Node>();
+
+    for (const node of data) {
+        if (!node.parent_id || !pageMap.has(node.id)) {
+            pageMap.set(node.id, node);
+        }
     }
-});
 
-function fetchRecentPages() {
-    return fetch('/api/recent-pages', {
-        headers: { Accept: 'application/json' },
-    })
-        .then((res) => res.json())
-        .then((data) => {
-            recentPages.value = data.filter(
-                (p: Node) => p.id !== props.currentPageId,
-            );
-        });
+    return [...pageMap.values()];
 }
 
-function fetchInitialResults() {
-    lastSearch = '';
-    searchQuery.value = '';
+async function fetchNodes(url: string, signal?: AbortSignal): Promise<Node[]> {
+    const response = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal,
+    });
 
-    return fetch('/api/pages', { headers: { Accept: 'application/json' } })
-        .then((res) => res.json())
-        .then((data) => {
-            const pageMap = new Map<string, Node>();
+    if (!response.ok) {
+        throw new Error(
+            `Page search request failed (HTTP ${response.status}).`,
+        );
+    }
 
-            for (const node of data) {
-                if (!node.parent_id) {
-                    pageMap.set(node.id, node);
-                } else if (!pageMap.has(node.id)) {
-                    pageMap.set(node.id, node);
-                }
-            }
+    return response.json() as Promise<Node[]>;
+}
 
-            results.value = [...pageMap.values()].slice(0, 60);
+function preloadInitialData(): Promise<{
+    recentPages: Node[];
+    results: Node[];
+}> {
+    if (initialData) {
+        return Promise.resolve(initialData);
+    }
+
+    if (initialDataRequest) {
+        return initialDataRequest;
+    }
+
+    initialDataRequest = Promise.all([
+        fetchNodes('/api/recent-pages'),
+        fetchNodes('/api/pages'),
+    ])
+        .then(([recent, pages]) => {
+            initialData = {
+                recentPages: recent,
+                results: uniqueResults(pages).slice(0, 60),
+            };
+
+            return initialData;
+        })
+        .finally(() => {
+            initialDataRequest = null;
         });
+
+    return initialDataRequest;
 }
 
 function autoHighlightFirst() {
@@ -109,38 +126,43 @@ function doSearch(val: string) {
     }
 
     lastSearch = val;
-    const url =
-        val.length > 0
-            ? `/api/search?q=${encodeURIComponent(val)}`
-            : '/api/pages';
-    fetch(url, {
-        headers: { Accept: 'application/json' },
-    })
-        .then((res) => res.json())
-        .then((data) => {
-            const pageMap = new Map<string, Node>();
+    searchAbortController?.abort();
 
-            for (const node of data) {
-                if (!node.parent_id) {
-                    pageMap.set(node.id, node);
-                } else {
-                    if (!pageMap.has(node.id)) {
-                        pageMap.set(node.id, node);
-                    }
-                }
+    if (val.length === 0 && initialData) {
+        results.value = initialData.results;
+        autoHighlightFirst();
+
+        return;
+    }
+
+    const requestId = ++searchRequestId;
+    const controller = new AbortController();
+    searchAbortController = controller;
+
+    fetchNodes(`/api/search?q=${encodeURIComponent(val)}`, controller.signal)
+        .then((data) => {
+            if (requestId !== searchRequestId || val !== searchQuery.value) {
+                return;
             }
 
-            const sorted = [...pageMap.values()].sort((a, b) => {
-                const q = lastSearch?.toLowerCase() ?? '';
+            const query = val.toLowerCase();
+            const sorted = uniqueResults(data).sort((a, b) => {
                 const aExact =
-                    !a.parent_id && a.content.toLowerCase() === q ? -1 : 0;
+                    !a.parent_id && a.content.toLowerCase() === query ? -1 : 0;
                 const bExact =
-                    !b.parent_id && b.content.toLowerCase() === q ? -1 : 0;
+                    !b.parent_id && b.content.toLowerCase() === query ? -1 : 0;
 
                 return aExact - bExact;
             });
             results.value = sorted.slice(0, 60);
             autoHighlightFirst();
+        })
+        .catch((error: unknown) => {
+            if (
+                !(error instanceof DOMException && error.name === 'AbortError')
+            ) {
+                console.error(error);
+            }
         });
 }
 
@@ -174,8 +196,25 @@ function navigate(node: Node) {
     router.visit(`/pages/${pageId}${blockQuery}`);
 }
 
-function openSearch() {
+async function openSearch() {
+    const requestId = ++openRequestId;
+    const data = await preloadInitialData().catch(() => ({
+        recentPages: [],
+        results: [],
+    }));
+
+    if (requestId !== openRequestId) {
+        return;
+    }
+
+    lastSearch = '';
+    searchQuery.value = '';
+    recentPages.value = data.recentPages.filter(
+        (page) => page.id !== props.currentPageId,
+    );
+    results.value = data.results;
     isOpen.value = true;
+    autoHighlightFirst();
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
@@ -188,9 +227,12 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
     window.addEventListener(OPEN_PAGE_SEARCH_EVENT, openSearch);
     document.addEventListener('keydown', handleGlobalKeydown);
+    void preloadInitialData().catch(() => undefined);
 });
 
 onBeforeUnmount(() => {
+    openRequestId += 1;
+    searchAbortController?.abort();
     window.removeEventListener(OPEN_PAGE_SEARCH_EVENT, openSearch);
     document.removeEventListener('keydown', handleGlobalKeydown);
 });
