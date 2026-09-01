@@ -2315,6 +2315,68 @@ function moveWithinCurrentVisualLine(
     return true;
 }
 
+function moveOntoOrPastHorizontalRule(
+    view: EditorView,
+    event: KeyboardEvent,
+): boolean {
+    if (
+        (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        document.querySelector('.tippy-box')
+    ) {
+        return false;
+    }
+
+    const direction = event.key === 'ArrowUp' ? -1 : 1;
+    const current = view.state.selection;
+    let target: Selection | null = null;
+
+    if (
+        current instanceof NodeSelection &&
+        current.node.type.name === 'horizontalRule'
+    ) {
+        target = Selection.findFrom(
+            view.state.doc.resolve(
+                direction === -1 ? current.from : current.to,
+            ),
+            direction,
+        );
+    } else if (
+        current instanceof TextSelection &&
+        current.empty &&
+        current.$head.parent.isTextblock &&
+        view.endOfTextblock(direction === -1 ? 'up' : 'down')
+    ) {
+        const boundary =
+            direction === -1
+                ? current.$head.before(current.$head.depth)
+                : current.$head.after(current.$head.depth);
+        const adjacent = Selection.findFrom(
+            view.state.doc.resolve(boundary),
+            direction,
+        );
+
+        if (
+            adjacent instanceof NodeSelection &&
+            adjacent.node.type.name === 'horizontalRule'
+        ) {
+            target = adjacent;
+        }
+    }
+
+    if (!target || target.eq(current)) {
+        return false;
+    }
+
+    event.preventDefault();
+    view.dispatch(view.state.tr.setSelection(target).scrollIntoView());
+
+    return true;
+}
+
 function moveAcrossAtomOnlyTextblock(
     view: EditorView,
     event: KeyboardEvent,
@@ -3210,6 +3272,10 @@ const editor = useEditor({
             }
 
             if (moveWithinCurrentVisualLine(view, event)) {
+                return true;
+            }
+
+            if (moveOntoOrPastHorizontalRule(view, event)) {
                 return true;
             }
 
@@ -4253,6 +4319,23 @@ onBeforeUnmount(() => {
     border: none;
     border-top: 1px solid rgba(128, 128, 128, 0.3);
     margin: 0.75em 0;
+}
+
+.ProseMirror hr.ProseMirror-selectednode {
+    position: relative;
+    border-top-color: var(--link);
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+}
+
+.ProseMirror hr.ProseMirror-selectednode::after {
+    content: '';
+    position: absolute;
+    top: -0.55em;
+    right: 0;
+    height: 1.1em;
+    border-right: 1px solid var(--foreground);
+    animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
 }
 
 .ProseMirror blockquote {
