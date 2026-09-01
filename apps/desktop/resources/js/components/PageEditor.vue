@@ -6,7 +6,7 @@ import Blockquote from '@tiptap/extension-blockquote';
 import Bold from '@tiptap/extension-bold';
 import BulletList from '@tiptap/extension-bullet-list';
 import Code from '@tiptap/extension-code';
-import CodeBlock from '@tiptap/extension-code-block';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Document from '@tiptap/extension-document';
 import Gapcursor from '@tiptap/extension-gapcursor';
 import HardBreak from '@tiptap/extension-hard-break';
@@ -34,6 +34,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import { generateNKeysBetween } from 'fractional-indexing';
+import { common, createLowlight } from 'lowlight';
 import {
     Download,
     ExternalLink,
@@ -79,6 +80,9 @@ import {
     isNodeCollapsed,
 } from '@/stores/collapsedNodes';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
+import type { Node } from '@/types/node';
+
+const lowlight = createLowlight(common);
 
 function openExternal(url: string) {
     fetch('/api/open-external', {
@@ -90,7 +94,6 @@ function openExternal(url: string) {
         body: JSON.stringify({ url }),
     });
 }
-import type { Node } from '@/types/node';
 
 const positionMap = new Map<string, string>();
 const childOrderMap = new Map<string | null, string[]>();
@@ -639,6 +642,116 @@ function isInCodeBlock(editor: {
     state: { selection: { $head: { parent: { type: { name: string } } } } };
 }) {
     return editor.state.selection.$head.parent.type.name === 'codeBlock';
+}
+
+function startCodeBlockFromFence(editor: TiptapEditor): boolean {
+    const { selection } = editor.state;
+    const { $head } = selection;
+
+    if (
+        !selection.empty ||
+        $head.parent.type.name !== 'paragraph' ||
+        $head.parentOffset !== $head.parent.content.size
+    ) {
+        return false;
+    }
+
+    let lineStart = 0;
+    let precedingBreakOffset: number | null = null;
+
+    $head.parent.forEach((child, offset) => {
+        if (child.type.name === 'hardBreak') {
+            precedingBreakOffset = offset;
+            lineStart = offset + child.nodeSize;
+        }
+    });
+
+    const fenceText = $head.parent.textBetween(
+        lineStart,
+        $head.parent.content.size,
+        '',
+        '\ufffc',
+    );
+    const match = /^```([^`\s]*)$/.exec(fenceText);
+
+    if (!match) {
+        return false;
+    }
+
+    const blockPosition = $head.before($head.depth);
+    const beforeContent = $head.parent.content.cut(
+        0,
+        precedingBreakOffset ?? 0,
+    );
+    const beforeBlock =
+        beforeContent.size > 0
+            ? $head.parent.type.create(
+                  $head.parent.attrs,
+                  beforeContent,
+                  $head.parent.marks,
+              )
+            : null;
+    const codeBlock = editor.schema.nodes.codeBlock.create({
+        language: match[1] || null,
+    });
+    const replacement = beforeBlock
+        ? Fragment.fromArray([beforeBlock, codeBlock])
+        : codeBlock;
+    const codeBlockPosition = blockPosition + (beforeBlock?.nodeSize ?? 0);
+    const transaction = editor.state.tr.replaceWith(
+        blockPosition,
+        blockPosition + $head.parent.nodeSize,
+        replacement,
+    );
+    transaction.setSelection(
+        TextSelection.create(transaction.doc, codeBlockPosition + 1),
+    );
+    transaction.scrollIntoView();
+
+    editor.view.dispatch(transaction);
+
+    return true;
+}
+
+function closeCodeBlockFence(editor: TiptapEditor): boolean {
+    const { selection } = editor.state;
+    const { $head } = selection;
+
+    if (
+        !selection.empty ||
+        $head.parent.type.name !== 'codeBlock' ||
+        $head.parentOffset !== $head.parent.content.size
+    ) {
+        return false;
+    }
+
+    const match = /(?:^|\n)```$/.exec($head.parent.textContent);
+
+    if (!match) {
+        return false;
+    }
+
+    const codeText = $head.parent.textContent.slice(0, match.index);
+    const codeBlockPosition = $head.before($head.depth);
+    const codeBlock = $head.parent.type.create(
+        $head.parent.attrs,
+        codeText ? editor.schema.text(codeText) : null,
+    );
+    const paragraph = editor.schema.nodes.paragraph.create();
+    const paragraphPosition = codeBlockPosition + codeBlock.nodeSize;
+    const transaction = editor.state.tr.replaceWith(
+        codeBlockPosition,
+        codeBlockPosition + $head.parent.nodeSize,
+        Fragment.fromArray([codeBlock, paragraph]),
+    );
+    transaction.setSelection(
+        TextSelection.create(transaction.doc, paragraphPosition + 1),
+    );
+    transaction.scrollIntoView();
+
+    editor.view.dispatch(transaction);
+
+    return true;
 }
 
 function isListItemEmpty(node: {
@@ -1435,6 +1548,10 @@ const AlwaysSplitListItem = Extension.create({
             },
             Enter: ({ editor }) => {
                 if (isInCodeBlock(editor)) {
+                    if (closeCodeBlockFence(editor)) {
+                        return true;
+                    }
+
                     return editor.commands.command(({ tr, dispatch }) => {
                         if (dispatch) {
                             tr.insertText('\n');
@@ -1442,6 +1559,10 @@ const AlwaysSplitListItem = Extension.create({
 
                         return true;
                     });
+                }
+
+                if (startCodeBlockFromFence(editor)) {
+                    return true;
                 }
 
                 const { $head: $enterHead } = editor.state.selection;
@@ -3037,7 +3158,8 @@ const editor = useEditor({
         Italic,
         Strike,
         Code,
-        CodeBlock.configure({
+        CodeBlockLowlight.configure({
+            lowlight,
             exitOnTripleEnter: false,
             exitOnArrowDown: false,
         }),
@@ -4349,15 +4471,25 @@ onBeforeUnmount(() => {
     border-radius: 3px;
     padding: 0.15em 0.3em;
     font-size: 0.9em;
-    font-family: monospace;
+    font-family:
+        'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace,
+        SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .ProseMirror pre {
-    background: rgba(128, 128, 128, 0.1);
+    background: var(--muted);
     border-radius: 6px;
     padding: 0.75em 1em;
     margin: 0.5em 0;
     overflow-x: auto;
+}
+
+.page-editor-list li.active-line > pre {
+    background: var(--muted);
+}
+
+.page-editor-list li.selected-line > pre {
+    background: color-mix(in srgb, var(--muted) 80%, var(--link));
 }
 
 .ProseMirror pre code {
@@ -4365,6 +4497,67 @@ onBeforeUnmount(() => {
     padding: 0;
     border-radius: 0;
     font-size: 0.85em;
+}
+
+.ProseMirror .hljs-comment,
+.ProseMirror .hljs-quote {
+    color: var(--syntax-comment);
+    font-style: italic;
+}
+
+.ProseMirror .hljs-keyword,
+.ProseMirror .hljs-selector-tag,
+.ProseMirror .hljs-literal,
+.ProseMirror .hljs-section,
+.ProseMirror .hljs-link {
+    color: var(--syntax-keyword);
+}
+
+.ProseMirror .hljs-string,
+.ProseMirror .hljs-doctag,
+.ProseMirror .hljs-regexp,
+.ProseMirror .hljs-template-tag,
+.ProseMirror .hljs-template-variable {
+    color: var(--syntax-string);
+}
+
+.ProseMirror .hljs-number,
+.ProseMirror .hljs-symbol,
+.ProseMirror .hljs-bullet {
+    color: var(--syntax-number);
+}
+
+.ProseMirror .hljs-title,
+.ProseMirror .hljs-title.function_,
+.ProseMirror .hljs-selector-id,
+.ProseMirror .hljs-selector-class {
+    color: var(--syntax-title);
+}
+
+.ProseMirror .hljs-variable,
+.ProseMirror .hljs-attr,
+.ProseMirror .hljs-attribute {
+    color: var(--syntax-variable);
+}
+
+.ProseMirror .hljs-type,
+.ProseMirror .hljs-built_in,
+.ProseMirror .hljs-title.class_ {
+    color: var(--syntax-type);
+}
+
+.ProseMirror .hljs-meta,
+.ProseMirror .hljs-meta .hljs-keyword,
+.ProseMirror .hljs-meta .hljs-string {
+    color: var(--syntax-meta);
+}
+
+.ProseMirror .hljs-emphasis {
+    font-style: italic;
+}
+
+.ProseMirror .hljs-strong {
+    font-weight: 700;
 }
 
 .wiki-link,

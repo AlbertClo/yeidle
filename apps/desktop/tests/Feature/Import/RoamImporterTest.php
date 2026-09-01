@@ -305,4 +305,41 @@ ROAM;
             ],
         ], $converted['tiptap_content']);
     }
+
+    public function test_fenced_code_is_imported_as_a_multiline_code_block(): void
+    {
+        $report = new RoamImportReport;
+        $converter = new RoamContentConverter([], [], [], [], $report);
+        $source = <<<'ROAM'
+Before
+```php
+$message = "Hello";
+echo $message;
+```
+After
+ROAM;
+
+        $converted = $converter->convert($source);
+
+        $this->assertSame($source, $converted['content']);
+        $this->assertSame([
+            [
+                'type' => 'paragraph',
+                'content' => [['type' => 'text', 'text' => 'Before']],
+            ],
+            [
+                'type' => 'codeBlock',
+                'attrs' => ['language' => 'php'],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => "\$message = \"Hello\";\necho \$message;",
+                ]],
+            ],
+            [
+                'type' => 'paragraph',
+                'content' => [['type' => 'text', 'text' => 'After']],
+            ],
+        ], $converted['tiptap_content']);
+        $this->assertSame(0, $report->unresolvedPageReferences);
+    }
 }

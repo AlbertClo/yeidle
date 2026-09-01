@@ -129,6 +129,14 @@
     --sidebar-ring: hsl(217.2 91.2% 59.8%);
     --sidebar: hsl(0 0% 98%);
     --link: #93bbfc;
+    --syntax-comment: #6a737d;
+    --syntax-keyword: #a626a4;
+    --syntax-string: #50a14f;
+    --syntax-number: #986801;
+    --syntax-title: #4078f2;
+    --syntax-variable: #e45649;
+    --syntax-type: #c18401;
+    --syntax-meta: #0184bc;
 }
 
 html {
@@ -170,6 +178,14 @@ html {
     --sidebar-ring: hsl(217.2 91.2% 59.8%);
     --sidebar: hsl(240 5.9% 10%);
     --link: #93bbfc;
+    --syntax-comment: #7f848e;
+    --syntax-keyword: #c678dd;
+    --syntax-string: #98c379;
+    --syntax-number: #d19a66;
+    --syntax-title: #61afef;
+    --syntax-variable: #e06c75;
+    --syntax-type: #e5c07b;
+    --syntax-meta: #56b6c2;
 }
 
 /*

@@ -32,14 +32,42 @@ final class RoamContentConverter
         $tokens = $this->blockTokens($source);
         $cursor = 0;
         $plainContent = '';
+        $previousTokenWasCode = false;
 
         foreach ($tokens as $token) {
             $before = substr($source, $cursor, $token['offset'] - $cursor);
             $plainContent .= $before;
-            $this->appendParagraph($blocks, $before, $heading);
+            $paragraphBefore = $before;
+
+            if ($previousTokenWasCode) {
+                $paragraphBefore = preg_replace('/\A\R/u', '', $paragraphBefore, 1) ?? $paragraphBefore;
+            }
+
+            if ($token['type'] === 'code') {
+                $paragraphBefore = preg_replace('/\R\z/u', '', $paragraphBefore, 1) ?? $paragraphBefore;
+            }
+
+            $this->appendParagraph($blocks, $paragraphBefore, $heading);
             $heading = null;
 
-            if ($token['type'] === 'embed') {
+            if ($token['type'] === 'code') {
+                $codeBlock = [
+                    'type' => 'codeBlock',
+                    'attrs' => [
+                        'language' => $token['language'] !== '' ? $token['language'] : null,
+                    ],
+                ];
+
+                if ($token['code'] !== '') {
+                    $codeBlock['content'] = [[
+                        'type' => 'text',
+                        'text' => $token['code'],
+                    ]];
+                }
+
+                $blocks[] = $codeBlock;
+                $plainContent .= $token['raw'];
+            } elseif ($token['type'] === 'embed') {
                 $targetId = $this->nodeIdsByUid[$token['uid']] ?? null;
 
                 if ($targetId) {
@@ -84,10 +112,16 @@ final class RoamContentConverter
             }
 
             $cursor = $token['offset'] + $token['length'];
+            $previousTokenWasCode = $token['type'] === 'code';
         }
 
         $tail = substr($source, $cursor);
         $plainContent .= $tail;
+
+        if ($previousTokenWasCode) {
+            $tail = preg_replace('/\A\R/u', '', $tail, 1) ?? $tail;
+        }
+
         $this->appendParagraph($blocks, $tail, $heading);
 
         if ($blocks === []) {
@@ -118,11 +152,26 @@ final class RoamContentConverter
     }
 
     /**
-     * @return list<array{type: 'embed', offset: int, length: int, raw: string, uid: string}|array{type: 'attachment', offset: int, length: int, raw: string, url: string, label: string}>
+     * @return list<array{type: 'code', offset: int, length: int, raw: string, language: string, code: string}|array{type: 'embed', offset: int, length: int, raw: string, uid: string}|array{type: 'attachment', offset: int, length: int, raw: string, url: string, label: string}>
      */
     private function blockTokens(string $source): array
     {
         $tokens = [];
+        $fencedCodePattern = '~^[ \t]{0,3}```([^`\r\n]*)[ \t]*\R(.*?)(?:\R[ \t]{0,3}```[ \t]*(?=\R|\z)|\z)~msu';
+
+        if (preg_match_all($fencedCodePattern, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
+            foreach ($matches as $match) {
+                $tokens[] = [
+                    'type' => 'code',
+                    'offset' => $match[0][1],
+                    'length' => strlen($match[0][0]),
+                    'raw' => $match[0][0],
+                    'language' => trim($match[1][0]),
+                    'code' => $match[2][0],
+                ];
+            }
+        }
+
         $embedPattern = '/\{\{\s*(?:\[\[)?embed(?:\]\])?\s*:\s*\(\(([^\)]+)\)\)\s*\}\}/iu';
 
         if (preg_match_all($embedPattern, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
@@ -180,9 +229,36 @@ final class RoamContentConverter
             }
         }
 
-        usort($tokens, fn (array $left, array $right): int => $left['offset'] <=> $right['offset']);
+        usort($tokens, function (array $left, array $right): int {
+            $offset = $left['offset'] <=> $right['offset'];
 
-        return $tokens;
+            if ($offset !== 0) {
+                return $offset;
+            }
+
+            return $right['length'] <=> $left['length'];
+        });
+
+        $nonOverlapping = [];
+
+        foreach ($tokens as $token) {
+            $overlaps = false;
+
+            foreach ($nonOverlapping as $accepted) {
+                if ($token['offset'] < $accepted['offset'] + $accepted['length']
+                    && $accepted['offset'] < $token['offset'] + $token['length']) {
+                    $overlaps = true;
+
+                    break;
+                }
+            }
+
+            if (! $overlaps) {
+                $nonOverlapping[] = $token;
+            }
+        }
+
+        return $nonOverlapping;
     }
 
     /** @param list<array<string, mixed>> $blocks */
