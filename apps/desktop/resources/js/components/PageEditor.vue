@@ -125,6 +125,19 @@ const props = defineProps<{
 
 initPositionMap(props.nodes, props.pageId);
 
+const sourceParentNodeIds = new Set<string>();
+
+function indexSourceParentNodes(nodes: Node[]): void {
+    for (const node of nodes) {
+        if ((node.children?.length ?? 0) > 0) {
+            sourceParentNodeIds.add(node.id);
+            indexSourceParentNodes(node.children ?? []);
+        }
+    }
+}
+
+indexSourceParentNodes(props.nodes);
+
 const emit = defineEmits<{
     update: [nodes: Node[]];
     focusTitle: [];
@@ -962,9 +975,17 @@ const CollapsedNodeDecorations = Extension.create({
                                 return;
                             }
 
-                            const hasChildren =
+                            const blockId =
+                                typeof node.attrs.blockId === 'string'
+                                    ? node.attrs.blockId
+                                    : `position-${pos}`;
+                            const hasRenderedChildren =
                                 node.lastChild?.type.name === 'bulletList' &&
                                 (node.lastChild?.childCount ?? 0) > 0;
+                            const hasChildren =
+                                hasRenderedChildren ||
+                                (!progressiveHydrationComplete &&
+                                    sourceParentNodeIds.has(blockId));
                             const collapsed =
                                 hasChildren &&
                                 Boolean(
@@ -972,10 +993,6 @@ const CollapsedNodeDecorations = Extension.create({
                                         node.attrs.blockId as string,
                                     ),
                                 );
-                            const blockId =
-                                typeof node.attrs.blockId === 'string'
-                                    ? node.attrs.blockId
-                                    : `position-${pos}`;
 
                             if (hasChildren) {
                                 const attributes: Record<string, string> = {
@@ -1704,17 +1721,25 @@ function listItemToNode(
 let userHasInteracted = false;
 let lastArrowDirection = 0; // -1 for up, 1 for down, 0 for none
 const progressiveNodeLimit = props.progressiveInitialNodeCount ?? 0;
+const initialCollapsedNodeIds = new Set(collapsedNodeIds.value);
+const initialEditorNodes =
+    progressiveNodeLimit > 0
+        ? props.initialFocusBlockId
+            ? takeNodeWindow(
+                  props.nodes,
+                  props.initialFocusBlockId,
+                  progressiveNodeLimit,
+                  initialCollapsedNodeIds,
+              )
+            : takeNodePrefix(
+                  props.nodes,
+                  progressiveNodeLimit,
+                  initialCollapsedNodeIds,
+              )
+        : props.nodes;
 const progressiveHydrationRequired =
-    progressiveNodeLimit > 0 && countNodes(props.nodes) > progressiveNodeLimit;
-const initialEditorNodes = progressiveHydrationRequired
-    ? props.initialFocusBlockId
-        ? takeNodeWindow(
-              props.nodes,
-              props.initialFocusBlockId,
-              progressiveNodeLimit,
-          )
-        : takeNodePrefix(props.nodes, progressiveNodeLimit)
-    : props.nodes;
+    progressiveNodeLimit > 0 &&
+    countNodes(initialEditorNodes) < countNodes(props.nodes);
 let progressiveHydrationComplete = !progressiveHydrationRequired;
 let progressiveHydrationFrame: number | null = null;
 let progressiveHydrationPaintFrame: number | null = null;

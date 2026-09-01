@@ -612,17 +612,24 @@ onMounted(() => {
                     size="lg"
                     :class="[
                         'data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground',
-                        props.placement === 'header' && 'h-full rounded-none',
+                        props.placement === 'header' &&
+                            'h-full rounded-none group-data-[collapsible=icon]:size-full! group-data-[collapsible=icon]:justify-center',
                     ]"
                     :disabled="loading"
                 >
-                    <AppLogo :name="activeWorkspace?.name" />
+                    <AppLogo
+                        :name="activeWorkspace?.name"
+                        :show-name="sidebarState !== 'collapsed'"
+                    />
                     <LoaderCircle
                         v-if="activeWorkspace?.cloud_status === 'syncing'"
                         class="ml-auto size-4 animate-spin"
                         aria-label="Downloading workspace"
                     />
-                    <ChevronsUpDown v-else class="ml-auto size-4" />
+                    <ChevronsUpDown
+                        v-else-if="sidebarState !== 'collapsed'"
+                        class="ml-auto size-4"
+                    />
                 </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent

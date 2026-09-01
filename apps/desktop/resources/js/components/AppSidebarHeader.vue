@@ -25,7 +25,7 @@ const { state: sidebarState } = useSidebar();
 const workspaceSectionStyle = computed(() => ({
     width:
         sidebarState.value === 'collapsed'
-            ? 'calc(var(--sidebar-width-icon) + 1rem + 2px)'
+            ? 'var(--sidebar-width-icon)'
             : 'var(--sidebar-width)',
 }));
 </script>
@@ -38,10 +38,7 @@ const workspaceSectionStyle = computed(() => ({
             class="flex h-full shrink-0 items-center"
             :style="workspaceSectionStyle"
         >
-            <SidebarMenu
-                class="window-no-drag h-full [&>li]:h-full"
-                :class="{ 'items-center': sidebarState === 'collapsed' }"
-            >
+            <SidebarMenu class="window-no-drag h-full [&>li]:h-full">
                 <WorkspaceSwitcher placement="header" />
             </SidebarMenu>
         </div>

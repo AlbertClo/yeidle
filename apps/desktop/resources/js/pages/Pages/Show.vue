@@ -783,7 +783,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
     const entersEditor =
         e.key === 'Enter' ||
-        (e.key === 'ArrowDown' &&
+        ((e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
             !e.ctrlKey &&
             !e.metaKey &&
             !e.altKey &&

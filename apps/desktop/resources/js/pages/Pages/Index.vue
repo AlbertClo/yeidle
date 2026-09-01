@@ -226,7 +226,14 @@ function handleUnselectedPageListKeydown(event: KeyboardEvent): void {
 const themeSetupRequired = ref(props.themeSetupRequired);
 const storageSetupRequired = ref(props.storageSetupRequired);
 const storageSaving = ref(false);
-const openingDailyNote = ref(false);
+const openingDailyNote = ref(
+    Boolean(
+        props.openDailyNote &&
+        !props.themeSetupRequired &&
+        !props.storageSetupRequired,
+    ),
+);
+let dailyNoteNavigationStarted = false;
 const setupRequired = computed(
     () => themeSetupRequired.value || storageSetupRequired.value,
 );
@@ -307,12 +314,18 @@ watch(setupRequired, (required) => {
 });
 
 function openDefaultDailyNote(): void {
-    if (!props.openDailyNote || setupRequired.value || openingDailyNote.value) {
+    if (
+        !props.openDailyNote ||
+        setupRequired.value ||
+        dailyNoteNavigationStarted
+    ) {
         return;
     }
 
+    dailyNoteNavigationStarted = true;
     openingDailyNote.value = true;
     void openTodayDailyNote().catch(() => {
+        dailyNoteNavigationStarted = false;
         openingDailyNote.value = false;
         toast.error('Could not open today’s daily note.');
     });
@@ -424,7 +437,7 @@ function createdDate(page: PageListItem): string {
 <template>
     <Head :title="setupRequired ? 'Set up your workspace' : 'All Pages'" />
 
-    <AppLayout :breadcrumbs="breadcrumbs">
+    <AppLayout v-if="!openingDailyNote" :breadcrumbs="breadcrumbs">
         <div class="mx-auto w-full max-w-2xl p-6">
             <div class="mb-6">
                 <h1 class="text-2xl font-bold">

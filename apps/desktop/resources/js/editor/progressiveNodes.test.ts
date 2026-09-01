@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Node } from '@/types/node';
-import {
-    countNodes,
-    takeNodePrefix,
-    takeNodeWindow,
-} from './progressiveNodes';
+import { countNodes, takeNodePrefix, takeNodeWindow } from './progressiveNodes';
 
 function node(id: string, children: Node[] = []): Node {
     return {
@@ -43,6 +39,14 @@ describe('progressive editor nodes', () => {
         expect(countNodes(prefix)).toBe(3);
     });
 
+    it('does not spend the prefix budget on collapsed descendants', () => {
+        const prefix = takeNodePrefix(tree, 2, new Set(['one']));
+
+        expect(prefix.map(({ id }) => id)).toEqual(['one', 'two']);
+        expect(prefix[0].children).toEqual([]);
+        expect(countNodes(prefix)).toBe(2);
+    });
+
     it('takes a window around a target while retaining its ancestors', () => {
         const window = takeNodeWindow(tree, 'one-b-i', 2);
 
@@ -56,5 +60,20 @@ describe('progressive editor nodes', () => {
 
     it('falls back to a prefix when the target is not in the page', () => {
         expect(countNodes(takeNodeWindow(tree, 'missing', 2))).toBe(2);
+    });
+
+    it('reveals collapsed ancestors when taking a target window', () => {
+        const window = takeNodeWindow(
+            tree,
+            'one-b-i',
+            2,
+            new Set(['one', 'one-b']),
+        );
+
+        expect(window.map(({ id }) => id)).toEqual(['one']);
+        expect(window[0].children?.map(({ id }) => id)).toEqual(['one-b']);
+        expect(window[0].children?.[0].children?.map(({ id }) => id)).toEqual([
+            'one-b-i',
+        ]);
     });
 });

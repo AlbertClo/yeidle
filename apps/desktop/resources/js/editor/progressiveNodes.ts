@@ -7,7 +7,11 @@ export function countNodes(nodes: Node[]): number {
     );
 }
 
-export function takeNodePrefix(nodes: Node[], limit: number): Node[] {
+export function takeNodePrefix(
+    nodes: Node[],
+    limit: number,
+    collapsedNodeIds: ReadonlySet<string> = new Set(),
+): Node[] {
     let remaining = Math.max(0, limit);
 
     function takeLevel(level: Node[]): Node[] {
@@ -21,7 +25,9 @@ export function takeNodePrefix(nodes: Node[], limit: number): Node[] {
             remaining -= 1;
             result.push({
                 ...node,
-                children: takeLevel(node.children ?? []),
+                children: collapsedNodeIds.has(node.id)
+                    ? []
+                    : takeLevel(node.children ?? []),
             });
         }
 
@@ -35,13 +41,22 @@ export function takeNodeWindow(
     nodes: Node[],
     targetId: string,
     limit: number,
+    collapsedNodeIds: ReadonlySet<string> = new Set(),
 ): Node[] {
     const flattened: { id: string; ancestors: string[] }[] = [];
+    const targetAncestors = findAncestors(nodes, targetId) ?? [];
+    const revealedForTarget = new Set(targetAncestors);
 
     function flatten(level: Node[], ancestors: string[]): void {
         for (const node of level) {
             flattened.push({ id: node.id, ancestors });
-            flatten(node.children ?? [], [...ancestors, node.id]);
+
+            if (
+                !collapsedNodeIds.has(node.id) ||
+                revealedForTarget.has(node.id)
+            ) {
+                flatten(node.children ?? [], [...ancestors, node.id]);
+            }
         }
     }
 
@@ -50,7 +65,7 @@ export function takeNodeWindow(
     const targetIndex = flattened.findIndex(({ id }) => id === targetId);
 
     if (targetIndex === -1 || limit <= 0) {
-        return takeNodePrefix(nodes, limit);
+        return takeNodePrefix(nodes, limit, collapsedNodeIds);
     }
 
     const windowSize = Math.min(limit, flattened.length);
@@ -81,4 +96,27 @@ export function takeNodeWindow(
     }
 
     return cloneIncluded(nodes);
+}
+
+function findAncestors(
+    nodes: Node[],
+    targetId: string,
+    ancestors: string[] = [],
+): string[] | null {
+    for (const node of nodes) {
+        if (node.id === targetId) {
+            return ancestors;
+        }
+
+        const found = findAncestors(node.children ?? [], targetId, [
+            ...ancestors,
+            node.id,
+        ]);
+
+        if (found) {
+            return found;
+        }
+    }
+
+    return null;
 }
