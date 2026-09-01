@@ -821,7 +821,6 @@ onMounted(() => {
     window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('keydown', handleGlobalKeydown);
-    refreshBacklinks();
     pullTimer = setInterval(pollRemoteOps, 1500);
     restoreNavigationScrollPosition();
 });
@@ -992,8 +991,10 @@ onBeforeUnmount(() => {
                             @keydown.q.meta.prevent="
                                 router.visit(`/pages/${link.page_id}`)
                             "
-                            @keydown.down.prevent="focusNextBacklink($event)"
-                            @keydown.up.prevent="focusPrevBacklink($event)"
+                            @keydown.down.stop.prevent="
+                                focusNextBacklink($event)
+                            "
+                            @keydown.up.stop.prevent="focusPrevBacklink($event)"
                         >
                             <span class="opacity-40">[[</span
                             ><span

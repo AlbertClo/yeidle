@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Node;
 use App\Models\Op;
 use App\Models\PageVisit;
+use App\Services\BacklinkLoader;
 use App\Services\NodeTreeLoader;
 use App\Support\CollapsedNodes;
 use App\Support\PinNodes;
@@ -24,6 +25,7 @@ class PageWebController extends Controller
         private CollapsedNodes $collapsedNodes,
         private PreferenceNodes $preferences,
         private NodeTreeLoader $trees,
+        private BacklinkLoader $backlinks,
     ) {}
 
     public function index(Request $request): Response
@@ -90,8 +92,7 @@ class PageWebController extends Controller
             'pinned' => $this->pins->isPinned($page),
             'collapsedNodeIds' => $collapseState['node_ids'],
             'collapsedNodesRootId' => $collapseState['root_id'],
-            // Show.vue refreshes backlinks after mounting and after edits.
-            'backlinks' => [],
+            'backlinks' => $this->backlinks->load($page->id),
             'syncCursor' => $syncCursor,
         ]);
     }
