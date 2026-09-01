@@ -4143,8 +4143,8 @@ onBeforeUnmount(() => {
 }
 
 .node-collapse-marker.is-collapsed::before {
-    left: 10.5px;
-    top: 9px;
+    left: 12px;
+    top: 9.5px;
     width: 0;
     height: 0;
     border-top: 5px solid transparent;
