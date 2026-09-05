@@ -4,6 +4,7 @@ import {
     Cloud,
     CloudUpload,
     CalendarDays,
+    CodeXml,
     FileText,
     History,
     Keyboard,
@@ -35,6 +36,7 @@ import { openCloudAccount } from '@/ui/cloudAccount';
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/ui/commandPalette';
 import { openKeyBindings } from '@/ui/keyBindings';
 import { openPageSearch } from '@/ui/pageSearch';
+import { openRawNodeEditor } from '@/ui/rawNodeEditor';
 import { openThemeSelector } from '@/ui/themeSelector';
 import { openTypographySelector } from '@/ui/typographySelector';
 import { openWorkspaceSync } from '@/ui/workspaceSync';
@@ -133,6 +135,13 @@ const commands = computed<PaletteCommand[]>(() => [
     },
     ...(props.currentPageId
         ? [
+              {
+                  id: 'edit-node-raw',
+                  label: 'Toggle Raw Markdown for Current Node',
+                  icon: CodeXml,
+                  shortcut: bindingLabel('edit-node-raw'),
+                  run: openRawNodeEditor,
+              },
               {
                   id: 'pin-page',
                   label: isNodePinned(props.currentPageId)

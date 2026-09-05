@@ -100,6 +100,11 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Mod+Enter',
     },
     {
+        id: 'edit-node-raw',
+        label: 'Toggle Raw Markdown for Current Node',
+        defaultBinding: 'Mod+Shift+M',
+    },
+    {
         id: 'collapse-node',
         label: 'Collapse Current Node',
         defaultBinding: 'Mod+ArrowUp',

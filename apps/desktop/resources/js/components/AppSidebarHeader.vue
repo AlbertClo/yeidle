@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
+import NavigationControls from '@/components/NavigationControls.vue';
 import PageSearch from '@/components/PageSearch.vue';
 import {
     SidebarMenu,
@@ -48,6 +49,7 @@ const workspaceSectionStyle = computed(() => ({
         >
             <div class="window-no-drag flex min-w-0 items-center gap-2">
                 <SidebarTrigger class="-ml-1" />
+                <NavigationControls />
                 <template v-if="breadcrumbs && breadcrumbs.length > 0">
                     <Breadcrumbs :breadcrumbs="breadcrumbs" />
                 </template>

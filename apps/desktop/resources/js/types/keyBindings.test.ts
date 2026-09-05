@@ -97,6 +97,10 @@ describe('key bindings', () => {
         expect(DEFAULT_KEY_BINDINGS['follow-link']).toBe('Ctrl+O');
     });
 
+    it('opens the raw Markdown editor with Ctrl or Command Shift M', () => {
+        expect(DEFAULT_KEY_BINDINGS['edit-node-raw']).toBe('Mod+Shift+M');
+    });
+
     it("uses Roam Research's node collapse and expansion shortcuts", () => {
         expect(DEFAULT_KEY_BINDINGS['collapse-node']).toBe('Mod+ArrowUp');
         expect(DEFAULT_KEY_BINDINGS['expand-node']).toBe('Mod+ArrowDown');

@@ -26,6 +26,15 @@ app.on('browser-window-created', (_event, window) => {
             window.webContents.send(navigationCommandChannel, command === 'browser-backward' ? 'back' : 'forward');
         }
     });
+
+    // Electron exposes native page-swipe gestures on macOS. A rightward
+    // swipe reveals the previous location; a leftward swipe moves forward.
+    window.on('swipe', (event, direction) => {
+        if (direction === 'right' || direction === 'left') {
+            event.preventDefault();
+            window.webContents.send(navigationCommandChannel, direction === 'right' ? 'back' : 'forward');
+        }
+    });
 });
 
 const buildPath = path.resolve(import.meta.dirname, import.meta.env.MAIN_VITE_NATIVEPHP_BUILD_PATH);

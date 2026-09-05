@@ -19,6 +19,7 @@ import Mention from '@tiptap/extension-mention';
 import Paragraph from '@tiptap/extension-paragraph';
 import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
+import { Markdown } from '@tiptap/markdown';
 import { isHistoryTransaction } from '@tiptap/pm/history';
 import { Fragment } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
@@ -45,7 +46,7 @@ import {
 } from 'lucide-vue-next';
 import { GapCursor } from 'prosemirror-gapcursor';
 import { uuidv7 } from 'uuidv7';
-import { ref, computed, nextTick, watch } from 'vue';
+import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { onBeforeUnmount } from 'vue';
 import { toast } from 'vue-sonner';
 import { Button } from '@/components/ui/button';
@@ -81,6 +82,7 @@ import {
 } from '@/stores/collapsedNodes';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import type { Node } from '@/types/node';
+import { OPEN_RAW_NODE_EDITOR_EVENT } from '@/ui/rawNodeEditor';
 
 const lowlight = createLowlight(common);
 
@@ -151,6 +153,373 @@ const emit = defineEmits<{
     navigationDeparture: [selection: EditorSelectionBookmark];
     dailyNoteBoundary: [offset: -1 | 1, focus: 'start' | 'end'];
 }>();
+
+const RAW_MARKDOWN_NODE_TYPES = new Set([
+    'paragraph',
+    'heading',
+    'blockquote',
+    'codeBlock',
+    'horizontalRule',
+    'text',
+    'hardBreak',
+]);
+const RAW_MARKDOWN_MARK_TYPES = new Set([
+    'bold',
+    'italic',
+    'strike',
+    'code',
+    'highlight',
+]);
+
+interface RawNodeEditorState {
+    blockId: string;
+    source: string;
+    selection: EditorSelectionBookmark;
+}
+
+const rawNodeEditorKey = new PluginKey<RawNodeEditorState | null>(
+    'rawNodeEditor',
+);
+let closingRawNodeEditor = false;
+
+function unsupportedRawNodeType(node: PmNode): string | null {
+    if (!RAW_MARKDOWN_NODE_TYPES.has(node.type.name)) {
+        return node.type.name;
+    }
+
+    for (const mark of node.marks) {
+        if (!RAW_MARKDOWN_MARK_TYPES.has(mark.type.name)) {
+            return mark.type.name;
+        }
+    }
+
+    for (let index = 0; index < node.childCount; index++) {
+        const unsupported = unsupportedRawNodeType(node.child(index));
+
+        if (unsupported) {
+            return unsupported;
+        }
+    }
+
+    return null;
+}
+
+function rawNodeContentBlocks(listItem: PmNode): PmNode[] {
+    const blocks: PmNode[] = [];
+
+    for (let index = 0; index < listItem.childCount; index++) {
+        const child = listItem.child(index);
+
+        if (child.type.name === 'bulletList') {
+            break;
+        }
+
+        blocks.push(child);
+    }
+
+    return blocks;
+}
+
+function findRawNodeInDocument(
+    document: PmNode,
+    blockId: string,
+): { node: PmNode; pos: number } | null {
+    let found: { node: PmNode; pos: number } | null = null;
+
+    document.descendants((node, pos) => {
+        if (node.type.name === 'listItem' && node.attrs.blockId === blockId) {
+            found = { node, pos };
+
+            return false;
+        }
+
+        return found === null;
+    });
+
+    return found;
+}
+
+function resizeRawNodeTextarea(textarea: HTMLTextAreaElement): void {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function openCurrentNodeAsRawText(): void {
+    const currentEditor = editor.value;
+
+    if (!currentEditor) {
+        toast.error('Select a node before opening the raw text editor.');
+
+        return;
+    }
+
+    const activeRawEditor = rawNodeEditorKey.getState(currentEditor.state);
+
+    if (activeRawEditor) {
+        const textarea =
+            currentEditor.view.dom.querySelector<HTMLTextAreaElement>(
+                '.raw-node-editor-source',
+            );
+
+        if (
+            saveRawNode(
+                activeRawEditor.blockId,
+                textarea?.value ?? activeRawEditor.source,
+                activeRawEditor.selection,
+            )
+        ) {
+            requestAnimationFrame(() => currentEditor.view.focus());
+        }
+
+        return;
+    }
+
+    const manager = currentEditor.markdown;
+    const bookmark = selectionBookmark(currentEditor, false);
+
+    if (!manager || !bookmark) {
+        toast.error('Select a node before opening the raw text editor.');
+
+        return;
+    }
+
+    const found = findListItem(bookmark.blockId, currentEditor);
+
+    if (!found) {
+        toast.error('Could not find the selected node.');
+
+        return;
+    }
+
+    const blocks = rawNodeContentBlocks(found.node);
+    const unsupported = blocks
+        .map(unsupportedRawNodeType)
+        .find((type): type is string => type !== null);
+
+    if (unsupported) {
+        toast.error(
+            'Raw editing is not available for nodes containing links, references, embeds, or files yet.',
+        );
+
+        return;
+    }
+
+    currentEditor.view.dispatch(
+        currentEditor.state.tr.setMeta(rawNodeEditorKey, {
+            blockId: bookmark.blockId,
+            source: manager.serialize({
+                type: 'doc',
+                content: blocks.map((block) => block.toJSON()),
+            }),
+            selection: bookmark,
+        }),
+    );
+}
+
+function rawJsonContainsUnsupportedContent(
+    node: Record<string, unknown>,
+): boolean {
+    if (
+        typeof node.type !== 'string' ||
+        !RAW_MARKDOWN_NODE_TYPES.has(node.type)
+    ) {
+        return true;
+    }
+
+    const marks = (node.marks as Record<string, unknown>[] | undefined) ?? [];
+
+    if (
+        marks.some(
+            (mark) =>
+                typeof mark.type !== 'string' ||
+                !RAW_MARKDOWN_MARK_TYPES.has(mark.type),
+        )
+    ) {
+        return true;
+    }
+
+    const children =
+        (node.content as Record<string, unknown>[] | undefined) ?? [];
+
+    return children.some(rawJsonContainsUnsupportedContent);
+}
+
+function saveRawNode(
+    blockId: string,
+    source: string,
+    bookmark: EditorSelectionBookmark,
+): boolean {
+    const currentEditor = editor.value;
+    const manager = currentEditor?.markdown;
+
+    if (!currentEditor || !manager || !blockId) {
+        return false;
+    }
+
+    try {
+        const parsed = manager.parse(source);
+        const content =
+            (parsed.content as Record<string, unknown>[] | undefined) ?? [];
+
+        if (content.some(rawJsonContainsUnsupportedContent)) {
+            toast.error(
+                'This Markdown cannot be represented safely inside one Yeidle node.',
+            );
+
+            return false;
+        }
+
+        const parsedBlocks =
+            content.length > 0
+                ? content.map((block) =>
+                      currentEditor.schema.nodeFromJSON(block),
+                  )
+                : [currentEditor.schema.nodes.paragraph.create()];
+        const found = findListItem(blockId, currentEditor);
+
+        if (!found) {
+            toast.error('The node is no longer available.');
+
+            return false;
+        }
+
+        const existingBlocks = rawNodeContentBlocks(found.node);
+        const contentStart = found.pos + 1;
+        const contentEnd =
+            contentStart +
+            existingBlocks.reduce((size, block) => size + block.nodeSize, 0);
+        const nestedList =
+            found.node.lastChild?.type.name === 'bulletList'
+                ? found.node.lastChild
+                : null;
+        const completeContent = Fragment.fromArray([
+            ...parsedBlocks,
+            ...(nestedList ? [nestedList] : []),
+        ]);
+
+        if (!found.node.type.validContent(completeContent)) {
+            toast.error(
+                'This Markdown cannot be represented safely inside one Yeidle node.',
+            );
+
+            return false;
+        }
+
+        const transaction = currentEditor.state.tr.replaceWith(
+            contentStart,
+            contentEnd,
+            Fragment.fromArray(parsedBlocks),
+        );
+        const updated = findRawNodeInDocument(transaction.doc, blockId);
+
+        if (updated) {
+            const position = Math.min(
+                updated.pos + updated.node.nodeSize - 1,
+                Math.max(updated.pos + 1, updated.pos + bookmark.offset),
+            );
+            const resolved = transaction.doc.resolve(position);
+            const selection =
+                bookmark.selectionType === 'node' &&
+                resolved.nodeAfter &&
+                NodeSelection.isSelectable(resolved.nodeAfter)
+                    ? NodeSelection.create(transaction.doc, position)
+                    : TextSelection.near(resolved, 1);
+
+            transaction.setSelection(selection);
+        }
+
+        transaction.setMeta(rawNodeEditorKey, null);
+
+        closingRawNodeEditor = true;
+        currentEditor.view.dispatch(transaction);
+        queueMicrotask(() => {
+            closingRawNodeEditor = false;
+        });
+
+        return true;
+    } catch {
+        toast.error('Could not parse this Markdown.');
+
+        return false;
+    }
+}
+
+function createRawNodeEditorWidget(rawEditor: RawNodeEditorState): HTMLElement {
+    const wrapper = document.createElement('div');
+    const textarea = document.createElement('textarea');
+
+    wrapper.className = 'raw-node-editor-widget';
+    wrapper.contentEditable = 'false';
+    textarea.className = 'raw-node-editor-source';
+    textarea.value = rawEditor.source;
+    textarea.spellcheck = false;
+    textarea.setAttribute('aria-label', 'Raw Markdown');
+
+    const saveAndFocusEditor = (): void => {
+        if (
+            saveRawNode(rawEditor.blockId, textarea.value, rawEditor.selection)
+        ) {
+            requestAnimationFrame(() => editor.value?.view.focus());
+        }
+    };
+
+    textarea.addEventListener('input', () => {
+        resizeRawNodeTextarea(textarea);
+    });
+    textarea.addEventListener('keydown', (event) => {
+        event.stopPropagation();
+
+        if (eventMatchesCommand(event, 'edit-node-raw')) {
+            event.preventDefault();
+            saveAndFocusEditor();
+
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            saveAndFocusEditor();
+
+            return;
+        }
+
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            saveAndFocusEditor();
+        }
+    });
+    textarea.addEventListener('blur', () => {
+        if (closingRawNodeEditor) {
+            return;
+        }
+
+        if (
+            !saveRawNode(rawEditor.blockId, textarea.value, rawEditor.selection)
+        ) {
+            requestAnimationFrame(() => {
+                if (textarea.isConnected) {
+                    textarea.focus();
+                }
+            });
+        }
+    });
+    wrapper.append(textarea);
+
+    requestAnimationFrame(() => {
+        if (!textarea.isConnected) {
+            return;
+        }
+
+        resizeRawNodeTextarea(textarea);
+        textarea.focus();
+        textarea.setSelectionRange(
+            textarea.value.length,
+            textarea.value.length,
+        );
+    });
+
+    return wrapper;
+}
 
 function focusBoundaryInEditor(
     e: TiptapEditor,
@@ -960,6 +1329,76 @@ const ActiveLineHighlight = Extension.create({
                         }
 
                         return DecorationSet.create(state.doc, decorations);
+                    },
+                },
+            }),
+        ];
+    },
+});
+
+const RawNodeEditor = Extension.create({
+    name: 'rawNodeEditor',
+    addProseMirrorPlugins() {
+        return [
+            new Plugin<RawNodeEditorState | null>({
+                key: rawNodeEditorKey,
+                state: {
+                    init: () => null,
+                    apply: (transaction, previous) => {
+                        const meta = transaction.getMeta(rawNodeEditorKey) as
+                            | RawNodeEditorState
+                            | null
+                            | undefined;
+
+                        if (meta !== undefined) {
+                            return meta;
+                        }
+
+                        if (
+                            previous &&
+                            !findRawNodeInDocument(
+                                transaction.doc,
+                                previous.blockId,
+                            )
+                        ) {
+                            return null;
+                        }
+
+                        return previous;
+                    },
+                },
+                props: {
+                    decorations: (state) => {
+                        const rawEditor = rawNodeEditorKey.getState(state);
+
+                        if (!rawEditor) {
+                            return DecorationSet.create(state.doc, []);
+                        }
+
+                        const found = findRawNodeInDocument(
+                            state.doc,
+                            rawEditor.blockId,
+                        );
+
+                        if (!found) {
+                            return DecorationSet.create(state.doc, []);
+                        }
+
+                        return DecorationSet.create(state.doc, [
+                            Decoration.node(
+                                found.pos,
+                                found.pos + found.node.nodeSize,
+                                { class: 'raw-node-editing' },
+                            ),
+                            Decoration.widget(
+                                found.pos + 1,
+                                () => createRawNodeEditorWidget(rawEditor),
+                                {
+                                    key: `raw-node-editor-${rawEditor.blockId}`,
+                                    side: -1,
+                                },
+                            ),
+                        ]);
                     },
                 },
             }),
@@ -3151,6 +3590,7 @@ const editor = useEditor({
         CustomListItem,
         AlwaysSplitListItem,
         ActiveLineHighlight,
+        RawNodeEditor,
         CollapsedNodeDecorations,
         History,
         HistorySelectionScroll,
@@ -3167,6 +3607,7 @@ const editor = useEditor({
         CompactHorizontalRule,
         Blockquote,
         Highlight,
+        Markdown,
         Gapcursor,
         // Convert NodeSelection on fileNodes from arrow keys to GapCursor,
         // and always scroll GapCursor into view
@@ -3363,6 +3804,13 @@ const editor = useEditor({
             mousedown: (view, event) => handleEditorMouseDown(view, event),
         },
         handleKeyDown: (view, event) => {
+            if (eventMatchesCommand(event, 'edit-node-raw')) {
+                event.preventDefault();
+                openCurrentNodeAsRawText();
+
+                return true;
+            }
+
             if (eventMatchesCommand(event, 'toggle-checkbox')) {
                 event.preventDefault();
 
@@ -4062,7 +4510,19 @@ function scheduleProgressiveHydration(editor: TiptapEditor) {
     });
 }
 
+onMounted(() => {
+    window.addEventListener(
+        OPEN_RAW_NODE_EDITOR_EVENT,
+        openCurrentNodeAsRawText,
+    );
+});
+
 onBeforeUnmount(() => {
+    window.removeEventListener(
+        OPEN_RAW_NODE_EDITOR_EVENT,
+        openCurrentNodeAsRawText,
+    );
+
     if (progressiveHydrationFrame !== null) {
         cancelAnimationFrame(progressiveHydrationFrame);
     }
@@ -4404,6 +4864,41 @@ onBeforeUnmount(() => {
 .page-editor-list li.selected-line > blockquote {
     background: rgba(128, 128, 128, 0.15);
     border-radius: 3px;
+}
+
+.page-editor-list li.raw-node-editing > p,
+.page-editor-list li.raw-node-editing > h1,
+.page-editor-list li.raw-node-editing > h2,
+.page-editor-list li.raw-node-editing > h3,
+.page-editor-list li.raw-node-editing > pre,
+.page-editor-list li.raw-node-editing > blockquote,
+.page-editor-list li.raw-node-editing > hr {
+    display: none;
+}
+
+.raw-node-editor-widget {
+    display: block;
+    width: 100%;
+}
+
+.raw-node-editor-source {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 1.625em;
+    overflow: hidden;
+    resize: none;
+    border: 0;
+    border-radius: 3px;
+    outline: 0;
+    background: rgba(128, 128, 128, 0.08);
+    color: inherit;
+    padding: 0 0.25em;
+    font-family:
+        'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace,
+        SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: inherit;
+    line-height: 1.625;
 }
 
 .page-editor-list li p {

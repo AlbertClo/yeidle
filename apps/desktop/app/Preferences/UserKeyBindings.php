@@ -33,6 +33,7 @@ final class UserKeyBindings
         'pinned-item-9' => 'Alt+9',
         'pinned-item-10' => 'Alt+0',
         'toggle-checkbox' => 'Mod+Enter',
+        'edit-node-raw' => 'Mod+Shift+M',
         'collapse-node' => 'Mod+ArrowUp',
         'expand-node' => 'Mod+ArrowDown',
         'collapse-all-nodes' => 'Mod+Shift+ArrowUp',

@@ -16,11 +16,71 @@ import {
     navigateBack,
     navigateForward,
 } from '@/navigation/historyNavigation';
+import {
+    navigationDirectionForKeyboardEvent,
+    navigationDirectionForMouseButton,
+} from '@/navigation/navigationInputs';
+import type { NavigationDirection } from '@/navigation/navigationInputs';
 import { eventMatchesCommand, loadKeyBindings } from '@/stores/keyBindings';
 import { initializeRealtimeSync } from '@/sync/realtime';
 import { hasOpenModal } from '@/ui/modal';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+let lastNavigationCommand: {
+    direction: NavigationDirection;
+    receivedAt: number;
+} | null = null;
+
+function runNavigationCommand(direction: NavigationDirection): void {
+    if (hasOpenModal()) {
+        return;
+    }
+
+    const receivedAt = performance.now();
+
+    // Some Electron/Linux combinations emit both a DOM mouse event and an
+    // app-command for one side-button press. Treat those as one action.
+    if (
+        lastNavigationCommand?.direction === direction &&
+        receivedAt - lastNavigationCommand.receivedAt < 250
+    ) {
+        return;
+    }
+
+    lastNavigationCommand = { direction, receivedAt };
+
+    if (direction === 'back') {
+        void navigateBack();
+    } else {
+        void navigateForward();
+    }
+}
+
+function initializeMouseNavigation(): void {
+    document.addEventListener(
+        'mousedown',
+        (event) => {
+            const direction = navigationDirectionForMouseButton(event.button);
+
+            if (!direction) {
+                return;
+            }
+
+            event.preventDefault();
+            runNavigationCommand(direction);
+        },
+        true,
+    );
+    document.addEventListener(
+        'auxclick',
+        (event) => {
+            if (navigationDirectionForMouseButton(event.button)) {
+                event.preventDefault();
+            }
+        },
+        true,
+    );
+}
 
 function initializeNativeWindowFrame(): void {
     const windowControls = window.Native?.windowControls;
@@ -39,19 +99,8 @@ function initializeNativeWindowFrame(): void {
 
     const subscriptionId =
         windowControls.subscribeMaximizedChange(updateMaximizedState);
-    const navigationSubscriptionId = windowControls.subscribeNavigationCommand(
-        (direction) => {
-            if (hasOpenModal()) {
-                return;
-            }
-
-            if (direction === 'back') {
-                void navigateBack();
-            } else {
-                void navigateForward();
-            }
-        },
-    );
+    const navigationSubscriptionId =
+        windowControls.subscribeNavigationCommand(runNavigationCommand);
 
     window.addEventListener(
         'beforeunload',
@@ -66,6 +115,7 @@ function initializeNativeWindowFrame(): void {
 }
 
 initializeNativeWindowFrame();
+initializeMouseNavigation();
 initializeTypography();
 initializeHistoryNavigation();
 
@@ -94,6 +144,15 @@ void loadKeyBindings().catch(() => undefined);
 document.addEventListener(
     'keydown',
     (e) => {
+        const navigationDirection = navigationDirectionForKeyboardEvent(e);
+
+        if (navigationDirection) {
+            e.preventDefault();
+            runNavigationCommand(navigationDirection);
+
+            return;
+        }
+
         if (eventMatchesCommand(e, 'reload')) {
             e.preventDefault();
 
