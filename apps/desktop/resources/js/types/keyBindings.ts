@@ -5,7 +5,7 @@ export const KEY_BINDING_DEFINITIONS = [
     {
         id: 'command-palette',
         label: 'Open Command Palette',
-        defaultBinding: 'Mod+P',
+        defaultBinding: 'Ctrl+K',
     },
     {
         id: 'all-pages',
@@ -20,12 +20,12 @@ export const KEY_BINDING_DEFINITIONS = [
     {
         id: 'previous-daily-note',
         label: 'Open Previous Daily Note',
-        defaultBinding: 'Ctrl+Alt+P',
+        defaultBinding: 'Ctrl+Shift+BracketLeft',
     },
     {
         id: 'next-daily-note',
         label: 'Open Next Daily Note',
-        defaultBinding: 'Ctrl+Alt+N',
+        defaultBinding: 'Ctrl+Shift+BracketRight',
     },
     {
         id: 'navigation-history',
@@ -40,7 +40,7 @@ export const KEY_BINDING_DEFINITIONS = [
     {
         id: 'find-page',
         label: 'Find or Create Page',
-        defaultBinding: 'Mod+U',
+        defaultBinding: 'Alt+E',
     },
     {
         id: 'toggle-pin',
@@ -130,17 +130,17 @@ export const KEY_BINDING_DEFINITIONS = [
     {
         id: 'collapse-all-nodes',
         label: 'Collapse Current Node and Descendants',
-        defaultBinding: 'Mod+Alt+Shift+ArrowUp',
+        defaultBinding: 'Ctrl+Shift+Minus',
     },
     {
         id: 'expand-all-nodes',
         label: 'Expand Current Node and Descendants',
-        defaultBinding: 'Mod+Alt+Shift+ArrowDown',
+        defaultBinding: 'Ctrl+Shift+Plus',
     },
     {
         id: 'follow-link',
         label: 'Follow Link Under Cursor',
-        defaultBinding: 'Ctrl+O',
+        defaultBinding: 'Ctrl+Q',
     },
     {
         id: 'reload',
@@ -197,6 +197,8 @@ const MAC_DEFAULT_OVERRIDES: Partial<KeyBindings> = {
     'pinned-item-10': 'Mod+0',
     'collapse-node': 'Mod+Alt+ArrowUp',
     'expand-node': 'Mod+Alt+ArrowDown',
+    'collapse-all-nodes': 'Mod+Alt+Shift+ArrowUp',
+    'expand-all-nodes': 'Mod+Alt+Shift+ArrowDown',
     'move-node-up': 'Ctrl+Meta+ArrowUp',
     'move-node-down': 'Ctrl+Meta+ArrowDown',
     'follow-link': 'Mod+O',
@@ -295,6 +297,22 @@ function keyFromEvent(event: KeyboardEvent): string | null {
     }
 
     let key = keyAliases[event.key] ?? event.key;
+
+    // Shift can turn punctuation/digits into an otherwise unsupported symbol
+    // (for example, [ becomes {). Use the underlying key for those shortcuts,
+    // keeping existing character aliases such as Plus unchanged.
+    if (
+        event.shiftKey &&
+        event.key.length === 1 &&
+        !keyAliases[event.key] &&
+        !/^[a-z0-9]$/i.test(event.key)
+    ) {
+        if (namedKeys.has(event.code)) {
+            key = event.code;
+        } else if (/^Digit[0-9]$/.test(event.code)) {
+            key = event.code.slice(5);
+        }
+    }
 
     // Option can produce a symbol instead of the underlying letter/digit.
     // Only fall back for modified shortcuts; ordinary typing stays untouched.

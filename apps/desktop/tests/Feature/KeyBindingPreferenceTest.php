@@ -37,16 +37,19 @@ class KeyBindingPreferenceTest extends TestCase
     {
         $this->getJson('/api/key-bindings')
             ->assertSuccessful()
-            ->assertJsonPath('bindings.command-palette', 'Mod+P')
+            ->assertJsonPath('bindings.command-palette', 'Ctrl+K')
+            ->assertJsonPath('bindings.find-page', 'Alt+E')
+            ->assertJsonPath('bindings.previous-daily-note', 'Ctrl+Shift+BracketLeft')
+            ->assertJsonPath('bindings.next-daily-note', 'Ctrl+Shift+BracketRight')
             ->assertJsonPath('bindings.navigation-history', 'Mod+H')
             ->assertJsonPath('bindings.toggle-left-sidebar', 'Mod+Backslash')
             ->assertJsonPath('bindings.toggle-checkbox', 'Mod+Enter')
             ->assertJsonPath('bindings.edit-node-raw', 'Mod+Shift+M')
             ->assertJsonPath('bindings.collapse-node', 'Mod+ArrowUp')
             ->assertJsonPath('bindings.expand-node', 'Mod+ArrowDown')
-            ->assertJsonPath('bindings.collapse-all-nodes', 'Mod+Alt+Shift+ArrowUp')
-            ->assertJsonPath('bindings.expand-all-nodes', 'Mod+Alt+Shift+ArrowDown')
-            ->assertJsonPath('bindings.follow-link', 'Ctrl+O')
+            ->assertJsonPath('bindings.collapse-all-nodes', 'Ctrl+Shift+Minus')
+            ->assertJsonPath('bindings.expand-all-nodes', 'Ctrl+Shift+Plus')
+            ->assertJsonPath('bindings.follow-link', 'Ctrl+Q')
             ->assertJsonPath('bindings.pinned-item-1', 'Alt+1')
             ->assertJsonPath('bindings.pinned-item-10', 'Alt+0');
 
@@ -105,7 +108,7 @@ class KeyBindingPreferenceTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('bindings');
 
         $this->putJson('/api/key-bindings', [
-            'bindings' => ['all-pages' => 'Mod+P'],
+            'bindings' => ['all-pages' => 'Mod+K'],
         ])->assertUnprocessable()->assertJsonValidationErrors('bindings');
     }
 
@@ -114,6 +117,8 @@ class KeyBindingPreferenceTest extends TestCase
         $this->withHeader('X-Yeidle-Keyboard-Platform', 'mac')
             ->getJson('/api/key-bindings')
             ->assertJsonPath('bindings.command-palette', 'Mod+Shift+P')
+            ->assertJsonPath('bindings.collapse-all-nodes', 'Mod+Alt+Shift+ArrowUp')
+            ->assertJsonPath('bindings.expand-all-nodes', 'Mod+Alt+Shift+ArrowDown')
             ->assertJsonPath('bindings.move-node-up', 'Ctrl+Meta+ArrowUp')
             ->assertJsonPath('bindings.back', 'Mod+BracketLeft');
 
@@ -137,5 +142,17 @@ class KeyBindingPreferenceTest extends TestCase
         $this->withHeader('X-Yeidle-Keyboard-Platform', 'mac')
             ->putJson('/api/key-bindings', ['bindings' => ['all-pages' => 'Meta+Shift+P']])
             ->assertUnprocessable()->assertJsonValidationErrors('bindings');
+    }
+
+    public function test_it_saves_and_loads_shifted_bracket_shortcuts(): void
+    {
+        $this->putJson('/api/key-bindings', ['bindings' => [
+            'previous-daily-note' => 'Ctrl+Shift+BracketLeft',
+            'next-daily-note' => 'Ctrl+Shift+BracketRight',
+        ]])->assertSuccessful();
+
+        $this->getJson('/api/key-bindings')
+            ->assertJsonPath('bindings.previous-daily-note', 'Ctrl+Shift+BracketLeft')
+            ->assertJsonPath('bindings.next-daily-note', 'Ctrl+Shift+BracketRight');
     }
 }

@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div
-                    class="max-h-[60svh] min-h-0 space-y-1 overflow-y-auto py-2"
+                    class="h-[60svh] min-h-0 [scrollbar-gutter:stable] space-y-1 overflow-y-auto py-2"
                     @keydown="handleListKeydown"
                 >
                     <div

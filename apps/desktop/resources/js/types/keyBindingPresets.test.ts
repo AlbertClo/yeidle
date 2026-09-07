@@ -34,6 +34,20 @@ describe('shortcut presets', () => {
             'Alt+Shift+ArrowDown',
         );
     });
+    it('keeps the Mac Yeidle defaults separate from the Windows/Linux defaults', () => {
+        expect(keyBindingsFromPreset('yeidle', 'mac')).toMatchObject({
+            'command-palette': 'Mod+Shift+P',
+            'find-page': 'Mod+Shift+F',
+            'previous-daily-note': 'Mod+Alt+P',
+            'next-daily-note': 'Mod+Alt+N',
+            'collapse-all-nodes': 'Mod+Alt+Shift+ArrowUp',
+            'expand-all-nodes': 'Mod+Alt+Shift+ArrowDown',
+            'follow-link': 'Mod+O',
+        });
+        expect(keyBindingsFromPreset('yeidle', 'other')).toEqual(
+            defaultKeyBindings('other'),
+        );
+    });
     it('maps Logseq sequences and Obsidian quick switcher without a follow-link collision', () => {
         expect(keyBindingsFromPreset('logseq', 'mac')['all-pages']).toBe('G A');
         const obsidian = keyBindingsFromPreset('obsidian', 'mac');
