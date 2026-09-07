@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RotateCcw, Search } from 'lucide-vue-next';
+import { ChevronDown, RotateCcw, Search } from 'lucide-vue-next';
 import {
     computed,
     nextTick,
@@ -18,6 +18,12 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
@@ -29,10 +35,16 @@ import {
     saveKeyBindings,
 } from '@/stores/keyBindings';
 import {
+    KEY_BINDING_PRESETS,
+    keyBindingsFromPreset,
+} from '@/types/keyBindingPresets';
+import type { KeyBindingPreset } from '@/types/keyBindingPresets';
+import {
     DEFAULT_KEY_BINDINGS,
     formatKeyBinding,
     KEY_BINDING_DEFINITIONS,
     keyBindingFromEvent,
+    resolvedKeyBinding,
 } from '@/types/keyBindings';
 import type { KeyBindingCommand, KeyBindings } from '@/types/keyBindings';
 import { OPEN_KEY_BINDINGS_EVENT } from '@/ui/keyBindings';
@@ -40,6 +52,8 @@ import { OPEN_KEY_BINDINGS_EVENT } from '@/ui/keyBindings';
 const isOpen = ref(false);
 const draft = ref<KeyBindings>({ ...DEFAULT_KEY_BINDINGS });
 const recording = ref<KeyBindingCommand | null>(null);
+const firstStroke = ref<string | null>(null);
+const presetNotice = ref('');
 const captureError = ref<string | null>(null);
 const saveError = ref<string | null>(null);
 const saving = ref(false);
@@ -59,9 +73,10 @@ const conflicts = computed(() => {
             continue;
         }
 
-        const commands = commandsByBinding.get(binding) ?? [];
+        const resolved = resolvedKeyBinding(binding);
+        const commands = commandsByBinding.get(resolved) ?? [];
         commands.push(definition.id);
-        commandsByBinding.set(binding, commands);
+        commandsByBinding.set(resolved, commands);
     }
 
     return new Set(
@@ -234,6 +249,7 @@ function handleDialogKeydown(event: KeyboardEvent): void {
 
 function beginRecording(command: KeyBindingCommand): void {
     recording.value = command;
+    firstStroke.value = null;
     captureError.value = null;
     saveError.value = null;
 }
@@ -248,6 +264,10 @@ function captureBinding(
 
     event.preventDefault();
     event.stopPropagation();
+
+    if (event.repeat) {
+        return;
+    }
 
     if (event.key === 'Escape') {
         recording.value = null;
@@ -271,12 +291,34 @@ function captureBinding(
         return;
     }
 
-    const binding = keyBindingFromEvent(event);
+    let binding = keyBindingFromEvent(event);
+
+    if (
+        binding === null &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        /^[a-z]$/i.test(event.key) &&
+        !event.isComposing
+    ) {
+        if (firstStroke.value === null) {
+            firstStroke.value = event.key.toUpperCase();
+
+            return;
+        }
+
+        binding = `${firstStroke.value} ${event.key.toUpperCase()}`;
+    } else if (firstStroke.value !== null && binding !== null) {
+        captureError.value = 'Press a second letter, or Escape to cancel.';
+
+        return;
+    }
 
     if (binding === null) {
         if (!['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) {
             captureError.value =
-                'Use Ctrl, Alt, or a function key in the shortcut.';
+                'Use Command, Ctrl, Alt/Option, or a function key in the shortcut.';
         }
 
         return;
@@ -304,12 +346,20 @@ function resetBinding(command: KeyBindingCommand): void {
     saveError.value = null;
 }
 
-function resetAll(): void {
-    draft.value = { ...DEFAULT_KEY_BINDINGS };
+function setFromPreset(preset: KeyBindingPreset): void {
+    draft.value = keyBindingsFromPreset(preset);
     draftTouched.value = true;
     recording.value = null;
     captureError.value = null;
     saveError.value = null;
+    firstStroke.value = null;
+    const label =
+        KEY_BINDING_PRESETS.find((item) => item.id === preset)?.label ??
+        'Yeidle';
+    presetNotice.value =
+        preset === 'yeidle'
+            ? 'Yeidle defaults applied. Save to keep these changes.'
+            : `${label} shortcuts applied where equivalents are available. Other actions keep Yeidle defaults; conflicting keys are unassigned. Save to keep these changes.`;
 }
 
 async function save(): Promise<void> {
@@ -348,6 +398,7 @@ watch(isOpen, (open) => {
     }
 
     draft.value = { ...keyBindings.value };
+    presetNotice.value = '';
     draftTouched.value = false;
     searchQuery.value = '';
     selectedIndex.value = null;
@@ -383,7 +434,7 @@ onBeforeUnmount(() => {
     <TooltipProvider>
         <Dialog v-model:open="isOpen">
             <DialogContent
-                class="sm:max-w-2xl"
+                class="flex max-h-[calc(100svh-2rem)] flex-col sm:max-w-2xl"
                 @open-auto-focus="handleOpenAutoFocus"
                 @keydown="handleDialogKeydown"
             >
@@ -411,7 +462,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div
-                    class="max-h-[60svh] space-y-1 overflow-y-auto py-2"
+                    class="max-h-[60svh] min-h-0 space-y-1 overflow-y-auto py-2"
                     @keydown="handleListKeydown"
                 >
                     <div
@@ -457,7 +508,15 @@ onBeforeUnmount(() => {
                             @click="beginRecording(definition.id)"
                             @keydown="captureBinding($event, definition.id)"
                         >
-                            <span v-if="recording === definition.id">
+                            <span
+                                v-if="
+                                    recording === definition.id &&
+                                    firstStroke !== null
+                                "
+                            >
+                                {{ firstStroke }} then…
+                            </span>
+                            <span v-else-if="recording === definition.id">
                                 Press shortcut…
                             </span>
                             <kbd v-else-if="draft[definition.id] !== null">
@@ -521,11 +580,40 @@ onBeforeUnmount(() => {
                 <p v-if="saveError" class="text-sm text-destructive">
                     {{ saveError }}
                 </p>
+                <p
+                    v-if="presetNotice"
+                    role="status"
+                    class="text-sm text-muted-foreground"
+                >
+                    {{ presetNotice }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                    Two-letter sequences run outside text fields (Escape leaves
+                    the editor). Imported presets may replace native editing
+                    shortcuts.
+                </p>
 
                 <DialogFooter class="sm:justify-between">
-                    <Button type="button" variant="ghost" @click="resetAll">
-                        Reset all
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger as-child>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                :disabled="saving"
+                            >
+                                Set from… <ChevronDown class="ml-1 size-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" side="top">
+                            <DropdownMenuItem
+                                v-for="preset in KEY_BINDING_PRESETS"
+                                :key="preset.id"
+                                @select="setFromPreset(preset.id)"
+                            >
+                                {{ preset.label }}
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <div class="flex justify-end gap-2">
                         <Button
                             type="button"
@@ -538,7 +626,7 @@ onBeforeUnmount(() => {
                         </Button>
                         <Button
                             type="button"
-                            title="Save shortcuts (Ctrl+Enter)"
+                            :title="`Save shortcuts (${formatKeyBinding('Mod+Enter')})`"
                             data-shortcut-save="true"
                             :aria-disabled="
                                 saving ||

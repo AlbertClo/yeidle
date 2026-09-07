@@ -28,30 +28,30 @@ describe('navigation inputs', () => {
         expect(navigationDirectionForMouseButton(1)).toBeNull();
     });
 
-    it('supports standard Alt arrow navigation', () => {
+    it('leaves Alt arrow combinations to configurable platform bindings', () => {
         expect(
             navigationDirectionForKeyboardEvent(
                 keyboardEvent({ key: 'ArrowLeft', altKey: true }),
             ),
-        ).toBe('back');
+        ).toBeNull();
         expect(
             navigationDirectionForKeyboardEvent(
                 keyboardEvent({ key: 'ArrowRight', altKey: true }),
             ),
-        ).toBe('forward');
+        ).toBeNull();
     });
 
-    it('supports macOS Command bracket navigation', () => {
+    it('leaves Command bracket combinations to configurable platform bindings', () => {
         expect(
             navigationDirectionForKeyboardEvent(
                 keyboardEvent({ code: 'BracketLeft', metaKey: true }),
             ),
-        ).toBe('back');
+        ).toBeNull();
         expect(
             navigationDirectionForKeyboardEvent(
                 keyboardEvent({ code: 'BracketRight', metaKey: true }),
             ),
-        ).toBe('forward');
+        ).toBeNull();
     });
 
     it('supports dedicated browser navigation keys', () => {

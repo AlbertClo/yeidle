@@ -105,10 +105,10 @@ describe('key bindings', () => {
         expect(DEFAULT_KEY_BINDINGS['collapse-node']).toBe('Mod+ArrowUp');
         expect(DEFAULT_KEY_BINDINGS['expand-node']).toBe('Mod+ArrowDown');
         expect(DEFAULT_KEY_BINDINGS['collapse-all-nodes']).toBe(
-            'Mod+Shift+ArrowUp',
+            'Mod+Alt+Shift+ArrowUp',
         );
         expect(DEFAULT_KEY_BINDINGS['expand-all-nodes']).toBe(
-            'Mod+Shift+ArrowDown',
+            'Mod+Alt+Shift+ArrowDown',
         );
     });
 
@@ -116,5 +116,59 @@ describe('key bindings', () => {
         expect(DEFAULT_KEY_BINDINGS['daily-notes']).toBe('Alt+D');
         expect(DEFAULT_KEY_BINDINGS['previous-daily-note']).toBe('Ctrl+Alt+P');
         expect(DEFAULT_KEY_BINDINGS['next-daily-note']).toBe('Ctrl+Alt+N');
+    });
+
+    it('resolves Mod to exactly the platform modifier, rejecting extra modifiers', () => {
+        expect(
+            eventMatchesKeyBinding(
+                keyboardEvent('p', { metaKey: true }),
+                'Mod+P',
+                'mac',
+            ),
+        ).toBe(true);
+        expect(
+            eventMatchesKeyBinding(
+                keyboardEvent('p', { ctrlKey: true }),
+                'Mod+P',
+                'mac',
+            ),
+        ).toBe(false);
+        expect(
+            eventMatchesKeyBinding(
+                keyboardEvent('p', { metaKey: true }),
+                'Mod+P',
+                'other',
+            ),
+        ).toBe(false);
+        expect(
+            eventMatchesKeyBinding(
+                keyboardEvent('p', { metaKey: true, ctrlKey: true }),
+                'Mod+P',
+                'mac',
+            ),
+        ).toBe(false);
+    });
+    it('recognizes explicitly assigned Option shortcuts without losing the physical letter', () => {
+        const event = keyboardEvent('å', { code: 'KeyA', altKey: true });
+        expect(keyBindingFromEvent(event)).toBe('Alt+A');
+        expect(eventMatchesKeyBinding(event, 'Alt+A', 'mac')).toBe(true);
+    });
+    it('does not intercept composition or AltGr typing', () => {
+        expect(
+            eventMatchesKeyBinding(
+                keyboardEvent('p', { ctrlKey: true, isComposing: true }),
+                'Mod+P',
+            ),
+        ).toBe(false);
+        expect(
+            keyBindingFromEvent(
+                keyboardEvent('@', {
+                    ctrlKey: true,
+                    altKey: true,
+                    code: 'KeyQ',
+                    getModifierState: (key) => key === 'AltGraph',
+                }),
+            ),
+        ).toBeNull();
     });
 });

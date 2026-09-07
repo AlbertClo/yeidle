@@ -14,7 +14,11 @@ class NativeAppServiceProvider implements ProvidesPhpIni
      */
     public function boot(): void
     {
-        Menu::create();
+        if (PHP_OS_FAMILY === 'Darwin') {
+            Menu::create(Menu::app(), Menu::file(), Menu::edit(), Menu::window());
+        } else {
+            Menu::create();
+        }
 
         Window::open()
             ->width(1280)

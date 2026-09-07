@@ -36,13 +36,51 @@ final class UserKeyBindings
         'edit-node-raw' => 'Mod+Shift+M',
         'collapse-node' => 'Mod+ArrowUp',
         'expand-node' => 'Mod+ArrowDown',
-        'collapse-all-nodes' => 'Mod+Shift+ArrowUp',
-        'expand-all-nodes' => 'Mod+Shift+ArrowDown',
+        'move-node-up' => 'Alt+Shift+ArrowUp',
+        'move-node-down' => 'Alt+Shift+ArrowDown',
+        'collapse-all-nodes' => 'Mod+Alt+Shift+ArrowUp',
+        'expand-all-nodes' => 'Mod+Alt+Shift+ArrowDown',
         'follow-link' => 'Ctrl+O',
         'reload' => 'Mod+R',
-        'back' => 'Mod+ArrowLeft',
-        'forward' => 'Mod+ArrowRight',
+        'back' => 'Alt+ArrowLeft',
+        'forward' => 'Alt+ArrowRight',
     ];
+
+    private const MAC_DEFAULT_OVERRIDES = [
+        'command-palette' => 'Mod+Shift+P',
+        'all-pages' => 'Mod+Shift+L',
+        'daily-notes' => 'Ctrl+Shift+D',
+        'previous-daily-note' => 'Mod+Alt+P',
+        'next-daily-note' => 'Mod+Alt+N',
+        'navigation-history' => 'Mod+Shift+H',
+        'find-page' => 'Mod+Shift+F',
+        'toggle-pin' => 'Mod+Shift+B',
+        'pinned-item-1' => 'Mod+1',
+        'pinned-item-2' => 'Mod+2',
+        'pinned-item-3' => 'Mod+3',
+        'pinned-item-4' => 'Mod+4',
+        'pinned-item-5' => 'Mod+5',
+        'pinned-item-6' => 'Mod+6',
+        'pinned-item-7' => 'Mod+7',
+        'pinned-item-8' => 'Mod+8',
+        'pinned-item-9' => 'Mod+9',
+        'pinned-item-10' => 'Mod+0',
+        'collapse-node' => 'Mod+Alt+ArrowUp',
+        'expand-node' => 'Mod+Alt+ArrowDown',
+        'move-node-up' => 'Ctrl+Meta+ArrowUp',
+        'move-node-down' => 'Ctrl+Meta+ArrowDown',
+        'follow-link' => 'Mod+O',
+        'back' => 'Mod+BracketLeft',
+        'forward' => 'Mod+BracketRight',
+    ];
+
+    /** @return array<string, string> */
+    public static function defaults(?string $platform = null): array
+    {
+        $isMac = $platform === null ? PHP_OS_FAMILY === 'Darwin' : $platform === 'mac';
+
+        return array_replace(self::DEFAULTS, $isMac ? self::MAC_DEFAULT_OVERRIDES : []);
+    }
 
     private const MODIFIERS = ['Mod', 'Ctrl', 'Meta', 'Alt', 'Shift'];
 
@@ -80,14 +118,15 @@ final class UserKeyBindings
     ) {}
 
     /** @return array{bindings: array<string, ?string>, defaults: array<string, string>} */
-    public function listing(): array
+    public function listing(?string $platform = null): array
     {
         $state = $this->read();
         $profile = $this->profile($state);
+        $defaults = self::defaults($platform);
 
         return [
-            'bindings' => array_replace(self::DEFAULTS, $profile['key_bindings'] ?? []),
-            'defaults' => self::DEFAULTS,
+            'bindings' => array_replace($defaults, $profile['key_bindings'] ?? []),
+            'defaults' => $defaults,
         ];
     }
 
@@ -95,12 +134,13 @@ final class UserKeyBindings
      * @param  array<string, mixed>  $bindings
      * @return array{bindings: array<string, ?string>, defaults: array<string, string>}
      */
-    public function replace(array $bindings): array
+    public function replace(array $bindings, ?string $platform = null): array
     {
         $state = $this->read();
         $profileKey = $this->profileKey();
+        $defaults = self::defaults($platform);
         $current = array_replace(
-            self::DEFAULTS,
+            $defaults,
             $this->profile($state)['key_bindings'] ?? [],
         );
 
@@ -118,16 +158,28 @@ final class UserKeyBindings
                 : $this->normalize($binding);
         }
 
-        $assigned = array_values(array_filter($current, is_string(...)));
+        $modifier = ($platform === 'mac' || ($platform === null && PHP_OS_FAMILY === 'Darwin')) ? 'Meta' : 'Ctrl';
+        $assigned = array_map(
+            fn (string $binding) => preg_replace('/\bMod(?=\+)/', $modifier, $binding),
+            array_values(array_filter($current, is_string(...))),
+        );
 
         if (count($assigned) !== count(array_unique($assigned))) {
             throw new InvalidArgumentException('Each shortcut must use a unique key combination.');
         }
 
+        foreach ($assigned as $binding) {
+            foreach ($assigned as $other) {
+                if (str_starts_with($other, $binding.' ')) {
+                    throw new InvalidArgumentException('A shortcut cannot also be the start of another shortcut.');
+                }
+            }
+        }
+
         $overrides = [];
 
         foreach ($current as $command => $binding) {
-            if ($binding !== self::DEFAULTS[$command]) {
+            if ($binding !== $defaults[$command]) {
                 $overrides[$command] = $binding;
             }
         }
@@ -137,7 +189,7 @@ final class UserKeyBindings
 
         return [
             'bindings' => $current,
-            'defaults' => self::DEFAULTS,
+            'defaults' => $defaults,
         ];
     }
 
@@ -206,6 +258,16 @@ final class UserKeyBindings
 
     private function normalize(string $binding): string
     {
+        $strokes = preg_split('/\s+/', trim($binding));
+
+        if (count($strokes) > 1) {
+            if (count($strokes) !== 2 || array_filter($strokes, fn ($stroke) => ! preg_match('/^[a-z]$/i', $stroke))) {
+                throw new InvalidArgumentException('Key sequences must contain two letters, for example G A.');
+            }
+
+            return strtoupper(implode(' ', $strokes));
+        }
+
         $parts = explode('+', trim($binding));
         $key = array_pop($parts);
 

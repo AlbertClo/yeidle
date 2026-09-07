@@ -1,3 +1,6 @@
+import { keyboardPlatform } from './keyboardPlatform';
+import type { KeyboardPlatform } from './keyboardPlatform';
+
 export const KEY_BINDING_DEFINITIONS = [
     {
         id: 'command-palette',
@@ -115,14 +118,24 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Mod+ArrowDown',
     },
     {
+        id: 'move-node-up',
+        label: 'Move Current Node Up',
+        defaultBinding: 'Alt+Shift+ArrowUp',
+    },
+    {
+        id: 'move-node-down',
+        label: 'Move Current Node Down',
+        defaultBinding: 'Alt+Shift+ArrowDown',
+    },
+    {
         id: 'collapse-all-nodes',
         label: 'Collapse Current Node and Descendants',
-        defaultBinding: 'Mod+Shift+ArrowUp',
+        defaultBinding: 'Mod+Alt+Shift+ArrowUp',
     },
     {
         id: 'expand-all-nodes',
         label: 'Expand Current Node and Descendants',
-        defaultBinding: 'Mod+Shift+ArrowDown',
+        defaultBinding: 'Mod+Alt+Shift+ArrowDown',
     },
     {
         id: 'follow-link',
@@ -137,12 +150,12 @@ export const KEY_BINDING_DEFINITIONS = [
     {
         id: 'back',
         label: 'Navigate Back',
-        defaultBinding: 'Mod+ArrowLeft',
+        defaultBinding: 'Alt+ArrowLeft',
     },
     {
         id: 'forward',
         label: 'Navigate Forward',
-        defaultBinding: 'Mod+ArrowRight',
+        defaultBinding: 'Alt+ArrowRight',
     },
 ] as const;
 
@@ -163,12 +176,70 @@ export const PINNED_ITEM_COMMANDS = [
 
 export type KeyBindings = Record<KeyBindingCommand, string | null>;
 
-export const DEFAULT_KEY_BINDINGS = Object.fromEntries(
-    KEY_BINDING_DEFINITIONS.map(({ id, defaultBinding }) => [
-        id,
-        defaultBinding,
-    ]),
-) as KeyBindings;
+const MAC_DEFAULT_OVERRIDES: Partial<KeyBindings> = {
+    'command-palette': 'Mod+Shift+P',
+    'all-pages': 'Mod+Shift+L',
+    'daily-notes': 'Ctrl+Shift+D',
+    'previous-daily-note': 'Mod+Alt+P',
+    'next-daily-note': 'Mod+Alt+N',
+    'navigation-history': 'Mod+Shift+H',
+    'find-page': 'Mod+Shift+F',
+    'toggle-pin': 'Mod+Shift+B',
+    'pinned-item-1': 'Mod+1',
+    'pinned-item-2': 'Mod+2',
+    'pinned-item-3': 'Mod+3',
+    'pinned-item-4': 'Mod+4',
+    'pinned-item-5': 'Mod+5',
+    'pinned-item-6': 'Mod+6',
+    'pinned-item-7': 'Mod+7',
+    'pinned-item-8': 'Mod+8',
+    'pinned-item-9': 'Mod+9',
+    'pinned-item-10': 'Mod+0',
+    'collapse-node': 'Mod+Alt+ArrowUp',
+    'expand-node': 'Mod+Alt+ArrowDown',
+    'move-node-up': 'Ctrl+Meta+ArrowUp',
+    'move-node-down': 'Ctrl+Meta+ArrowDown',
+    'follow-link': 'Mod+O',
+    back: 'Mod+BracketLeft',
+    forward: 'Mod+BracketRight',
+};
+
+export function defaultKeyBindings(
+    platform: KeyboardPlatform = keyboardPlatform(),
+): KeyBindings {
+    return {
+        ...Object.fromEntries(
+            KEY_BINDING_DEFINITIONS.map(({ id, defaultBinding }) => [
+                id,
+                defaultBinding,
+            ]),
+        ),
+        ...(platform === 'mac' ? MAC_DEFAULT_OVERRIDES : {}),
+    } as KeyBindings;
+}
+
+export const DEFAULT_KEY_BINDINGS = defaultKeyBindings();
+
+export function resolvedKeyBinding(
+    binding: string,
+    platform: KeyboardPlatform = keyboardPlatform(),
+): string {
+    return binding
+        .split(' ')
+        .map((stroke) =>
+            stroke
+                .split('+')
+                .map((part) =>
+                    part === 'Mod'
+                        ? platform === 'mac'
+                            ? 'Meta'
+                            : 'Ctrl'
+                        : part,
+                )
+                .join('+'),
+        )
+        .join(' ');
+}
 
 const keyAliases: Record<string, string> = {
     ' ': 'Space',
@@ -215,11 +286,25 @@ const namedKeys = new Set([
 ]);
 
 function keyFromEvent(event: KeyboardEvent): string | null {
+    if (event.isComposing || event.getModifierState?.('AltGraph')) {
+        return null;
+    }
+
     if (['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) {
         return null;
     }
 
     let key = keyAliases[event.key] ?? event.key;
+
+    // Option can produce a symbol instead of the underlying letter/digit.
+    // Only fall back for modified shortcuts; ordinary typing stays untouched.
+    if (
+        event.altKey &&
+        !/^[a-z0-9]$/i.test(key) &&
+        /^(Key[A-Z]|Digit[0-9])$/.test(event.code)
+    ) {
+        key = event.code.replace(/^(Key|Digit)/, '');
+    }
 
     if (/^[a-z0-9]$/i.test(key)) {
         key = key.toUpperCase();
@@ -260,12 +345,13 @@ export function keyBindingFromEvent(event: KeyboardEvent): string | null {
 export function eventMatchesKeyBinding(
     event: KeyboardEvent,
     binding: string | null,
+    platform: KeyboardPlatform = keyboardPlatform(),
 ): boolean {
     if (binding === null) {
         return false;
     }
 
-    const parts = binding.split('+');
+    const parts = resolvedKeyBinding(binding, platform).split('+');
     const expectedKey = parts.pop();
     const modifiers = new Set(parts);
     const eventKey = keyFromEvent(event);
@@ -274,13 +360,7 @@ export function eventMatchesKeyBinding(
         return false;
     }
 
-    const expectsMod = modifiers.has('Mod');
-
-    if (expectsMod) {
-        if (!event.ctrlKey && !event.metaKey) {
-            return false;
-        }
-    } else if (
+    if (
         event.ctrlKey !== modifiers.has('Ctrl') ||
         event.metaKey !== modifiers.has('Meta')
     ) {
@@ -298,11 +378,15 @@ export function formatKeyBinding(binding: string | null): string {
         return 'Unassigned';
     }
 
-    const isMac =
-        typeof navigator !== 'undefined' &&
-        /Mac|iPhone|iPad/.test(navigator.platform);
+    if (binding.includes(' ')) {
+        return binding.split(' ').map(formatKeyBinding).join(' then ');
+    }
+
+    const isMac = keyboardPlatform() === 'mac';
     const displayKeys: Record<string, string> = {
         Backslash: '\\',
+        BracketLeft: '[',
+        BracketRight: ']',
     };
 
     return binding

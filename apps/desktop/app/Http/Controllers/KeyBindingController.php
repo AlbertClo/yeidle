@@ -15,9 +15,9 @@ final class KeyBindingController extends Controller
         private readonly UserKeyBindings $keyBindings,
     ) {}
 
-    public function show(): JsonResponse
+    public function show(Request $request): JsonResponse
     {
-        return response()->json($this->keyBindings->listing());
+        return response()->json($this->keyBindings->listing($this->platform($request)));
     }
 
     public function update(Request $request): JsonResponse
@@ -28,7 +28,7 @@ final class KeyBindingController extends Controller
         ]);
 
         try {
-            $listing = $this->keyBindings->replace($validated['bindings']);
+            $listing = $this->keyBindings->replace($validated['bindings'], $this->platform($request));
 
             try {
                 app(CloudAccountService::class)
@@ -43,5 +43,12 @@ final class KeyBindingController extends Controller
                 'bindings' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function platform(Request $request): ?string
+    {
+        $platform = $request->header('X-Yeidle-Keyboard-Platform');
+
+        return in_array($platform, ['mac', 'other'], true) ? $platform : null;
     }
 }

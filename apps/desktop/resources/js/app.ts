@@ -21,8 +21,14 @@ import {
     navigationDirectionForMouseButton,
 } from '@/navigation/navigationInputs';
 import type { NavigationDirection } from '@/navigation/navigationInputs';
-import { eventMatchesCommand, loadKeyBindings } from '@/stores/keyBindings';
+import {
+    eventMatchesCommand,
+    loadKeyBindings,
+    prepareShortcutEvent,
+    resetKeySequence,
+} from '@/stores/keyBindings';
 import { initializeRealtimeSync } from '@/sync/realtime';
+import { keyboardPlatform } from '@/types/keyboardPlatform';
 import { hasOpenModal } from '@/ui/modal';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -144,6 +150,13 @@ void loadKeyBindings().catch(() => undefined);
 document.addEventListener(
     'keydown',
     (e) => {
+        if (prepareShortcutEvent(e)) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            return;
+        }
+
         const navigationDirection = navigationDirectionForKeyboardEvent(e);
 
         if (navigationDirection) {
@@ -180,10 +193,17 @@ document.addEventListener(
     true,
 );
 
-// Prevent Electron's Ctrl+Q default after editor and app commands have had a
-// chance to handle the key. Preventing it during capture blocks ProseMirror.
+document.addEventListener('pointerdown', resetKeySequence, true);
+window.addEventListener('blur', resetKeySequence);
+
+// Keep Ctrl+Q assignable on Windows/Linux after editor commands can handle it.
+// On Mac, leave Cmd+Q to the native Quit action.
 document.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'q') {
+    if (
+        keyboardPlatform() !== 'mac' &&
+        event.ctrlKey &&
+        event.key.toLowerCase() === 'q'
+    ) {
         event.preventDefault();
     }
 });

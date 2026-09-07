@@ -55,6 +55,7 @@ describe('key binding store', () => {
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
+                'X-Yeidle-Keyboard-Platform': 'other',
             },
             body: JSON.stringify({ bindings: next }),
         });

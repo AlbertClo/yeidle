@@ -6,9 +6,40 @@ import {
     KEY_BINDING_DEFINITIONS,
 } from '../types/keyBindings';
 import type { KeyBindingCommand, KeyBindings } from '../types/keyBindings';
+import { keyboardPlatform } from '../types/keyboardPlatform';
+import { KeySequenceMatcher } from '../types/keySequences';
 import { hasOpenModal } from '../ui/modal';
 
 export const keyBindings = ref<KeyBindings>({ ...DEFAULT_KEY_BINDINGS });
+const sequences = new KeySequenceMatcher();
+const eventCommands = new WeakMap<KeyboardEvent, Set<KeyBindingCommand>>();
+
+export function resetKeySequence(): void {
+    sequences.reset();
+}
+
+export function prepareShortcutEvent(event: KeyboardEvent): boolean {
+    if (hasOpenModal()) {
+        sequences.reset();
+        eventCommands.set(event, new Set());
+
+        return false;
+    }
+
+    const target = event.target;
+    const editing =
+        typeof Element !== 'undefined' &&
+        target instanceof Element &&
+        Boolean(
+            target.closest(
+                'input, textarea, select, [contenteditable="true"], [role="textbox"]',
+            ),
+        );
+    const result = sequences.match(event, keyBindings.value, editing);
+    eventCommands.set(event, result.commands);
+
+    return result.prefix;
+}
 
 let loaded = false;
 let loadRequest: Promise<void> | null = null;
@@ -55,7 +86,10 @@ export async function loadKeyBindings(force = false): Promise<void> {
     }
 
     loadRequest = fetch('/api/key-bindings', {
-        headers: { Accept: 'application/json' },
+        headers: {
+            Accept: 'application/json',
+            'X-Yeidle-Keyboard-Platform': keyboardPlatform(),
+        },
     })
         .then(async (response) => {
             if (!response.ok) {
@@ -64,6 +98,7 @@ export async function loadKeyBindings(force = false): Promise<void> {
 
             const payload = (await response.json()) as KeyBindingResponse;
             keyBindings.value = normalizeBindings(payload.bindings);
+            sequences.reset();
             loaded = true;
         })
         .finally(() => {
@@ -79,6 +114,7 @@ export async function saveKeyBindings(bindings: KeyBindings): Promise<void> {
         headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
+            'X-Yeidle-Keyboard-Platform': keyboardPlatform(),
         },
         body: JSON.stringify({ bindings }),
     });
@@ -95,6 +131,7 @@ export async function saveKeyBindings(bindings: KeyBindings): Promise<void> {
 
     const payload = (await response.json()) as KeyBindingResponse;
     keyBindings.value = normalizeBindings(payload.bindings);
+    sequences.reset();
     loaded = true;
 }
 
@@ -114,5 +151,9 @@ export function eventMatchesCommand(
         return false;
     }
 
-    return eventMatchesKeyBinding(event, bindingFor(command));
+    const prepared = eventCommands.get(event);
+
+    return prepared
+        ? prepared.has(command)
+        : eventMatchesKeyBinding(event, bindingFor(command));
 }

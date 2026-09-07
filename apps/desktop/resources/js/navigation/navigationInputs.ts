@@ -30,25 +30,7 @@ export function navigationDirectionForKeyboardEvent(
         return 'forward';
     }
 
-    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-        if (event.key === 'ArrowLeft') {
-            return 'back';
-        }
-
-        if (event.key === 'ArrowRight') {
-            return 'forward';
-        }
-    }
-
-    if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
-        if (event.code === 'BracketLeft') {
-            return 'back';
-        }
-
-        if (event.code === 'BracketRight') {
-            return 'forward';
-        }
-    }
-
+    // All key combinations use the configurable, platform-specific bindings.
+    // In particular, Option+arrows must remain word movement on macOS.
     return null;
 }

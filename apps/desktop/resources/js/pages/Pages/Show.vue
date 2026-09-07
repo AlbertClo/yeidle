@@ -782,12 +782,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     }
 
     const entersEditor =
-        e.key === 'Enter' ||
-        ((e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
-            !e.ctrlKey &&
-            !e.metaKey &&
-            !e.altKey &&
-            !e.shiftKey);
+        (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey;
 
     if (entersEditor && !isEditingTitle.value) {
         const target = e.target as HTMLElement;
@@ -983,12 +982,6 @@ onBeforeUnmount(() => {
                                 router.visit(`/pages/${link.page_id}`)
                             "
                             @keydown.space.prevent="
-                                router.visit(`/pages/${link.page_id}`)
-                            "
-                            @keydown.q.ctrl.prevent="
-                                router.visit(`/pages/${link.page_id}`)
-                            "
-                            @keydown.q.meta.prevent="
                                 router.visit(`/pages/${link.page_id}`)
                             "
                             @keydown.down.stop.prevent="

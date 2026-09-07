@@ -13,9 +13,11 @@ import {
     Pin,
     Search,
     Type,
+    ArrowUp,
+    ArrowDown,
 } from 'lucide-vue-next';
 import type { LucideIcon } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import {
     CommandDialog,
@@ -35,6 +37,7 @@ import { workspaceState } from '@/stores/workspaces';
 import { openCloudAccount } from '@/ui/cloudAccount';
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/ui/commandPalette';
 import { openKeyBindings } from '@/ui/keyBindings';
+import { runNodeCommand } from '@/ui/nodeCommands';
 import { openPageSearch } from '@/ui/pageSearch';
 import { openRawNodeEditor } from '@/ui/rawNodeEditor';
 import { openThemeSelector } from '@/ui/themeSelector';
@@ -136,6 +139,20 @@ const commands = computed<PaletteCommand[]>(() => [
     ...(props.currentPageId
         ? [
               {
+                  id: 'move-node-up',
+                  label: 'Move Current Node Up',
+                  icon: ArrowUp,
+                  shortcut: bindingLabel('move-node-up'),
+                  run: () => runNodeCommand('move-node-up'),
+              },
+              {
+                  id: 'move-node-down',
+                  label: 'Move Current Node Down',
+                  icon: ArrowDown,
+                  shortcut: bindingLabel('move-node-down'),
+                  run: () => runNodeCommand('move-node-down'),
+              },
+              {
                   id: 'edit-node-raw',
                   label: 'Toggle Raw Markdown for Current Node',
                   icon: CodeXml,
@@ -173,7 +190,7 @@ function openPalette(): void {
 
 function execute(command: PaletteCommand): void {
     isOpen.value = false;
-    void command.run();
+    void nextTick(() => command.run());
 }
 
 async function openTodaysDailyNote(): Promise<void> {

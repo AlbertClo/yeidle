@@ -44,8 +44,8 @@ class KeyBindingPreferenceTest extends TestCase
             ->assertJsonPath('bindings.edit-node-raw', 'Mod+Shift+M')
             ->assertJsonPath('bindings.collapse-node', 'Mod+ArrowUp')
             ->assertJsonPath('bindings.expand-node', 'Mod+ArrowDown')
-            ->assertJsonPath('bindings.collapse-all-nodes', 'Mod+Shift+ArrowUp')
-            ->assertJsonPath('bindings.expand-all-nodes', 'Mod+Shift+ArrowDown')
+            ->assertJsonPath('bindings.collapse-all-nodes', 'Mod+Alt+Shift+ArrowUp')
+            ->assertJsonPath('bindings.expand-all-nodes', 'Mod+Alt+Shift+ArrowDown')
             ->assertJsonPath('bindings.follow-link', 'Ctrl+O')
             ->assertJsonPath('bindings.pinned-item-1', 'Alt+1')
             ->assertJsonPath('bindings.pinned-item-10', 'Alt+0');
@@ -107,5 +107,35 @@ class KeyBindingPreferenceTest extends TestCase
         $this->putJson('/api/key-bindings', [
             'bindings' => ['all-pages' => 'Mod+P'],
         ])->assertUnprocessable()->assertJsonValidationErrors('bindings');
+    }
+
+    public function test_platform_defaults_and_reset_do_not_persist_mac_defaults_as_customizations(): void
+    {
+        $this->withHeader('X-Yeidle-Keyboard-Platform', 'mac')
+            ->getJson('/api/key-bindings')
+            ->assertJsonPath('bindings.command-palette', 'Mod+Shift+P')
+            ->assertJsonPath('bindings.move-node-up', 'Ctrl+Meta+ArrowUp')
+            ->assertJsonPath('bindings.back', 'Mod+BracketLeft');
+
+        $this->putJson('/api/key-bindings', ['bindings' => UserKeyBindings::defaults('mac')])->assertSuccessful();
+        $this->assertSame([], app(UserKeyBindings::class)->overrides());
+
+        $this->withHeader('X-Yeidle-Keyboard-Platform', 'other')
+            ->getJson('/api/key-bindings')
+            ->assertJsonPath('bindings.move-node-up', 'Alt+Shift+ArrowUp')
+            ->assertJsonPath('bindings.back', 'Alt+ArrowLeft');
+    }
+
+    public function test_it_saves_logseq_sequences_and_rejects_modifier_alias_conflicts(): void
+    {
+        $this->putJson('/api/key-bindings', ['bindings' => ['all-pages' => 'g a', 'daily-notes' => 'g j']])
+            ->assertSuccessful()->assertJsonPath('bindings.all-pages', 'G A');
+        $this->getJson('/api/key-bindings')->assertJsonPath('bindings.daily-notes', 'G J');
+
+        $this->putJson('/api/key-bindings', ['bindings' => ['all-pages' => 'G A B']])
+            ->assertUnprocessable();
+        $this->withHeader('X-Yeidle-Keyboard-Platform', 'mac')
+            ->putJson('/api/key-bindings', ['bindings' => ['all-pages' => 'Meta+Shift+P']])
+            ->assertUnprocessable()->assertJsonValidationErrors('bindings');
     }
 }

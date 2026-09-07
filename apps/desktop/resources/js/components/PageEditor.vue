@@ -21,6 +21,7 @@ import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
 import { Markdown } from '@tiptap/markdown';
 import { isHistoryTransaction } from '@tiptap/pm/history';
+import { closeHistory } from '@tiptap/pm/history';
 import { Fragment } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import type { EditorState } from '@tiptap/pm/state';
@@ -60,11 +61,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { moveNodeTransaction } from '@/editor/moveNode';
 import {
     countNodes,
     takeNodePrefix,
     takeNodeWindow,
 } from '@/editor/progressiveNodes';
+import { remapNodeSelection } from '@/editor/remapNodeSelection';
 import { BlockEmbed } from '@/extensions/blockembed';
 import { BlockReference } from '@/extensions/blockreference';
 import { CompactHorizontalRule } from '@/extensions/compact-horizontal-rule';
@@ -82,6 +85,9 @@ import {
 } from '@/stores/collapsedNodes';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import type { Node } from '@/types/node';
+import { hasOpenModal } from '@/ui/modal';
+import { NODE_COMMAND_EVENT } from '@/ui/nodeCommands';
+import type { NodeCommand } from '@/ui/nodeCommands';
 import { OPEN_RAW_NODE_EDITOR_EVENT } from '@/ui/rawNodeEditor';
 
 const lowlight = createLowlight(common);
@@ -3218,6 +3224,43 @@ function setCurrentNodeCollapsed(
     return false;
 }
 
+function moveCurrentNode(direction: -1 | 1): boolean {
+    const current = editor.value;
+
+    if (!current || rawNodeEditorKey.getState(current.state)) {
+        return false;
+    }
+
+    if (!progressiveHydrationComplete) {
+        completeProgressiveHydration(current);
+    }
+
+    const transaction = moveNodeTransaction(current.state, direction);
+
+    if (transaction) {
+        userHasInteracted = true;
+        current.view.dispatch(transaction);
+        // The next typed character should not join this move's undo entry.
+        current.view.dispatch(closeHistory(current.state.tr));
+        current.view.focus();
+    }
+
+    // Consume the shortcut at a sibling boundary as well.
+    return true;
+}
+
+function handleNodeCommand(event: Event): void {
+    if (hasOpenModal()) {
+        return;
+    }
+
+    const command = (event as CustomEvent<NodeCommand>).detail;
+
+    if (command === 'move-node-up' || command === 'move-node-down') {
+        moveCurrentNode(command === 'move-node-up' ? -1 : 1);
+    }
+}
+
 function pmListItemIds(node: PmNode, onlyWithChildren: boolean): string[] {
     const nodeIds: string[] = [];
     const collect = (candidate: PmNode): void => {
@@ -3804,6 +3847,21 @@ const editor = useEditor({
             mousedown: (view, event) => handleEditorMouseDown(view, event),
         },
         handleKeyDown: (view, event) => {
+            if (event.isComposing || hasOpenModal()) {
+                return false;
+            }
+
+            if (
+                eventMatchesCommand(event, 'move-node-up') ||
+                eventMatchesCommand(event, 'move-node-down')
+            ) {
+                event.preventDefault();
+
+                return moveCurrentNode(
+                    eventMatchesCommand(event, 'move-node-up') ? -1 : 1,
+                );
+            }
+
             if (eventMatchesCommand(event, 'edit-node-raw')) {
                 event.preventDefault();
                 openCurrentNodeAsRawText();
@@ -3943,6 +4001,10 @@ const editor = useEditor({
             // Down/Right at GapCursor: select node after gap
             if (
                 (event.key === 'ArrowDown' || event.key === 'ArrowRight') &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                !event.shiftKey &&
                 view.state.selection instanceof GapCursor
             ) {
                 const $gap = view.state.selection.$head;
@@ -3962,6 +4024,10 @@ const editor = useEditor({
             // Up/Left at GapCursor: select node before gap
             if (
                 (event.key === 'ArrowUp' || event.key === 'ArrowLeft') &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                !event.shiftKey &&
                 view.state.selection instanceof GapCursor
             ) {
                 const $gap = view.state.selection.$head;
@@ -4064,6 +4130,41 @@ const editor = useEditor({
                 hideLinkPopover();
 
                 return true;
+            }
+
+            if (
+                event.key === 'Escape' &&
+                !document.querySelector('.tippy-box')
+            ) {
+                if (
+                    view.state.selection instanceof TextSelection &&
+                    !view.state.selection.empty
+                ) {
+                    view.dispatch(
+                        view.state.tr.setSelection(
+                            TextSelection.create(
+                                view.state.doc,
+                                view.state.selection.head,
+                            ),
+                        ),
+                    );
+                } else {
+                    view.dom.blur();
+                }
+
+                return true;
+            }
+
+            // Unbound modified arrows belong to native cursor movement and
+            // selection, not the outline's plain-arrow navigation.
+            if (
+                event.key.startsWith('Arrow') &&
+                (event.ctrlKey ||
+                    event.metaKey ||
+                    event.altKey ||
+                    event.shiftKey)
+            ) {
+                return false;
             }
 
             // Select atom inline nodes (mentions, web links) with arrow keys
@@ -4466,51 +4567,62 @@ function scheduleProgressiveHydration(editor: TiptapEditor) {
     // the screen before the complete document is constructed.
     progressiveHydrationFrame = requestAnimationFrame(() => {
         progressiveHydrationPaintFrame = requestAnimationFrame(() => {
-            progressiveHydrationFrame = null;
-            progressiveHydrationPaintFrame = null;
-
-            const wasFocused = editor.isFocused;
-            const selection = editor.state.selection.toJSON();
-
-            hydratingProgressiveContent = true;
-
-            try {
-                editor.commands.setContent(nodesToTiptap(props.nodes), {
-                    emitUpdate: false,
-                });
-            } finally {
-                hydratingProgressiveContent = false;
-                progressiveHydrationComplete = true;
-            }
-
-            if (pendingProgressiveFocusBlockId) {
-                const blockId = pendingProgressiveFocusBlockId;
-                pendingProgressiveFocusBlockId = null;
-
-                if (focusBlockInEditor(editor, blockId)) {
-                    emit('initialFocusApplied');
-                }
-
-                return;
-            }
-
-            if (wasFocused) {
-                try {
-                    editor.view.dispatch(
-                        editor.state.tr.setSelection(
-                            Selection.fromJSON(editor.state.doc, selection),
-                        ),
-                    );
-                    editor.view.focus();
-                } catch {
-                    editor.commands.focus('start');
-                }
-            }
+            completeProgressiveHydration(editor);
         });
     });
 }
 
+function completeProgressiveHydration(editor: TiptapEditor): void {
+    if (progressiveHydrationComplete) {
+        return;
+    }
+
+    if (progressiveHydrationFrame !== null) {
+        cancelAnimationFrame(progressiveHydrationFrame);
+    }
+
+    if (progressiveHydrationPaintFrame !== null) {
+        cancelAnimationFrame(progressiveHydrationPaintFrame);
+    }
+
+    progressiveHydrationFrame = null;
+    progressiveHydrationPaintFrame = null;
+    const wasFocused = editor.isFocused;
+    const selection = editor.state.selection;
+
+    hydratingProgressiveContent = true;
+
+    try {
+        editor.commands.setContent(nodesToTiptap(props.nodes), {
+            emitUpdate: false,
+        });
+    } finally {
+        hydratingProgressiveContent = false;
+        progressiveHydrationComplete = true;
+    }
+
+    if (pendingProgressiveFocusBlockId) {
+        const blockId = pendingProgressiveFocusBlockId;
+        pendingProgressiveFocusBlockId = null;
+
+        if (focusBlockInEditor(editor, blockId)) {
+            emit('initialFocusApplied');
+        }
+    } else {
+        const restored = remapNodeSelection(selection, editor.state.doc);
+
+        if (restored) {
+            editor.view.dispatch(editor.state.tr.setSelection(restored));
+        }
+
+        if (wasFocused) {
+            editor.view.focus();
+        }
+    }
+}
+
 onMounted(() => {
+    window.addEventListener(NODE_COMMAND_EVENT, handleNodeCommand);
     window.addEventListener(
         OPEN_RAW_NODE_EDITOR_EVENT,
         openCurrentNodeAsRawText,
@@ -4518,6 +4630,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+    window.removeEventListener(NODE_COMMAND_EVENT, handleNodeCommand);
     window.removeEventListener(
         OPEN_RAW_NODE_EDITOR_EVENT,
         openCurrentNodeAsRawText,
