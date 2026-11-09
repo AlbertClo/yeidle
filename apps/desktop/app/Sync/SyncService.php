@@ -2,27 +2,80 @@
 
 namespace App\Sync;
 
-use App\Documents\DocumentService;
+use App\Models\Op;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Entry point for node changes built in PHP (page creation, daily notes,
- * pins, collapsed nodes, preferences, imports). Changes keep the op shape
- * those producers already build — `type` plus a payload with `id`,
- * `page_id` and changed `fields` — and are written as Loro updates to the
- * owning page document.
+ * Ingest point for pushed ops: appends to the local log and applies to the
+ * projection in one transaction. Idempotent — already-seen op_ids are
+ * acknowledged without re-applying, so clients can retry a whole batch
+ * after any failure.
  */
 class SyncService
 {
     public function __construct(
-        private DocumentService $documents,
+        private OpApplier $applier,
     ) {}
 
     /**
-     * @param  array<int, array{type: string, payload: array}>  $ops
-     * @return list<string> ids of the documents that changed
+     * @param  array<int, array{op_id: string, client_id: string, hlc: string, type: string, payload: array}>  $ops
+     * @return array<int, array{op_id: string, local_seq: int}>
      */
-    public function push(array $ops, string $message = ''): array
+    public function push(array $ops): array
     {
-        return $this->documents->applyNodeChanges($ops, $message);
+        return DB::transaction(function () use ($ops) {
+            $accepted = [];
+
+            foreach ($ops as $op) {
+                $existing = Op::where('op_id', $op['op_id'])->first();
+
+                if ($existing) {
+                    $accepted[] = ['op_id' => $op['op_id'], 'local_seq' => $existing->id];
+
+                    continue;
+                }
+
+                $row = Op::create([
+                    'op_id' => $op['op_id'],
+                    'client_id' => $op['client_id'],
+                    'hlc' => $op['hlc'],
+                    'type' => $op['type'],
+                    'payload' => $op['payload'],
+                    'created_at' => now(),
+                ]);
+
+                $this->applier->apply($op);
+
+                $accepted[] = ['op_id' => $op['op_id'], 'local_seq' => $row->id];
+            }
+
+            return $accepted;
+        });
+    }
+
+    /**
+     * Ops after the given local sequence number, in log order.
+     *
+     * @return array{ops: array, latest_seq: int}
+     */
+    public function pull(int $since): array
+    {
+        $ops = Op::where('id', '>', $since)
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Op $op) => [
+                'local_seq' => $op->id,
+                'op_id' => $op->op_id,
+                'client_id' => $op->client_id,
+                'hlc' => $op->hlc,
+                'type' => $op->type,
+                'payload' => $op->payload,
+            ])
+            ->all();
+
+        return [
+            'ops' => $ops,
+            'latest_seq' => max((int) (Op::max('id') ?? 0), $since),
+        ];
     }
 }

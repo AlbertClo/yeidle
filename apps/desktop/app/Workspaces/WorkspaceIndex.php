@@ -2,7 +2,6 @@
 
 namespace App\Workspaces;
 
-use App\Documents\LegacyMigration;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -261,13 +260,6 @@ final class WorkspaceIndex
         if ($this->needsMigration($connection)) {
             $this->migrate($databasePath);
             $this->connect($connection);
-        }
-
-        // Workspaces written by the op-log sync engine become Loro documents
-        $legacy = app(LegacyMigration::class);
-
-        if ($legacy->needed()) {
-            $legacy->run();
         }
 
         $storagePath = $this->storagePath($workspace);

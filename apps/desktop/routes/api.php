@@ -4,7 +4,6 @@ use App\Http\Controllers\CloudAccountController;
 use App\Http\Controllers\CloudController;
 use App\Http\Controllers\CollapsedNodeController;
 use App\Http\Controllers\DailyNoteController;
-use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\KeyBindingController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\NavigationHistoryController;
@@ -14,6 +13,7 @@ use App\Http\Controllers\PinController;
 use App\Http\Controllers\PreferenceController;
 use App\Http\Controllers\RoamImportController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SyncController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -40,11 +40,8 @@ Route::post('imports/roam/finish', [RoamImportController::class, 'finish']);
 Route::post('imports/roam/stream', [RoamImportController::class, 'stream']);
 Route::delete('imports/roam/{uploadId}', [RoamImportController::class, 'cancel']);
 
-// Before documents/{documentId} so "changes" isn't captured as an id
-Route::get('documents/changes', [DocumentController::class, 'changes']);
-Route::get('documents/{documentId}', [DocumentController::class, 'show']);
-Route::post('documents/{documentId}/updates', [DocumentController::class, 'push']);
-Route::get('documents/{documentId}/updates', [DocumentController::class, 'updates']);
+Route::post('sync/push', [SyncController::class, 'push']);
+Route::get('sync/pull', [SyncController::class, 'pull']);
 
 Route::post('cloud/connect', [CloudController::class, 'connect']);
 Route::post('cloud/workspaces', [CloudController::class, 'workspaces']);

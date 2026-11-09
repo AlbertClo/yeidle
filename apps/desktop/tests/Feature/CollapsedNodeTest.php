@@ -3,10 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Node;
+use App\Models\Op;
 use App\Models\SyncState;
 use App\Support\CollapsedNodes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CollapsedNodeTest extends TestCase
@@ -38,7 +38,7 @@ class CollapsedNodeTest extends TestCase
             'parent_id' => $rootId,
             'content' => $parent->id,
         ]);
-        $this->assertGreaterThan(0, DB::table('document_updates')->whereNull('cloud_seq')->count());
+        $this->assertGreaterThan(0, Op::whereNull('server_seq')->count());
 
         $this->get('/pages/'.$page->id)
             ->assertSuccessful()

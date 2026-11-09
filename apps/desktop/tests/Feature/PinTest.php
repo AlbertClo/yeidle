@@ -3,10 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Node;
+use App\Models\Op;
 use App\Models\SyncState;
 use App\Support\PinNodes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class PinTest extends TestCase
@@ -38,7 +38,7 @@ class PinTest extends TestCase
             'content' => $page->id,
             'position' => 'a0',
         ]);
-        $this->assertGreaterThan(0, DB::table('document_updates')->whereNull('cloud_seq')->count());
+        $this->assertGreaterThan(0, Op::whereNull('server_seq')->count());
 
         $this->getJson('/api/pins')
             ->assertSuccessful()

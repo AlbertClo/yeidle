@@ -2,7 +2,7 @@
 
 namespace App\Import\Roam;
 
-use App\Models\Node;
+use App\Models\Op;
 use App\Sync\HlcGenerator;
 use App\Sync\SyncService;
 use Illuminate\Support\Str;
@@ -68,17 +68,14 @@ final class RoamImporter
             $report,
         );
 
+        $operations = [];
         $records = $export->records();
 
         if ($progress) {
             $progress('nodes', 0, count($records));
         }
 
-        // A page's changes are always written together: sibling positions
-        // are only comparable within one write of a page document
-        $changesByPage = [];
-
-        foreach ($records as $record) {
+        foreach ($records as $index => $record) {
             if ($record['parent_id'] === null) {
                 $fields = [
                     'parent_id' => null,
@@ -104,64 +101,44 @@ final class RoamImporter
                 $fields['created_at'] = $record['created_at'];
             }
 
-            $changesByPage[$record['page_id']][] = [
-                'type' => 'node.set',
-                'payload' => [
-                    'id' => $record['id'],
-                    'page_id' => $record['page_id'],
-                    'fields' => $fields,
-                ],
+            $payload = [
+                'v' => 1,
+                'id' => $record['id'],
+                'page_id' => $record['page_id'],
+                'fields' => $fields,
             ];
-        }
+            $payloadHash = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $operations[] = [
+                'op_id' => RoamExport::opId("node:{$record['uid']}:{$payloadHash}", $workspaceId),
+                'client_id' => $clock->clientId,
+                'hlc' => $clock->now(),
+                'type' => 'node.set',
+                'payload' => $payload,
+            ];
 
-        $batch = [];
-        $written = 0;
+            if (count($operations) === self::BATCH_SIZE || $index === array_key_last($records)) {
+                if (! $dryRun) {
+                    $this->pushBatch($operations, $report);
+                }
 
-        foreach ($changesByPage as $changes) {
-            $batch = [...$batch, ...$changes];
-
-            if (count($batch) < self::BATCH_SIZE) {
-                continue;
-            }
-
-            if (! $dryRun) {
-                $this->pushBatch($batch, $report);
-            }
-
-            $written += count($batch);
-            $batch = [];
-
-            if ($progress) {
-                $progress('nodes', $written, count($records));
-            }
-        }
-
-        if ($batch !== []) {
-            if (! $dryRun) {
-                $this->pushBatch($batch, $report);
-            }
-
-            if ($progress) {
-                $progress('nodes', count($records), count($records));
+                if ($progress) {
+                    $progress('nodes', $index + 1, count($records));
+                }
+                $operations = [];
             }
         }
 
         return $report;
     }
 
-    /** @param list<array<string, mixed>> $changes */
-    private function pushBatch(array $changes, RoamImportReport $report): void
+    /** @param list<array<string, mixed>> $operations */
+    private function pushBatch(array $operations, RoamImportReport $report): void
     {
-        $ids = array_map(fn (array $change) => $change['payload']['id'], $changes);
-        $alreadyImported = 0;
-
-        foreach (array_chunk($ids, 500) as $chunk) {
-            $alreadyImported += Node::whereIn('id', $chunk)->count();
-        }
-
-        $this->sync->push($changes, 'Imported from Roam Research');
+        $opIds = array_column($operations, 'op_id');
+        $alreadyImported = Op::whereIn('op_id', $opIds)->count();
+        $this->sync->push($operations);
         $report->nodesAlreadyImported += $alreadyImported;
-        $report->nodesWritten += count($changes) - $alreadyImported;
+        $report->nodesWritten += count($operations) - $alreadyImported;
     }
 
     private function canonicalUrl(string $url): string
