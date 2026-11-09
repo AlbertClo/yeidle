@@ -10,8 +10,10 @@
         "types:check": "tsc --noEmit"
     },
     "dependencies": {
+        "@types/node": "^22.20.5",
         "fractional-indexing": "^3.2.0",
         "loro-crdt": "^1.17.1",
+        "uuid": "^13.0.2",
         "uuidv7": "^1.2.1"
     },
     "devDependencies": {
