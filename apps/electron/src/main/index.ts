@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { createContext, fileSettings } from '@yeidle/core/app/context';
+import { importLegacyWorkspaces } from '@yeidle/core/app/legacyImport';
 import type { Host } from '@yeidle/core/app/host';
 import { createAppServer } from '@yeidle/core/app/server';
 import { Workspaces } from '@yeidle/core/app/workspaces';
@@ -236,7 +237,16 @@ void app.whenReady().then(async () => {
     await loadHtmlTemplate();
     protocol.handle(SCHEME, handleRequest);
 
-    // Open (and migrate) the active workspace before the first page
+    // First launch: copy the NativePHP app's workspaces (never in place)
+    if (!fs.existsSync(path.join(host.dataDirectory, 'workspaces.json'))) {
+        importLegacyWorkspaces(
+            host,
+            process.env.YEIDLE_LEGACY_DIR ?? path.join(app.getPath('appData'), 'yeidle'),
+            (file) => openNodeDatabase(file),
+        );
+    }
+
+    // Open (and convert) the active workspace before the first page
     workspaces.active();
     createWindow();
 

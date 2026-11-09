@@ -4,13 +4,16 @@ import { bind } from './database';
 import type { Database, RunResult } from './database';
 
 /** node:sqlite (built into Node and Electron) as a core Database. */
-export function openNodeDatabase(path: string): Database {
-    const db = new DatabaseSync(path);
+export function openNodeDatabase(path: string, options: { readOnly?: boolean } = {}): Database {
+    const db = new DatabaseSync(path, { readOnly: options.readOnly ?? false });
     let depth = 0;
 
-    db.exec('PRAGMA journal_mode = WAL;');
+    if (!options.readOnly) {
+        db.exec('PRAGMA journal_mode = WAL;');
+        db.exec('PRAGMA foreign_keys = ON;');
+    }
+
     db.exec('PRAGMA busy_timeout = 5000;');
-    db.exec('PRAGMA foreign_keys = ON;');
 
     const statements = new Map<string, ReturnType<DatabaseSync['prepare']>>();
     const prepare = (sql: string) => {

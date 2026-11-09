@@ -98,8 +98,10 @@ export class Projector {
         const columns =
             'id, parent_id, position, content, tiptap_content, is_checked, page_type, daily_note_date, created_at, deleted_at, document_id';
 
+        // Two indexed lookups; an OR would scan the table
         for (const row of this.db.all<NodeRow>(
-            `SELECT ${columns} FROM nodes WHERE document_id = ? OR id = ?`,
+            `SELECT ${columns} FROM nodes WHERE document_id = ?
+             UNION SELECT ${columns} FROM nodes WHERE id = ?`,
             [documentId, documentId],
         )) {
             existing.set(row.id, row);
