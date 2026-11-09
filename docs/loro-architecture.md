@@ -1,6 +1,7 @@
 # Yeidle on Loro: architecture
 
-Status: proposed, November 2026. Supersedes the op-log engine described in
+Status: desktop implemented in `apps/electron` + `packages/core` (phases 1–3
+below); cloud, history and mobile not started. Supersedes the op-log engine described in
 [sync-design.md](sync-design.md) and the unmerged `feat/crdt-sync-history`
 branch (Yjs). Work happens on `explore/loro`.
 
@@ -108,7 +109,17 @@ two adapters: `Database` (async SQLite) and `Transport` (HTTP to the cloud).
 | `import/roam` | Roam JSON → page documents | Port from `app/Import/Roam/*` |
 | `migrate` | NativePHP workspace → new workspace | New; based on `LegacyMigration.php` |
 
-### Where the core runs
+### Where the core runs (as built)
+
+On desktop the core runs in Electron's main process as an app server behind
+the `yeidle://` protocol. It answers the same JSON API and Inertia page
+protocol the Laravel app served, so the Vue frontend moved over nearly
+unchanged. SQLite is `node:sqlite` (FTS5 trigram included; no native
+module). Windows edit live Loro documents and send updates over the API;
+the main process stores them, re-projects the read model and broadcasts
+which documents changed.
+
+### Where the core runs (original plan)
 
 - **Electron:** in the main process (or a utility process), using
   `better-sqlite3`. The core is the single writer for every window: a window
