@@ -62,6 +62,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { moveNodeTransaction } from '@/editor/moveNode';
+import { blocksPlainText } from '@/editor/nodeText';
 import {
     countNodes,
     takeNodePrefix,
@@ -2214,41 +2215,7 @@ function listItemToNode(
 
     // Extract all content blocks (everything except nested bulletList)
     const contentBlocks = content.filter((c) => c.type !== 'bulletList');
-    let textContent = '';
-    const extractText = (node: Record<string, unknown>): string => {
-        if (node.text) {
-            return node.text as string;
-        }
-
-        if (node.type === 'mention') {
-            const a = node.attrs as Record<string, unknown>;
-
-            return `[[${a?.label ?? a?.id ?? ''}]]`;
-        }
-
-        if (node.type === 'blockReference') {
-            const a = node.attrs as Record<string, unknown>;
-
-            return `((${a?.fallback ?? a?.targetUid ?? ''}))`;
-        }
-
-        if (node.type === 'blockEmbed') {
-            const a = node.attrs as Record<string, unknown>;
-
-            return `{{embed: ((${a?.fallback ?? a?.targetUid ?? ''}))}}`;
-        }
-
-        if (node.type === 'fileNode') {
-            const a = node.attrs as Record<string, unknown>;
-
-            return `[${a?.originalName ?? 'File'}]`;
-        }
-
-        const children = (node.content as Record<string, unknown>[]) ?? [];
-
-        return children.map(extractText).join('');
-    };
-    textContent = contentBlocks.map(extractText).join(' ');
+    const textContent = blocksPlainText(contentBlocks);
 
     const nestedList = content.find((c) => c.type === 'bulletList');
     const blockId = attrs.blockId as string;

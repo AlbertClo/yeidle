@@ -3,15 +3,15 @@
 namespace Tests\Feature\Sync;
 
 use App\Models\Node;
-use App\Models\Op;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class NodeFacadeTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_creating_a_page_mints_an_op(): void
+    public function test_creating_a_page_writes_its_document(): void
     {
         $response = $this->postJson('/api/nodes', ['content' => 'My New Page']);
 
@@ -19,26 +19,22 @@ class NodeFacadeTest extends TestCase
         $id = $response->json('id');
 
         $this->assertSame('My New Page', Node::find($id)->content);
-
-        $op = Op::sole();
-        $this->assertSame('node.set', $op->type);
-        $this->assertSame($id, $op->payload['id']);
-        // A page's ops carry its own id as page_id
-        $this->assertSame($id, $op->payload['page_id']);
-        $this->assertStringStartsWith('srv-', $op->client_id);
+        // A page owns the document named after it
+        $this->assertSame($id, Node::find($id)->document_id);
+        $this->assertSame($id, DB::table('document_updates')->sole()->document_id);
     }
 
-    public function test_duplicate_page_title_returns_existing_without_minting(): void
+    public function test_duplicate_page_title_returns_existing_without_writing(): void
     {
         $first = $this->postJson('/api/nodes', ['content' => 'Unique Title']);
         $second = $this->postJson('/api/nodes', ['content' => 'unique title']);
 
         $second->assertStatus(200);
         $this->assertSame($first->json('id'), $second->json('id'));
-        $this->assertSame(1, Op::count());
+        $this->assertSame(1, DB::table('document_updates')->count());
     }
 
-    public function test_child_create_carries_the_root_page_id(): void
+    public function test_child_create_lands_in_the_root_page_document(): void
     {
         $page = $this->postJson('/api/nodes', ['content' => 'Parent Page'])->json('id');
         $child = $this->postJson('/api/nodes', [
@@ -48,8 +44,7 @@ class NodeFacadeTest extends TestCase
         ]);
 
         $child->assertStatus(201);
-        $op = Op::orderByDesc('id')->first();
-        $this->assertSame($page, $op->payload['page_id']);
+        $this->assertSame($page, Node::find($child->json('id'))->document_id);
     }
 
     public function test_create_with_known_id_is_an_upsert(): void

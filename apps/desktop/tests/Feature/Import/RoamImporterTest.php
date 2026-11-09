@@ -12,8 +12,8 @@ use App\Import\Roam\RoamImportReport;
 use App\Models\Media;
 use App\Models\Node;
 use App\Models\NodeLink;
-use App\Models\Op;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -56,7 +56,7 @@ class RoamImporterTest extends TestCase
 
         $this->assertSame(0, Node::count());
         $this->assertSame(0, Media::count());
-        $this->assertSame(0, Op::count());
+        $this->assertSame(0, DB::table('document_updates')->count());
         $this->assertSame(0, $fetcher->downloads);
     }
 
@@ -114,17 +114,20 @@ class RoamImporterTest extends TestCase
         Storage::disk('local')->assertExists("media/{$media->filename}");
 
         $this->assertSame(3, NodeLink::count());
-        $this->assertSame(8, Op::count());
+        // One document per page plus the media document
+        $this->assertSame(3, DB::table('documents')->count());
     }
 
     public function test_repeating_the_same_import_is_idempotent(): void
     {
         $this->artisan('roam:import', ['path' => $this->fixture])->assertSuccessful();
+        $updates = DB::table('document_updates')->count();
         $this->artisan('roam:import', ['path' => $this->fixture])->assertSuccessful();
 
         $this->assertSame(7, Node::count());
         $this->assertSame(1, Media::count());
-        $this->assertSame(8, Op::count());
+        // Nothing changed, so the second run wrote no updates
+        $this->assertSame($updates, DB::table('document_updates')->count());
         $this->assertSame(1, app(RoamAttachmentFetcher::class)->downloads);
     }
 
@@ -144,7 +147,7 @@ class RoamImporterTest extends TestCase
             $this->fail('The import should have been cancelled.');
         } catch (RoamImportCancelled) {
             $this->assertSame(0, Node::count());
-            $this->assertSame(0, Op::count());
+            $this->assertSame(0, DB::table('document_updates')->count());
         }
     }
 

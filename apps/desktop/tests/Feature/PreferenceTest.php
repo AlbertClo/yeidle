@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\Op;
 use App\Models\SyncState;
 use App\Support\PreferenceNodes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -74,7 +74,7 @@ class PreferenceTest extends TestCase
             'content' => 'light',
             'position' => 'a0',
         ]);
-        $this->assertGreaterThan(0, Op::whereNull('server_seq')->count());
+        $this->assertGreaterThan(0, DB::table('document_updates')->whereNull('cloud_seq')->count());
 
         $this->getJson('/api/preferences')
             ->assertSuccessful()
@@ -99,14 +99,14 @@ class PreferenceTest extends TestCase
         $this->assertDatabaseHas('nodes', [
             'parent_id' => $rootId,
             'content' => 'source-serif-4',
-            'position' => 'a1',
+            'position' => 'a0',
         ]);
         $this->assertDatabaseHas('nodes', [
             'parent_id' => $rootId,
             'content' => '18',
-            'position' => 'a2',
+            'position' => 'a1',
         ]);
-        $this->assertGreaterThan(0, Op::whereNull('server_seq')->count());
+        $this->assertGreaterThan(0, DB::table('document_updates')->whereNull('cloud_seq')->count());
     }
 
     public function test_workspace_storage_choice_is_stored_in_synced_preference_nodes(): void
@@ -125,7 +125,7 @@ class PreferenceTest extends TestCase
         $this->assertDatabaseHas('nodes', [
             'parent_id' => $rootId,
             'content' => 'local',
-            'position' => 'a3',
+            'position' => 'a0',
         ]);
 
         $this->putJson('/api/preferences/workspace-storage', [
