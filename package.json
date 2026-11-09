@@ -6,6 +6,8 @@
         "apps/electron"
     ],
     "scripts": {
+        "dev": "npm run dev -w @yeidle/electron",
+        "start": "npm run build -w @yeidle/electron && npm run start -w @yeidle/electron",
         "test": "npm test --workspaces --if-present"
     }
 }

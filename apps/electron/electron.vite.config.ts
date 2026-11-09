@@ -1,7 +1,15 @@
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+
+// Loro's self-loading browser build in dev too; the "development" export
+// condition would pick its bundler build, which needs a WebAssembly plugin
+const loroBrowserBuild = resolve(
+    dirname(fileURLToPath(import.meta.resolve('loro-crdt'))),
+    '../browser/index.js',
+);
 
 export default defineConfig({
     main: {
@@ -13,7 +21,10 @@ export default defineConfig({
     },
     renderer: {
         resolve: {
-            alias: { '@': resolve('src/renderer/src') },
+            alias: [
+                { find: '@', replacement: resolve('src/renderer/src') },
+                { find: /^loro-crdt$/, replacement: loroBrowserBuild },
+            ],
         },
         plugins: [
             tailwindcss(),

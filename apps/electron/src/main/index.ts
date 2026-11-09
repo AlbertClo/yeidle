@@ -102,7 +102,7 @@ const server = createAppServer(context, {
 
 async function loadHtmlTemplate(): Promise<void> {
     htmlTemplate = devServerUrl
-        ? await (await net.fetch(`${devServerUrl}/`)).text()
+        ? await (await fetch(`${devServerUrl}/`)).text()
         : fs.readFileSync(path.join(rendererRoot, 'index.html'), 'utf8');
 }
 

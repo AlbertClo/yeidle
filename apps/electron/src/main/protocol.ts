@@ -7,7 +7,6 @@ import type {
     AppResponse,
     UploadedFile,
 } from '@yeidle/core/http/http';
-import { net } from 'electron';
 
 /**
  * Converts between Electron protocol requests and the core's AppRequest /
@@ -151,15 +150,21 @@ export function serveStatic(root: string, pathname: string): Response {
     });
 }
 
-/** Renderer assets from the Vite dev server (development). */
-export function proxyToDevServer(
+/**
+ * Renderer assets from the Vite dev server (development). Node's fetch, not
+ * Electron's net module, which fails to reach the dev server here.
+ */
+export async function proxyToDevServer(
     devUrl: string,
     request: Request,
 ): Promise<Response> {
     const url = new URL(request.url);
-
-    return net.fetch(`${devUrl}${url.pathname}${url.search}`, {
+    const response = await fetch(`${devUrl}${url.pathname}${url.search}`, {
         method: request.method,
-        headers: request.headers,
+    });
+
+    return new Response(await response.arrayBuffer(), {
+        status: response.status,
+        headers: response.headers,
     });
 }
