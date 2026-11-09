@@ -155,9 +155,10 @@ CREATE INDEX IF NOT EXISTS "document_updates_cloud_seq_index" on "document_updat
 
 function hasTable(db: Database, name: string): boolean {
     return (
-        db.get("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?", [
-            name,
-        ]) !== undefined
+        db.get(
+            "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+            [name],
+        ) !== undefined
     );
 }
 
@@ -169,7 +170,9 @@ function hasColumn(db: Database, table: string, column: string): boolean {
 
 /** Brings a workspace database (new, or written by the NativePHP app) to the current schema. */
 export function migrate(db: Database): void {
-    const version = db.get<{ user_version: number }>('PRAGMA user_version')!.user_version;
+    const version = db.get<{ user_version: number }>(
+        'PRAGMA user_version',
+    )!.user_version;
 
     if (version >= SCHEMA_VERSION) {
         return;
@@ -188,7 +191,9 @@ export function migrate(db: Database): void {
             db.exec('ALTER TABLE "nodes" ADD COLUMN "document_id" varchar');
         }
 
-        db.exec('CREATE INDEX IF NOT EXISTS "nodes_document_id_index" on "nodes" ("document_id")');
+        db.exec(
+            'CREATE INDEX IF NOT EXISTS "nodes_document_id_index" on "nodes" ("document_id")',
+        );
         db.exec(DOCUMENT_TABLES);
         db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     });

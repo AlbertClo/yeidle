@@ -45,7 +45,9 @@ export function isDailyNoteDate(value: unknown): value is string {
     const date = new Date(Date.UTC(year, month - 1, day));
 
     return (
-        date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day
     );
 }
 
@@ -58,7 +60,11 @@ export class DailyNoteService {
         const id = dailyNotePageId(workspaceId, date);
         const existing = findNode(db, id, { withTrashed: true });
 
-        if (existing !== null && isDailyNote(existing) && existing.deleted_at === null) {
+        if (
+            existing !== null &&
+            isDailyNote(existing) &&
+            existing.deleted_at === null
+        ) {
             return existing;
         }
 

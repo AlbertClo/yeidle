@@ -4,7 +4,11 @@ import { findNode } from '../nodes';
 import { uuidv7 } from '../../support/ids';
 import { testContext } from '../testing';
 
-import { dailyNotePageId, dailyNoteTitle, DailyNoteService } from './dailyNotes';
+import {
+    dailyNotePageId,
+    dailyNoteTitle,
+    DailyNoteService,
+} from './dailyNotes';
 
 let ctx: ReturnType<typeof testContext>;
 
@@ -28,20 +32,34 @@ describe('DailyNoteService', () => {
         expect(first.page_type).toBe('daily_note');
         expect(first.daily_note_date).toBe('2026-08-30');
         expect(first.created_at?.slice(0, 10)).toBe('2026-08-30');
-        expect(ctx.db().get<{ n: number }>('SELECT COUNT(*) AS n FROM nodes')!.n).toBe(1);
-        expect(ctx.db().get<{ n: number }>('SELECT COUNT(*) AS n FROM document_updates')!.n).toBe(1);
+        expect(
+            ctx.db().get<{ n: number }>('SELECT COUNT(*) AS n FROM nodes')!.n,
+        ).toBe(1);
+        expect(
+            ctx
+                .db()
+                .get<{ n: number }>(
+                    'SELECT COUNT(*) AS n FROM document_updates',
+                )!.n,
+        ).toBe(1);
     });
 
     it('scopes daily page ids by workspace', () => {
-        expect(dailyNotePageId(uuidv7(), '2026-08-30')).not.toBe(dailyNotePageId(uuidv7(), '2026-08-30'));
+        expect(dailyNotePageId(uuidv7(), '2026-08-30')).not.toBe(
+            dailyNotePageId(uuidv7(), '2026-08-30'),
+        );
     });
 
     it('restores a deleted daily note when opened', () => {
         const workspaceId = uuidv7();
         const service = new DailyNoteService(ctx);
         const page = service.open(workspaceId, '2026-08-30');
-        ctx.documents().applyChanges([{ type: 'node.delete', payload: { id: page.id, page_id: page.id } }]);
-        expect(findNode(ctx.db(), page.id, { withTrashed: true })!.deleted_at).not.toBeNull();
+        ctx.documents().applyChanges([
+            { type: 'node.delete', payload: { id: page.id, page_id: page.id } },
+        ]);
+        expect(
+            findNode(ctx.db(), page.id, { withTrashed: true })!.deleted_at,
+        ).not.toBeNull();
 
         const restored = service.open(workspaceId, '2026-08-30');
 

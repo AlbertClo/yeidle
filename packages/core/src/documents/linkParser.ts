@@ -4,7 +4,9 @@ type JsonValue = Record<string, unknown> | unknown[];
  * Linked nodes in TipTap JSON: page mentions plus block reference and embed
  * targets. Links derive from ids only, never titles.
  */
-export function extractMentions(content: unknown): { id: string; label: string | null }[] {
+export function extractMentions(
+    content: unknown,
+): { id: string; label: string | null }[] {
     if (Array.isArray(content)) {
         return content.flatMap((item) => extractMentions(item));
     }
@@ -18,7 +20,10 @@ export function extractMentions(content: unknown): { id: string; label: string |
     const mentions: { id: string; label: string | null }[] = [];
 
     if (node.type === 'mention' && typeof attrs.id === 'string') {
-        mentions.push({ id: attrs.id, label: typeof attrs.label === 'string' ? attrs.label : null });
+        mentions.push({
+            id: attrs.id,
+            label: typeof attrs.label === 'string' ? attrs.label : null,
+        });
     }
 
     if (

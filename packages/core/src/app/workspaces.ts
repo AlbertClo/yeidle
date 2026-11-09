@@ -1,6 +1,9 @@
 import type { Database } from '../db/database';
 import { migrate } from '../db/schema';
-import { legacyMigrationNeeded, runLegacyMigration } from '../documents/legacyMigration';
+import {
+    legacyMigrationNeeded,
+    runLegacyMigration,
+} from '../documents/legacyMigration';
 import { DocumentService } from '../documents/service';
 import { isUuid, uuidv7 } from '../support/ids';
 
@@ -66,7 +69,10 @@ export class Workspaces {
     state(): WorkspaceState {
         const state = this.read();
 
-        return { active_workspace_id: state.active_workspace_id, workspaces: state.workspaces };
+        return {
+            active_workspace_id: state.active_workspace_id,
+            workspaces: state.workspaces,
+        };
     }
 
     all(): WorkspaceRecord[] {
@@ -74,7 +80,9 @@ export class Workspaces {
     }
 
     find(id: string): WorkspaceRecord {
-        const workspace = this.read().workspaces.find((candidate) => candidate.id === id);
+        const workspace = this.read().workspaces.find(
+            (candidate) => candidate.id === id,
+        );
 
         if (!workspace) {
             throw new WorkspaceError(`Local workspace [${id}] was not found.`);
@@ -130,7 +138,9 @@ export class Workspaces {
         }
 
         const state = this.read();
-        const record = state.workspaces.find((workspace) => workspace.id === id);
+        const record = state.workspaces.find(
+            (workspace) => workspace.id === id,
+        );
 
         if (!record) {
             throw new WorkspaceError(`Local workspace [${id}] was not found.`);
@@ -159,7 +169,9 @@ export class Workspaces {
     delete(id: string): WorkspaceState {
         const state = this.read();
         const record = this.find(id);
-        state.workspaces = state.workspaces.filter((workspace) => workspace.id !== id);
+        state.workspaces = state.workspaces.filter(
+            (workspace) => workspace.id !== id,
+        );
 
         if (state.workspaces.length === 0) {
             state.workspaces.push(this.createRecord(uuidv7(), 'Personal'));
@@ -203,7 +215,12 @@ export class Workspaces {
     }
 
     storagePath(record: WorkspaceRecord): string {
-        return this.host.files.join(this.host.dataDirectory, 'workspaces', record.id, 'storage');
+        return this.host.files.join(
+            this.host.dataDirectory,
+            'workspaces',
+            record.id,
+            'storage',
+        );
     }
 
     mediaPath(record: WorkspaceRecord): string {
@@ -215,11 +232,25 @@ export class Workspaces {
         const state = this.read();
 
         if (state.workspaces.some((workspace) => workspace.id === record.id)) {
-            throw new WorkspaceError(`Workspace [${record.id}] already exists.`);
+            throw new WorkspaceError(
+                `Workspace [${record.id}] already exists.`,
+            );
         }
 
         state.workspaces.push(record);
         this.write(state);
+    }
+
+    /**
+     * Opens a workspace without making it active (an import into another
+     * workspace). The caller closes its database when done.
+     */
+    openDetached(id: string): Workspace {
+        if (this.open?.id === id) {
+            return this.open;
+        }
+
+        return this.openWorkspace(this.find(id));
     }
 
     close(): void {
@@ -298,14 +329,18 @@ export class Workspaces {
         try {
             state = JSON.parse(files.readText(this.indexPath));
         } catch {
-            throw new WorkspaceError('The local workspace index is not valid JSON.');
+            throw new WorkspaceError(
+                'The local workspace index is not valid JSON.',
+            );
         }
 
         if (
             state?.version !== VERSION ||
             typeof state.active_workspace_id !== 'string' ||
             !Array.isArray(state.workspaces) ||
-            !state.workspaces.some((workspace) => workspace.id === state.active_workspace_id)
+            !state.workspaces.some(
+                (workspace) => workspace.id === state.active_workspace_id,
+            )
         ) {
             throw new WorkspaceError('The local workspace index is invalid.');
         }
@@ -316,7 +351,10 @@ export class Workspaces {
     private write(state: WorkspaceState & { version?: number }): void {
         const files = this.host.files;
         const temporary = `${this.indexPath}.tmp-${uuidv7()}`;
-        files.writeFile(temporary, `${JSON.stringify({ ...state, version: VERSION }, null, 4)}\n`);
+        files.writeFile(
+            temporary,
+            `${JSON.stringify({ ...state, version: VERSION }, null, 4)}\n`,
+        );
         files.rename(temporary, this.indexPath);
     }
 }

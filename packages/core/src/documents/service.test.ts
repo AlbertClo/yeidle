@@ -29,12 +29,16 @@ type NodeRow = {
     is_checked: number | null;
 };
 
-const node = (id: string) => db.get<NodeRow>('SELECT * FROM nodes WHERE id = ?', [id]);
+const node = (id: string) =>
+    db.get<NodeRow>('SELECT * FROM nodes WHERE id = ?', [id]);
 
 function createPage(title: string): string {
     const id = uuidv7();
     documents.applyChanges([
-        { type: 'node.set', payload: { id, page_id: id, fields: { content: title } } },
+        {
+            type: 'node.set',
+            payload: { id, page_id: id, fields: { content: title } },
+        },
     ]);
 
     return id;
@@ -65,7 +69,10 @@ function block(pageId: string, id: string, text: string, position = 'a0') {
 function editorWindow(pageId: string) {
     const doc = createDoc();
     const stored = documents.store.load(pageId);
-    doc.importBatch([...(stored.snapshot ? [stored.snapshot] : []), ...stored.updates]);
+    doc.importBatch([
+        ...(stored.snapshot ? [stored.snapshot] : []),
+        ...stored.updates,
+    ]);
     const base = doc.oplogVersion();
 
     return {
@@ -99,7 +106,11 @@ describe('document service', () => {
     it('creates a page that owns its document', () => {
         const id = createPage('Inbox');
 
-        expect(node(id)).toMatchObject({ content: 'Inbox', parent_id: null, document_id: id });
+        expect(node(id)).toMatchObject({
+            content: 'Inbox',
+            parent_id: null,
+            document_id: id,
+        });
         expect(documents.store.latestSeq(id)).toBeGreaterThan(0);
     });
 
@@ -169,7 +180,10 @@ describe('document service', () => {
                             type: 'paragraph',
                             content: [
                                 { type: 'text', text: 'see ' },
-                                { type: 'mention', attrs: { id: targetId, label: 'Target' } },
+                                {
+                                    type: 'mention',
+                                    attrs: { id: targetId, label: 'Target' },
+                                },
                             ],
                         },
                     },
@@ -178,13 +192,15 @@ describe('document service', () => {
         ]);
 
         expect(
-            db.get('SELECT 1 FROM node_links WHERE source_node_id = ? AND target_node_id = ?', [
-                blockId,
-                targetId,
-            ]),
+            db.get(
+                'SELECT 1 FROM node_links WHERE source_node_id = ? AND target_node_id = ?',
+                [blockId, targetId],
+            ),
         ).toBeDefined();
 
-        documents.applyChanges([{ type: 'node.delete', payload: { id: blockId, page_id: pageId } }]);
+        documents.applyChanges([
+            { type: 'node.delete', payload: { id: blockId, page_id: pageId } },
+        ]);
         expect(node(blockId)!.deleted_at).not.toBeNull();
     });
 
@@ -193,7 +209,10 @@ describe('document service', () => {
         const userRoot = uuidv7();
         const entry = uuidv7();
         documents.applyChanges([
-            { ...block(rootId, userRoot, 'user root'), payload: { ...block(rootId, userRoot, '').payload } },
+            {
+                ...block(rootId, userRoot, 'user root'),
+                payload: { ...block(rootId, userRoot, '').payload },
+            },
         ]);
         // A producer that passes the intermediate node as page_id
         documents.applyChanges([
@@ -202,12 +221,19 @@ describe('document service', () => {
                 payload: {
                     id: entry,
                     page_id: userRoot,
-                    fields: { parent_id: userRoot, position: 'a0', content: 'entry' },
+                    fields: {
+                        parent_id: userRoot,
+                        position: 'a0',
+                        content: 'entry',
+                    },
                 },
             },
         ]);
 
-        expect(node(entry)).toMatchObject({ parent_id: userRoot, document_id: rootId });
+        expect(node(entry)).toMatchObject({
+            parent_id: userRoot,
+            document_id: rootId,
+        });
     });
 
     it('notifies listeners with the documents that changed', () => {
@@ -240,7 +266,10 @@ describe('document service', () => {
         expect(legacyMigrationNeeded(db)).toBe(true);
         expect(runLegacyMigration(db, documents)).toBe(1);
         expect(legacyMigrationNeeded(db)).toBe(false);
-        expect(node(childId)).toMatchObject({ document_id: pageId, is_checked: 1 });
+        expect(node(childId)).toMatchObject({
+            document_id: pageId,
+            is_checked: 1,
+        });
         expect(node(deletedId)!.deleted_at).not.toBeNull();
     });
 });

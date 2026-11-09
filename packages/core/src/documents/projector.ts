@@ -58,7 +58,8 @@ function differs(old: NodeRow, data: NodeData): boolean {
         old.position !== data.position ||
         old.content !== data.content ||
         !sameJson(old.tiptap_content, data.tiptap_content) ||
-        (old.is_checked === null ? null : old.is_checked === 1) !== data.is_checked ||
+        (old.is_checked === null ? null : old.is_checked === 1) !==
+            data.is_checked ||
         old.page_type !== data.page_type ||
         old.daily_note_date !== data.daily_note_date ||
         (old.deleted_at !== null) !== data.deleted ||
@@ -139,7 +140,11 @@ export class Projector {
             };
             const createdAt = this.pageCreatedAt(page, oldPage, stamp);
 
-            if (oldPage === undefined || differs(oldPage, data) || oldPage.created_at !== createdAt) {
+            if (
+                oldPage === undefined ||
+                differs(oldPage, data) ||
+                oldPage.created_at !== createdAt
+            ) {
                 this.upsert(data, oldPage, createdAt, stamp, modified);
                 changed = true;
             }
@@ -166,7 +171,8 @@ export class Projector {
                 continue;
             }
 
-            const createdAt = old?.created_at ?? toSqlTimestamp(block.created_at) ?? stamp;
+            const createdAt =
+                old?.created_at ?? toSqlTimestamp(block.created_at) ?? stamp;
             this.upsert(data, old, createdAt, stamp, modified);
 
             if (
@@ -200,7 +206,10 @@ export class Projector {
         }
 
         if (blocksChanged || changed) {
-            this.db.run('UPDATE nodes SET modified_hlc = ? WHERE id = ?', [modified, documentId]);
+            this.db.run('UPDATE nodes SET modified_hlc = ? WHERE id = ?', [
+                modified,
+                documentId,
+            ]);
         }
 
         return changed || blocksChanged;
@@ -218,7 +227,8 @@ export class Projector {
             position: data.position,
             content: data.content,
             tiptap_content:
-                data.tiptap_content === null || data.tiptap_content === undefined
+                data.tiptap_content === null ||
+                data.tiptap_content === undefined
                     ? null
                     : JSON.stringify(data.tiptap_content),
             is_checked: data.is_checked,
@@ -247,7 +257,11 @@ export class Projector {
         );
     }
 
-    private pageCreatedAt(page: PageRow, old: NodeRow | undefined, stamp: string): string {
+    private pageCreatedAt(
+        page: PageRow,
+        old: NodeRow | undefined,
+        stamp: string,
+    ): string {
         if (page.page_type === 'daily_note' && page.daily_note_date) {
             return `${page.daily_note_date} 00:00:00`;
         }
@@ -260,8 +274,14 @@ export class Projector {
      * that don't exist yet get shell rows so the foreign key holds; their
      * own document fills them in later.
      */
-    private rebuildLinks(nodeId: string, tiptapContent: unknown, stamp: string): void {
-        this.db.run('DELETE FROM node_links WHERE source_node_id = ?', [nodeId]);
+    private rebuildLinks(
+        nodeId: string,
+        tiptapContent: unknown,
+        stamp: string,
+    ): void {
+        this.db.run('DELETE FROM node_links WHERE source_node_id = ?', [
+            nodeId,
+        ]);
 
         const links = new Map<string, string | null>();
 
@@ -271,7 +291,9 @@ export class Projector {
             }
         }
 
-        for (const [targetId, label] of [...links].sort(([a], [b]) => (a < b ? -1 : 1))) {
+        for (const [targetId, label] of [...links].sort(([a], [b]) =>
+            a < b ? -1 : 1,
+        )) {
             this.db.run(
                 `INSERT OR IGNORE INTO nodes (id, content, position, modified_hlc, purged, created_at, updated_at)
                  VALUES (?, '', 'a0', '', 0, ?, ?)`,
@@ -286,7 +308,10 @@ export class Projector {
     }
 
     private writeMedia(media: MediaRow, stamp: string): boolean {
-        if (this.db.get('SELECT 1 FROM media WHERE id = ?', [media.id]) !== undefined) {
+        if (
+            this.db.get('SELECT 1 FROM media WHERE id = ?', [media.id]) !==
+            undefined
+        ) {
             return false;
         }
 

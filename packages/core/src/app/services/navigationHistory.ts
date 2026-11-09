@@ -84,23 +84,32 @@ export class NavigationHistoryStore {
 
         return {
             locations,
-            current_id: locations.some((location) => location.id === currentId) ? currentId : null,
+            current_id: locations.some((location) => location.id === currentId)
+                ? currentId
+                : null,
         };
     }
 
-    save(id: string, location: NavigationLocationInput, makeCurrent: boolean): NavigationLocation {
+    save(
+        id: string,
+        location: NavigationLocationInput,
+        makeCurrent: boolean,
+    ): NavigationLocation {
         const db = this.ctx.db();
         const profileKey = this.profileKey();
         const parentId = location.parent_id ?? null;
 
         if (
             parentId !== null &&
-            db.get('SELECT 1 FROM navigation_locations WHERE id = ? AND profile_key = ?', [
-                parentId,
-                profileKey,
-            ]) === undefined
+            db.get(
+                'SELECT 1 FROM navigation_locations WHERE id = ? AND profile_key = ?',
+                [parentId, profileKey],
+            ) === undefined
         ) {
-            invalid('parent_id', 'The parent navigation location does not exist.');
+            invalid(
+                'parent_id',
+                'The parent navigation location does not exist.',
+            );
         }
 
         const now = sqlTimestamp();
@@ -165,8 +174,10 @@ export class NavigationHistoryStore {
         const profileKey = this.profileKey();
 
         if (
-            db.get('SELECT 1 FROM navigation_locations WHERE id = ? AND profile_key = ?', [id, profileKey]) ===
-            undefined
+            db.get(
+                'SELECT 1 FROM navigation_locations WHERE id = ? AND profile_key = ?',
+                [id, profileKey],
+            ) === undefined
         ) {
             invalid('id', 'The navigation location does not exist.');
         }
@@ -187,8 +198,13 @@ export class NavigationHistoryStore {
         const profileKey = this.profileKey();
 
         db.transaction(() => {
-            db.run('DELETE FROM navigation_history_states WHERE profile_key = ?', [profileKey]);
-            db.run('DELETE FROM navigation_locations WHERE profile_key = ?', [profileKey]);
+            db.run(
+                'DELETE FROM navigation_history_states WHERE profile_key = ?',
+                [profileKey],
+            );
+            db.run('DELETE FROM navigation_locations WHERE profile_key = ?', [
+                profileKey,
+            ]);
         });
     }
 
@@ -200,7 +216,9 @@ export class NavigationHistoryStore {
                 [profileKey],
             );
 
-        return typeof state?.current_location_id === 'string' ? state.current_location_id : null;
+        return typeof state?.current_location_id === 'string'
+            ? state.current_location_id
+            : null;
     }
 
     /** Matches Laravel's updateOrInsert: created_at is rewritten on update too. */
@@ -219,7 +237,11 @@ export class NavigationHistoryStore {
     /** Drops least-recently visited leaves, never the current location or its ancestors. */
     private prune(profileKey: string): void {
         const db = this.ctx.db();
-        const locations = db.all<{ id: string; parent_id: string | null; last_visited_at: string }>(
+        const locations = db.all<{
+            id: string;
+            parent_id: string | null;
+            last_visited_at: string;
+        }>(
             'SELECT id, parent_id, last_visited_at FROM navigation_locations WHERE profile_key = ?',
             [profileKey],
         );
@@ -228,7 +250,9 @@ export class NavigationHistoryStore {
             return;
         }
 
-        const remaining = new Map(locations.map((location) => [location.id, location]));
+        const remaining = new Map(
+            locations.map((location) => [location.id, location]),
+        );
         const protectedIds = new Set<string>();
 
         for (
@@ -253,11 +277,17 @@ export class NavigationHistoryStore {
             let leaf: (typeof locations)[number] | null = null;
 
             for (const location of remaining.values()) {
-                if (protectedIds.has(location.id) || parentIds.has(location.id)) {
+                if (
+                    protectedIds.has(location.id) ||
+                    parentIds.has(location.id)
+                ) {
                     continue;
                 }
 
-                if (leaf === null || location.last_visited_at < leaf.last_visited_at) {
+                if (
+                    leaf === null ||
+                    location.last_visited_at < leaf.last_visited_at
+                ) {
                     leaf = location;
                 }
             }
@@ -304,7 +334,10 @@ function serialize(location: LocationRow): NavigationLocation {
         url: location.url,
         page_id: location.page_id,
         block_id: location.block_id,
-        cursor_offset: location.cursor_offset === null ? null : Number(location.cursor_offset),
+        cursor_offset:
+            location.cursor_offset === null
+                ? null
+                : Number(location.cursor_offset),
         selection_type: location.selection_type ?? null,
         scroll_top: Number(location.scroll_top),
         visited_at: iso8601(location.visited_at),

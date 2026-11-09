@@ -5,7 +5,13 @@ import type { NodeJson, NodeRow } from '../nodes';
 
 export type SearchResult = NodeJson & { page_id: string };
 
-type Score = { tier: number; distance: number; fts_rank: number; modified_hlc: string; id: string };
+type Score = {
+    tier: number;
+    distance: number;
+    fts_rank: number;
+    modified_hlc: string;
+    id: string;
+};
 
 const CANDIDATE_LIMIT = 360;
 const RESULT_LIMIT = 60;
@@ -42,10 +48,16 @@ export function searchNodes(db: Database, rawQuery: string): SearchResult[] {
             pageId,
             score: score(node, query, candidateRanks.get(node.id)!),
         }))
-        .filter((result) => result.score.tier < 6 || result.score.distance <= threshold)
+        .filter(
+            (result) =>
+                result.score.tier < 6 || result.score.distance <= threshold,
+        )
         .sort((left, right) => compare(left.score, right.score))
         .slice(0, RESULT_LIMIT)
-        .map(({ node, pageId }) => ({ ...serializeNode(node), page_id: pageId }));
+        .map(({ node, pageId }) => ({
+            ...serializeNode(node),
+            page_id: pageId,
+        }));
 }
 
 function candidates(db: Database, query: string): Map<string, number> {
@@ -84,7 +96,9 @@ function ftsCandidates(db: Database, match: string): Map<string, number> {
         [match, CANDIDATE_LIMIT],
     );
 
-    return new Map(rows.map((row) => [String(row.id), Number(row.search_rank)]));
+    return new Map(
+        rows.map((row) => [String(row.id), Number(row.search_rank)]),
+    );
 }
 
 function likeCandidates(db: Database, query: string): Map<string, number> {
@@ -112,7 +126,10 @@ function shortTypoCandidates(db: Database, query: string): Map<string, number> {
 
         if (index + 1 < characters.length) {
             const swapped = [...characters];
-            [swapped[index], swapped[index + 1]] = [swapped[index + 1], swapped[index]];
+            [swapped[index], swapped[index + 1]] = [
+                swapped[index + 1],
+                swapped[index],
+            ];
             patterns.push(`%${swapped.join('')}%`);
         }
     }
@@ -145,8 +162,13 @@ function trigrams(query: string): string[] {
  * Resolves all candidate parent chains in batches instead of one query per
  * ancestor, keeping nodes whose chain reaches a live, non-system page.
  */
-function reachableNodes(db: Database, nodes: NodeRow[]): { node: NodeRow; pageId: string }[] {
-    const known = new Map<string, NodeRow>(nodes.map((node) => [node.id, node]));
+function reachableNodes(
+    db: Database,
+    nodes: NodeRow[],
+): { node: NodeRow; pageId: string }[] {
+    const known = new Map<string, NodeRow>(
+        nodes.map((node) => [node.id, node]),
+    );
     const missing = new Set<string>();
 
     while (true) {
@@ -154,7 +176,10 @@ function reachableNodes(db: Database, nodes: NodeRow[]): { node: NodeRow; pageId
             ...new Set(
                 [...known.values()]
                     .map((node) => node.parent_id)
-                    .filter((id): id is string => !!id && !known.has(id) && !missing.has(id)),
+                    .filter(
+                        (id): id is string =>
+                            !!id && !known.has(id) && !missing.has(id),
+                    ),
             ),
         ];
 
@@ -186,7 +211,11 @@ function reachableNodes(db: Database, nodes: NodeRow[]): { node: NodeRow; pageId
         let current: NodeRow | undefined = node;
 
         while (current) {
-            if (SystemNodes.isRoot(current.id) || current.purged || current.deleted_at !== null) {
+            if (
+                SystemNodes.isRoot(current.id) ||
+                current.purged ||
+                current.deleted_at !== null
+            ) {
                 break;
             }
 
@@ -215,7 +244,10 @@ function score(node: NodeRow, query: string, ftsRank: number): Score {
 
     if (content === query) {
         tier = isPage ? 0 : 1;
-    } else if (content.startsWith(query) || hasSequentialTokenPrefixMatch(query, content)) {
+    } else if (
+        content.startsWith(query) ||
+        hasSequentialTokenPrefixMatch(query, content)
+    ) {
         tier = isPage ? 2 : 3;
     } else if (content.includes(query)) {
         tier = isPage ? 4 : 5;
@@ -236,7 +268,10 @@ function words(value: string): string[] {
     return value.split(/\s+/u).filter((word) => word !== '');
 }
 
-function hasSequentialTokenPrefixMatch(query: string, content: string): boolean {
+function hasSequentialTokenPrefixMatch(
+    query: string,
+    content: string,
+): boolean {
     const queryTokens = words(query);
     const contentTokens = words(content);
 
@@ -244,8 +279,16 @@ function hasSequentialTokenPrefixMatch(query: string, content: string): boolean 
         return false;
     }
 
-    for (let start = 0; start <= contentTokens.length - queryTokens.length; start++) {
-        if (queryTokens.every((token, offset) => contentTokens[start + offset].startsWith(token))) {
+    for (
+        let start = 0;
+        start <= contentTokens.length - queryTokens.length;
+        start++
+    ) {
+        if (
+            queryTokens.every((token, offset) =>
+                contentTokens[start + offset].startsWith(token),
+            )
+        ) {
             return true;
         }
     }
@@ -266,9 +309,18 @@ function bestDistance(query: string, content: string): number {
     let best = normalizedDistance(query, substr(content, 160));
 
     for (const windowSize of windowSizes) {
-        for (let index = 0; index <= contentWords.length - windowSize; index++) {
-            const candidate = contentWords.slice(index, index + windowSize).join(' ');
-            best = Math.min(best, normalizedDistance(query, substr(candidate, 160)));
+        for (
+            let index = 0;
+            index <= contentWords.length - windowSize;
+            index++
+        ) {
+            const candidate = contentWords
+                .slice(index, index + windowSize)
+                .join(' ');
+            best = Math.min(
+                best,
+                normalizedDistance(query, substr(candidate, 160)),
+            );
 
             if (best === 0) {
                 return 0;
@@ -302,7 +354,8 @@ function normalizedDistance(left: string, right: string): number {
         if (
             differences.length === 2 &&
             differences[1] === differences[0] + 1 &&
-            leftCharacters[differences[0]] === rightCharacters[differences[1]] &&
+            leftCharacters[differences[0]] ===
+                rightCharacters[differences[1]] &&
             leftCharacters[differences[1]] === rightCharacters[differences[0]]
         ) {
             distance = Math.min(distance, 1);
@@ -359,7 +412,10 @@ function compare(left: Score, right: Score): number {
         }
     }
 
-    return spaceship(right.modified_hlc, left.modified_hlc) || spaceship(right.id, left.id);
+    return (
+        spaceship(right.modified_hlc, left.modified_hlc) ||
+        spaceship(right.id, left.id)
+    );
 }
 
 function normalize(value: string): string {

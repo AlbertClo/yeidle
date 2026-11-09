@@ -79,7 +79,8 @@ function nodeFromRow(row: TreeRow): TreeNode {
         parent_id: row.parent_id,
         position: row.position,
         content: row.content,
-        tiptap_content: row.tiptap_content === null ? null : JSON.parse(row.tiptap_content),
+        tiptap_content:
+            row.tiptap_content === null ? null : JSON.parse(row.tiptap_content),
         is_checked: row.is_checked === null ? null : Boolean(row.is_checked),
         page_type: row.page_type,
         daily_note_date: row.daily_note_date,

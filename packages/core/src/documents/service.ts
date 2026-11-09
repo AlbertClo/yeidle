@@ -7,7 +7,11 @@ import { applyBlocks, createDoc } from '../loro/pageDoc';
 import type { Block } from '../loro/pageDoc';
 import { updatePageMeta } from '../loro/pageMeta';
 import type { PageMeta } from '../loro/pageMeta';
-import { addMedia, MEDIA_DOCUMENT_ID, projectDocument } from '../loro/projection';
+import {
+    addMedia,
+    MEDIA_DOCUMENT_ID,
+    projectDocument,
+} from '../loro/projection';
 import type { MediaRow } from '../loro/projection';
 import { uuidv7 } from '../support/ids';
 
@@ -21,7 +25,9 @@ export type Change =
     | NodeChange
     | {
           type: 'media.create';
-          payload: Omit<MediaRow, 'created_at'> & { created_at?: string | null };
+          payload: Omit<MediaRow, 'created_at'> & {
+              created_at?: string | null;
+          };
       };
 
 export type DocumentAction = {
@@ -40,7 +46,8 @@ export type IncomingUpdate = {
 
 // Fold updates into the stored snapshot once this many accumulate
 const SNAPSHOT_EVERY = 50;
-const CACHE_SIZE = 100;
+// Large enough that a re-import of a big graph doesn't thrash
+const CACHE_SIZE = 500;
 
 /**
  * The single write path for workspace content. Every change becomes a Loro
@@ -77,7 +84,9 @@ export class DocumentService {
      */
     applyUpdates(documentId: string, updates: IncomingUpdate[]): number {
         this.write([documentId], () => {
-            const fresh = updates.filter((update) => !this.store.hasUpdate(update.update_id));
+            const fresh = updates.filter(
+                (update) => !this.store.hasUpdate(update.update_id),
+            );
 
             if (fresh.length === 0) {
                 return [];
@@ -111,7 +120,9 @@ export class DocumentService {
             return [];
         }
 
-        const documentIds = [...new Set(actions.map((action) => action.document_id))];
+        const documentIds = [
+            ...new Set(actions.map((action) => action.document_id)),
+        ];
 
         return this.write(documentIds, () => {
             const changed: string[] = [];
@@ -120,7 +131,9 @@ export class DocumentService {
                 const doc = this.doc(documentId);
                 const before = doc.oplogVersion();
 
-                for (const action of actions.filter((a) => a.document_id === documentId)) {
+                for (const action of actions.filter(
+                    (a) => a.document_id === documentId,
+                )) {
                     if (action.replace) {
                         updatePageMeta(doc, action.replace.page);
                         applyBlocks(doc, action.replace.blocks);
@@ -142,8 +155,6 @@ export class DocumentService {
                 doc.commit();
 
                 if (doc.oplogVersion().compare(before) === 0) {
-                    // Unchanged; still re-project in case the read model drifted
-                    this.projector.write(documentId, projectDocument(doc, documentId));
                     continue;
                 }
 
@@ -178,15 +189,22 @@ export class DocumentService {
                 };
                 action.media!.push({
                     ...change.payload,
-                    created_at: change.payload.created_at ?? new Date().toISOString(),
+                    created_at:
+                        change.payload.created_at ?? new Date().toISOString(),
                 });
                 actions.set(MEDIA_DOCUMENT_ID, action);
 
                 continue;
             }
 
-            const documentId = rootOf(change.payload.id, change.payload.page_id ?? null);
-            const action = actions.get(documentId) ?? { document_id: documentId, changes: [] };
+            const documentId = rootOf(
+                change.payload.id,
+                change.payload.page_id ?? null,
+            );
+            const action = actions.get(documentId) ?? {
+                document_id: documentId,
+                changes: [],
+            };
             action.changes!.push({
                 ...change,
                 payload: { ...change.payload, page_id: documentId },
@@ -202,7 +220,10 @@ export class DocumentService {
         this.write(documentIds, () => {
             for (const documentId of documentIds) {
                 this.cache.delete(documentId);
-                this.projector.write(documentId, projectDocument(this.doc(documentId), documentId));
+                this.projector.write(
+                    documentId,
+                    projectDocument(this.doc(documentId), documentId),
+                );
             }
 
             return documentIds;
@@ -257,7 +278,10 @@ export class DocumentService {
 
         doc = createDoc();
         const stored = this.store.load(documentId);
-        const blobs = [...(stored.snapshot ? [stored.snapshot] : []), ...stored.updates];
+        const blobs = [
+            ...(stored.snapshot ? [stored.snapshot] : []),
+            ...stored.updates,
+        ];
 
         if (blobs.length > 0) {
             doc.importBatch(blobs);
@@ -272,12 +296,20 @@ export class DocumentService {
         return doc;
     }
 
-    private rootResolver(changes: Change[]): (id: string, hint: string | null) => string {
+    private rootResolver(
+        changes: Change[],
+    ): (id: string, hint: string | null) => string {
         const batchParents = new Map<string, unknown>();
 
         for (const change of changes) {
-            if (change.type === 'node.set' && 'parent_id' in change.payload.fields) {
-                batchParents.set(change.payload.id, change.payload.fields.parent_id);
+            if (
+                change.type === 'node.set' &&
+                'parent_id' in change.payload.fields
+            ) {
+                batchParents.set(
+                    change.payload.id,
+                    change.payload.fields.parent_id,
+                );
             }
         }
 
@@ -306,7 +338,10 @@ export class DocumentService {
                 if (batchParents.has(current)) {
                     parent = batchParents.get(current);
                 } else {
-                    const row = this.db.get<{ parent_id: string | null; document_id: string | null }>(
+                    const row = this.db.get<{
+                        parent_id: string | null;
+                        document_id: string | null;
+                    }>(
                         'SELECT parent_id, document_id FROM nodes WHERE id = ?',
                         [current],
                     );

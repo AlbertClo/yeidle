@@ -10,7 +10,9 @@ export function registerKeyBindingRoutes(
     ctx: AppContext,
     keyBindings = new UserKeyBindings(ctx),
 ): void {
-    router.get('/api/key-bindings', ({ request }) => json(keyBindings.listing(platform(request))));
+    router.get('/api/key-bindings', ({ request }) =>
+        json(keyBindings.listing(platform(request))),
+    );
 
     router.put('/api/key-bindings', ({ request, input }) => {
         const bindings = validateBindings(input.raw('bindings'));
@@ -39,21 +41,26 @@ export function registerKeyBindingRoutes(
  * Not ported yet: the PHP app pushed overrides to the cloud account
  * (CloudAccountService::saveKeyBindings). Intentionally a no-op.
  */
-function saveKeyBindingsToCloud(_ctx: AppContext, _overrides: Record<string, string | null>): void {}
+function saveKeyBindingsToCloud(
+    _ctx: AppContext,
+    _overrides: Record<string, string | null>,
+): void {}
 
 /** `bindings` required array, `bindings.*` nullable string max 40. */
 function validateBindings(value: unknown): Record<string, unknown> {
-    const entries =
-        Array.isArray(value)
-            ? value.map((binding, i) => [String(i), binding] as const)
-            : typeof value === 'object' && value !== null
-              ? Object.entries(value)
-              : null;
+    const entries = Array.isArray(value)
+        ? value.map((binding, i) => [String(i), binding] as const)
+        : typeof value === 'object' && value !== null
+          ? Object.entries(value)
+          : null;
 
     if (entries === null) {
-        invalid('bindings', value === undefined || value === null || value === ''
-            ? 'The bindings field is required.'
-            : 'The bindings field must be an array.');
+        invalid(
+            'bindings',
+            value === undefined || value === null || value === ''
+                ? 'The bindings field is required.'
+                : 'The bindings field must be an array.',
+        );
     }
 
     if (entries.length === 0) {
@@ -68,7 +75,9 @@ function validateBindings(value: unknown): Record<string, unknown> {
         const binding = raw === '' ? null : raw;
 
         if (binding !== null && typeof binding !== 'string') {
-            errors[`bindings.${command}`] = [`The bindings.${command} field must be a string.`];
+            errors[`bindings.${command}`] = [
+                `The bindings.${command} field must be a string.`,
+            ];
         } else if (typeof binding === 'string' && binding.length > 40) {
             errors[`bindings.${command}`] = [
                 `The bindings.${command} field must not be greater than 40 characters.`,

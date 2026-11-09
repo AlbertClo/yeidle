@@ -42,11 +42,15 @@ function node(
 }
 
 function setContent(id: string, content: string): void {
-    ctx.documents().applyChanges([{ type: 'node.set', payload: { id, page_id: id, fields: { content } } }]);
+    ctx.documents().applyChanges([
+        { type: 'node.set', payload: { id, page_id: id, fields: { content } } },
+    ]);
 }
 
 function remove(id: string): void {
-    ctx.documents().applyChanges([{ type: 'node.delete', payload: { id, page_id: id } }]);
+    ctx.documents().applyChanges([
+        { type: 'node.delete', payload: { id, page_id: id } },
+    ]);
 }
 
 function setModified(id: string, hlc: string): void {
@@ -57,7 +61,9 @@ const ids = (results: { id: string }[]) => results.map((result) => result.id);
 
 describe('node tree loader', () => {
     it('loads an ordered nested tree', () => {
-        const page = node('Page', null, { id: '00000000-0000-7000-8000-000000000001' });
+        const page = node('Page', null, {
+            id: '00000000-0000-7000-8000-000000000001',
+        });
         const second = '00000000-0000-7000-8000-000000000002';
         const first = '00000000-0000-7000-8000-000000000003';
         // One batch: the engine regenerates stored positions, so later writes
@@ -68,10 +74,16 @@ describe('node tree loader', () => {
                 [first, 'a0'],
             ].map(([id, position]) => ({
                 type: 'node.set' as const,
-                payload: { id, page_id: page, fields: { parent_id: page, position, content: id } },
+                payload: {
+                    id,
+                    page_id: page,
+                    fields: { parent_id: page, position, content: id },
+                },
             })),
         );
-        const nested = node('nested', first, { id: '00000000-0000-7000-8000-000000000004' });
+        const nested = node('nested', first, {
+            id: '00000000-0000-7000-8000-000000000004',
+        });
 
         const tree = loadNodeTree(ctx.db(), page);
 
@@ -86,7 +98,9 @@ describe('node tree loader', () => {
         const page = node('Page');
         const deleted = node('deleted', page);
         node('nested', deleted);
-        ctx.documents().applyChanges([{ type: 'node.delete', payload: { id: deleted, page_id: page } }]);
+        ctx.documents().applyChanges([
+            { type: 'node.delete', payload: { id: deleted, page_id: page } },
+        ]);
 
         expect(loadNodeTree(ctx.db(), page).children).toHaveLength(0);
     });
@@ -103,10 +117,20 @@ describe('backlink loader', () => {
         const sourceParent = node('Parent block', sourcePage);
         const mention = {
             type: 'paragraph',
-            content: [{ type: 'mention', attrs: { id: target, label: 'Target page' } }],
+            content: [
+                {
+                    type: 'mention',
+                    attrs: { id: target, label: 'Target page' },
+                },
+            ],
         };
-        const sourceBlock = node('Linked block', sourceParent, { tiptap_content: mention });
-        node('Second link', sourceParent, { tiptap_content: mention, position: 'b0' });
+        const sourceBlock = node('Linked block', sourceParent, {
+            tiptap_content: mention,
+        });
+        node('Second link', sourceParent, {
+            tiptap_content: mention,
+            position: 'b0',
+        });
 
         const links = ctx
             .db()

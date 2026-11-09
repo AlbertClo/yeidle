@@ -47,7 +47,9 @@ export function runLegacyMigration(
         mime_type: string;
         size: number;
         created_at: string | null;
-    }>('SELECT id, filename, original_name, mime_type, size, created_at FROM media ORDER BY id');
+    }>(
+        'SELECT id, filename, original_name, mime_type, size, created_at FROM media ORDER BY id',
+    );
 
     if (media.length > 0) {
         documents.apply(
@@ -83,13 +85,19 @@ export function runLegacyMigration(
         }
     }
 
-    const converted = new Set(db.all<{ id: string }>('SELECT id FROM documents').map((row) => row.id));
+    const converted = new Set(
+        db.all<{ id: string }>('SELECT id FROM documents').map((row) => row.id),
+    );
     const pages = nodes.filter(
         (node) =>
             node.parent_id === null &&
             !converted.has(node.id) &&
             // Rows created only to satisfy a link's foreign key
-            !(node.content === '' && node.page_type === null && !children.has(node.id)),
+            !(
+                node.content === '' &&
+                node.page_type === null &&
+                !children.has(node.id)
+            ),
     );
 
     const subtree = (parentId: string): Block[] =>
@@ -105,8 +113,12 @@ export function runLegacyMigration(
                         ? JSON.parse(row.tiptap_content)
                         : row.content === ''
                           ? null
-                          : { type: 'paragraph', content: [{ type: 'text', text: row.content }] },
-                is_checked: row.is_checked === null ? null : row.is_checked === 1,
+                          : {
+                                type: 'paragraph',
+                                content: [{ type: 'text', text: row.content }],
+                            },
+                is_checked:
+                    row.is_checked === null ? null : row.is_checked === 1,
                 created_at: row.created_at ?? undefined,
                 children: subtree(row.id),
             }));
@@ -114,21 +126,29 @@ export function runLegacyMigration(
     let count = 0;
 
     for (let i = 0; i < pages.length; i += DOCUMENTS_PER_WRITE) {
-        const actions: DocumentAction[] = pages.slice(i, i + DOCUMENTS_PER_WRITE).map((page) => ({
-            document_id: page.id,
-            replace: {
-                page: {
-                    title: page.content,
-                    page_type: page.page_type === 'daily_note' ? 'daily_note' : null,
-                    daily_note_date: page.daily_note_date,
-                    created_at: page.created_at,
-                    deleted: page.deleted_at !== null,
+        const actions: DocumentAction[] = pages
+            .slice(i, i + DOCUMENTS_PER_WRITE)
+            .map((page) => ({
+                document_id: page.id,
+                replace: {
+                    page: {
+                        title: page.content,
+                        page_type:
+                            page.page_type === 'daily_note'
+                                ? 'daily_note'
+                                : null,
+                        daily_note_date: page.daily_note_date,
+                        created_at: page.created_at,
+                        deleted: page.deleted_at !== null,
+                    },
+                    blocks: subtree(page.id),
                 },
-                blocks: subtree(page.id),
-            },
-        }));
+            }));
         count += documents.apply(actions, MESSAGE).length;
-        progress?.(Math.min(i + DOCUMENTS_PER_WRITE, pages.length), pages.length);
+        progress?.(
+            Math.min(i + DOCUMENTS_PER_WRITE, pages.length),
+            pages.length,
+        );
     }
 
     return count;

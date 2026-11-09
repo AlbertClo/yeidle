@@ -85,7 +85,10 @@ describe('page documents', () => {
 
     it('makes no change when the page is unchanged', () => {
         const doc = createDoc();
-        const page: Spec[] = [{ id: 'a', children: [{ id: 'a1' }] }, { id: 'b' }];
+        const page: Spec[] = [
+            { id: 'a', children: [{ id: 'a1' }] },
+            { id: 'b' },
+        ];
         edit(doc, page);
 
         expect(applyBlocks(doc, blocks(page))).toBe(false);
@@ -105,7 +108,11 @@ describe('page documents', () => {
 
     it('indents, outdents and deletes', () => {
         const doc = createDoc();
-        edit(doc, [{ id: 'a' }, { id: 'b' }, { id: 'c', children: [{ id: 'c1' }] }]);
+        edit(doc, [
+            { id: 'a' },
+            { id: 'b' },
+            { id: 'c', children: [{ id: 'c1' }] },
+        ]);
         edit(doc, [{ id: 'a', children: [{ id: 'b' }] }, { id: 'c1' }]);
 
         expect(shape(doc)).toEqual([['a', ['b']], 'c1']);

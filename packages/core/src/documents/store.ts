@@ -15,7 +15,11 @@ export type StoredDocument = {
     seq: number;
 };
 
-export type StoredUpdate = { seq: number; client_id: string; bytes: Uint8Array };
+export type StoredUpdate = {
+    seq: number;
+    client_id: string;
+    bytes: Uint8Array;
+};
 
 export class DocumentStore {
     constructor(private db: Database) {}
@@ -29,14 +33,20 @@ export class DocumentStore {
     }
 
     exists(documentId: string): boolean {
-        return this.db.get('SELECT 1 FROM documents WHERE id = ?', [documentId]) !== undefined;
+        return (
+            this.db.get('SELECT 1 FROM documents WHERE id = ?', [
+                documentId,
+            ]) !== undefined
+        );
     }
 
     load(documentId: string): StoredDocument {
-        const document = this.db.get<{ snapshot: Uint8Array | null; snapshot_seq: number }>(
-            'SELECT snapshot, snapshot_seq FROM documents WHERE id = ?',
-            [documentId],
-        );
+        const document = this.db.get<{
+            snapshot: Uint8Array | null;
+            snapshot_seq: number;
+        }>('SELECT snapshot, snapshot_seq FROM documents WHERE id = ?', [
+            documentId,
+        ]);
         const snapshotSeq = document?.snapshot_seq ?? 0;
         const updates = this.db.all<{ id: number; bytes: Uint8Array }>(
             'SELECT id, bytes FROM document_updates WHERE document_id = ? AND id > ? ORDER BY id',
@@ -45,7 +55,10 @@ export class DocumentStore {
 
         return {
             id: documentId,
-            snapshot: document?.snapshot && document.snapshot.length > 0 ? document.snapshot : null,
+            snapshot:
+                document?.snapshot && document.snapshot.length > 0
+                    ? document.snapshot
+                    : null,
             updates: updates.map((row) => row.bytes),
             seq: Math.max(snapshotSeq, this.latestSeq(documentId)),
         };
@@ -62,8 +75,9 @@ export class DocumentStore {
 
     hasUpdate(updateId: string): boolean {
         return (
-            this.db.get('SELECT 1 FROM document_updates WHERE update_id = ?', [updateId]) !==
-            undefined
+            this.db.get('SELECT 1 FROM document_updates WHERE update_id = ?', [
+                updateId,
+            ]) !== undefined
         );
     }
 
@@ -83,12 +97,10 @@ export class DocumentStore {
     }
 
     saveSnapshot(documentId: string, snapshot: Uint8Array, seq: number): void {
-        this.db.run('UPDATE documents SET snapshot = ?, snapshot_seq = ?, updated_at = ? WHERE id = ?', [
-            snapshot,
-            seq,
-            sqlTimestamp(),
-            documentId,
-        ]);
+        this.db.run(
+            'UPDATE documents SET snapshot = ?, snapshot_seq = ?, updated_at = ? WHERE id = ?',
+            [snapshot, seq, sqlTimestamp(), documentId],
+        );
     }
 
     /** Number of updates not yet folded into the snapshot. */
@@ -108,20 +120,32 @@ export class DocumentStore {
                 'SELECT id, client_id, bytes FROM document_updates WHERE document_id = ? AND id > ? ORDER BY id',
                 [documentId, since],
             )
-            .map((row) => ({ seq: row.id, client_id: row.client_id, bytes: row.bytes }));
+            .map((row) => ({
+                seq: row.id,
+                client_id: row.client_id,
+                bytes: row.bytes,
+            }));
     }
 
     /** Which documents changed after a local sequence. */
-    changesSince(since: number): { documents: { id: string; seq: number }[]; seq: number } {
+    changesSince(since: number): {
+        documents: { id: string; seq: number }[];
+        seq: number;
+    } {
         const rows = this.db.all<{ document_id: string; seq: number }>(
             'SELECT document_id, MAX(id) AS seq FROM document_updates WHERE id > ? GROUP BY document_id',
             [since],
         );
         const latest =
-            this.db.get<{ seq: number | null }>('SELECT MAX(id) AS seq FROM document_updates')?.seq ?? 0;
+            this.db.get<{ seq: number | null }>(
+                'SELECT MAX(id) AS seq FROM document_updates',
+            )?.seq ?? 0;
 
         return {
-            documents: rows.map((row) => ({ id: row.document_id, seq: row.seq })),
+            documents: rows.map((row) => ({
+                id: row.document_id,
+                seq: row.seq,
+            })),
             seq: Math.max(since, latest),
         };
     }

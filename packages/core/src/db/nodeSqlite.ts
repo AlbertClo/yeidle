@@ -4,7 +4,10 @@ import { bind } from './database';
 import type { Database, RunResult } from './database';
 
 /** node:sqlite (built into Node and Electron) as a core Database. */
-export function openNodeDatabase(path: string, options: { readOnly?: boolean } = {}): Database {
+export function openNodeDatabase(
+    path: string,
+    options: { readOnly?: boolean } = {},
+): Database {
     const db = new DatabaseSync(path, { readOnly: options.readOnly ?? false });
     let depth = 0;
 

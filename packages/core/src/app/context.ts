@@ -23,7 +23,11 @@ export interface Settings {
     set(key: string, value: unknown): void;
 }
 
-export function createContext(host: Host, workspaces: Workspaces, settings: Settings): AppContext {
+export function createContext(
+    host: Host,
+    workspaces: Workspaces,
+    settings: Settings,
+): AppContext {
     return {
         host,
         workspaces,
@@ -42,7 +46,9 @@ export function fileSettings(host: Host, name = 'settings.json'): Settings {
     const load = (): Record<string, unknown> => {
         if (cache === null) {
             try {
-                cache = host.files.exists(path) ? JSON.parse(host.files.readText(path)) : {};
+                cache = host.files.exists(path)
+                    ? JSON.parse(host.files.readText(path))
+                    : {};
             } catch {
                 cache = {};
             }

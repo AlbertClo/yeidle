@@ -41,7 +41,11 @@ export function abort(status: number, message = defaultMessage(status)): never {
     throw new HttpError(status, message);
 }
 
-export function abortIf(condition: unknown, status: number, message?: string): void {
+export function abortIf(
+    condition: unknown,
+    status: number,
+    message?: string,
+): void {
     if (condition) {
         abort(status, message);
     }
@@ -59,7 +63,11 @@ function defaultMessage(status: number): string {
     );
 }
 
-export function json(data: unknown, status = 200, headers: Record<string, string> = {}): AppResponse {
+export function json(
+    data: unknown,
+    status = 200,
+    headers: Record<string, string> = {},
+): AppResponse {
     return {
         status,
         headers: { 'content-type': 'application/json', ...headers },
@@ -76,7 +84,11 @@ export function file(
     contentType: string,
     headers: Record<string, string> = {},
 ): AppResponse {
-    return { status: 200, headers: { 'content-type': contentType, ...headers }, body: { file: path } };
+    return {
+        status: 200,
+        headers: { 'content-type': contentType, ...headers },
+        body: { file: path },
+    };
 }
 
 export function stream(
@@ -119,11 +131,17 @@ export class Input {
         }
 
         if (options.max !== undefined && value.length > options.max) {
-            invalid(key, `The ${key} field must not be greater than ${options.max} characters.`);
+            invalid(
+                key,
+                `The ${key} field must not be greater than ${options.max} characters.`,
+            );
         }
 
         if (options.min !== undefined && value.length < options.min) {
-            invalid(key, `The ${key} field must be at least ${options.min} characters.`);
+            invalid(
+                key,
+                `The ${key} field must be at least ${options.min} characters.`,
+            );
         }
 
         return value;
@@ -145,7 +163,10 @@ export class Input {
 
     integer(key: string, options: { min?: number; max?: number } = {}): number {
         const value = this.data[key];
-        const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+        const number =
+            typeof value === 'string' && value.trim() !== ''
+                ? Number(value)
+                : value;
 
         if (typeof number !== 'number' || !Number.isInteger(number)) {
             invalid(key, `The ${key} field must be an integer.`);
@@ -156,13 +177,19 @@ export class Input {
         }
 
         if (options.max !== undefined && number > options.max) {
-            invalid(key, `The ${key} field must not be greater than ${options.max}.`);
+            invalid(
+                key,
+                `The ${key} field must not be greater than ${options.max}.`,
+            );
         }
 
         return number;
     }
 
-    optionalInteger(key: string, options: { min?: number; max?: number } = {}): number | null {
+    optionalInteger(
+        key: string,
+        options: { min?: number; max?: number } = {},
+    ): number | null {
         const value = this.data[key];
 
         return value === undefined || value === null || value === ''
@@ -173,11 +200,21 @@ export class Input {
     boolean(key: string): boolean {
         const value = this.data[key];
 
-        if (value === true || value === 1 || value === '1' || value === 'true') {
+        if (
+            value === true ||
+            value === 1 ||
+            value === '1' ||
+            value === 'true'
+        ) {
             return true;
         }
 
-        if (value === false || value === 0 || value === '0' || value === 'false') {
+        if (
+            value === false ||
+            value === 0 ||
+            value === '0' ||
+            value === 'false'
+        ) {
             return false;
         }
 
@@ -187,7 +224,9 @@ export class Input {
     optionalBoolean(key: string): boolean | null {
         const value = this.data[key];
 
-        return value === undefined || value === null || value === '' ? null : this.boolean(key);
+        return value === undefined || value === null || value === ''
+            ? null
+            : this.boolean(key);
     }
 
     array<T = unknown>(key: string): T[] {

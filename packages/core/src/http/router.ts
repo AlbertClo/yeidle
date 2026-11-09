@@ -9,9 +9,16 @@ export type RequestContext = {
     file(name: string): UploadedFile | null;
 };
 
-export type Handler = (context: RequestContext) => AppResponse | Promise<AppResponse>;
+export type Handler = (
+    context: RequestContext,
+) => AppResponse | Promise<AppResponse>;
 
-type Route = { method: string; pattern: RegExp; keys: string[]; handler: Handler };
+type Route = {
+    method: string;
+    pattern: RegExp;
+    keys: string[];
+    handler: Handler;
+};
 
 /** Path router with `{param}` segments, matched in registration order. */
 export class Router {
@@ -47,7 +54,12 @@ export class Router {
 
                 return '([^/]+)';
             });
-        this.routes.push({ method, pattern: new RegExp(`^${source || ''}/?$`), keys, handler });
+        this.routes.push({
+            method,
+            pattern: new RegExp(`^${source || ''}/?$`),
+            keys,
+            handler,
+        });
 
         return this;
     }
@@ -76,18 +88,30 @@ export class Router {
         } catch (error) {
             if (error instanceof HttpError) {
                 return json(
-                    error.errors ? { message: error.message, errors: error.errors } : { message: error.message },
+                    error.errors
+                        ? { message: error.message, errors: error.errors }
+                        : { message: error.message },
                     error.status,
                 );
             }
 
             console.error(error);
 
-            return json({ message: error instanceof Error ? error.message : 'Server error.' }, 500);
+            return json(
+                {
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : 'Server error.',
+                },
+                500,
+            );
         }
     }
 
-    private find(request: AppRequest): { route: Route; params: Record<string, string> } | null {
+    private find(
+        request: AppRequest,
+    ): { route: Route; params: Record<string, string> } | null {
         const method = request.method === 'HEAD' ? 'GET' : request.method;
 
         for (const route of this.routes) {
@@ -101,7 +125,10 @@ export class Router {
                 return {
                     route,
                     params: Object.fromEntries(
-                        route.keys.map((key, i) => [key, decodeURIComponent(match[i + 1])]),
+                        route.keys.map((key, i) => [
+                            key,
+                            decodeURIComponent(match[i + 1]),
+                        ]),
                     ),
                 };
             }

@@ -2,7 +2,14 @@ import { placeholders } from '../../db/database';
 import type { NodeChange } from '../../loro/nodeOps';
 import { abort } from '../../http/http';
 import type { AppContext } from '../context';
-import { childrenOf, findNode, isPage, isReachable, isSystemNode, SystemNodes } from '../nodes';
+import {
+    childrenOf,
+    findNode,
+    isPage,
+    isReachable,
+    isSystemNode,
+    SystemNodes,
+} from '../nodes';
 import type { NodeRow } from '../nodes';
 
 import {
@@ -28,7 +35,11 @@ export class PinNodes {
         const db = this.ctx.db();
         const rootId = this.activeRootId();
         const entries = this.entries(rootId);
-        const ids = [...new Set(entries.map((entry) => entry.content).filter((id) => id !== ''))];
+        const ids = [
+            ...new Set(
+                entries.map((entry) => entry.content).filter((id) => id !== ''),
+            ),
+        ];
         const itemsById = new Map<string, NodeRow>();
 
         if (ids.length > 0) {
@@ -55,13 +66,20 @@ export class PinNodes {
     }
 
     isPinned(nodeId: string): boolean {
-        return findNode(this.ctx.db(), entryId(this.activeRootId(), nodeId)) !== null;
+        return (
+            findNode(this.ctx.db(), entryId(this.activeRootId(), nodeId)) !==
+            null
+        );
     }
 
     add(node: NodeRow): void {
         const db = this.ctx.db();
 
-        if (!(isPage(node) && isReachable(db, node) && !isSystemNode(db, node))) {
+        if (!(
+            isPage(node) &&
+            isReachable(db, node) &&
+            !isSystemNode(db, node)
+        )) {
             abort(404);
         }
 
@@ -77,9 +95,15 @@ export class PinNodes {
             const changes: NodeChange[] = [
                 ...containerChanges(PinNodes.ROOT_ID, rootId),
                 ...entries.map((entry, index) =>
-                    setChange(entry.id, rootId, { position: positionAt(index) }),
+                    setChange(entry.id, rootId, {
+                        position: positionAt(index),
+                    }),
                 ),
-                setChange(id, rootId, entryFields(rootId, positionAt(entries.length), node.id)),
+                setChange(
+                    id,
+                    rootId,
+                    entryFields(rootId, positionAt(entries.length), node.id),
+                ),
             ];
 
             this.ctx.documents().applyChanges(changes, 'Pin page');
@@ -97,14 +121,18 @@ export class PinNodes {
                 return;
             }
 
-            this.ctx.documents().applyChanges([deleteChange(entry.id, rootId)], 'Unpin page');
+            this.ctx
+                .documents()
+                .applyChanges([deleteChange(entry.id, rootId)], 'Unpin page');
         });
     }
 
     reorder(nodeIds: string[]): boolean {
         return this.ctx.db().transaction(() => {
             const rootId = this.activeRootId();
-            const entriesByNode = new Map(this.entries(rootId).map((entry) => [entry.content, entry]));
+            const entriesByNode = new Map(
+                this.entries(rootId).map((entry) => [entry.content, entry]),
+            );
 
             if (
                 nodeIds.length !== entriesByNode.size ||
@@ -115,7 +143,9 @@ export class PinNodes {
 
             this.ctx.documents().applyChanges(
                 nodeIds.map((nodeId, index) =>
-                    setChange(entriesByNode.get(nodeId)!.id, rootId, { position: positionAt(index) }),
+                    setChange(entriesByNode.get(nodeId)!.id, rootId, {
+                        position: positionAt(index),
+                    }),
                 ),
                 'Reorder pins',
             );
@@ -125,8 +155,11 @@ export class PinNodes {
     }
 
     activeRootId(): string {
-        return activeAccountRoot(this.ctx.db(), PinNodes.ROOT_ID, (localRootId, cloudRootId) =>
-            this.adoptAccountRoot(localRootId, cloudRootId),
+        return activeAccountRoot(
+            this.ctx.db(),
+            PinNodes.ROOT_ID,
+            (localRootId, cloudRootId) =>
+                this.adoptAccountRoot(localRootId, cloudRootId),
         );
     }
 
@@ -135,7 +168,9 @@ export class PinNodes {
             return;
         }
 
-        const cloudEntries = new Set(this.entries(cloudRootId).map((entry) => entry.content));
+        const cloudEntries = new Set(
+            this.entries(cloudRootId).map((entry) => entry.content),
+        );
         const changes = containerChanges(PinNodes.ROOT_ID, cloudRootId);
 
         for (const entry of this.entries(localRootId)) {

@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import type { AppRequest, AppResponse, UploadedFile } from '@yeidle/core/http/http';
+import type {
+    AppRequest,
+    AppResponse,
+    UploadedFile,
+} from '@yeidle/core/http/http';
 import { net } from 'electron';
 
 /**
@@ -46,7 +50,9 @@ export async function toAppRequest(request: Request): Promise<AppRequest> {
                     try {
                         const parsed: unknown = JSON.parse(text);
                         body =
-                            parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+                            parsed !== null &&
+                            typeof parsed === 'object' &&
+                            !Array.isArray(parsed)
                                 ? (parsed as Record<string, unknown>)
                                 : {};
                     } catch {
@@ -69,7 +75,10 @@ export async function toResponse(response: AppResponse): Promise<Response> {
     }
 
     if (typeof body === 'string' || body instanceof Uint8Array) {
-        return new Response(body as BodyInit, { status: response.status, headers });
+        return new Response(body as BodyInit, {
+            status: response.status,
+            headers,
+        });
     }
 
     if ('file' in body) {
@@ -126,19 +135,27 @@ const MIME_TYPES: Record<string, string> = {
 export function serveStatic(root: string, pathname: string): Response {
     const file = path.normalize(path.join(root, decodeURIComponent(pathname)));
 
-    if (!file.startsWith(root) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    if (
+        !file.startsWith(root) ||
+        !fs.existsSync(file) ||
+        !fs.statSync(file).isFile()
+    ) {
         return new Response('Not found', { status: 404 });
     }
 
     return new Response(fs.readFileSync(file), {
         headers: {
-            'content-type': MIME_TYPES[path.extname(file)] ?? 'application/octet-stream',
+            'content-type':
+                MIME_TYPES[path.extname(file)] ?? 'application/octet-stream',
         },
     });
 }
 
 /** Renderer assets from the Vite dev server (development). */
-export function proxyToDevServer(devUrl: string, request: Request): Promise<Response> {
+export function proxyToDevServer(
+    devUrl: string,
+    request: Request,
+): Promise<Response> {
     const url = new URL(request.url);
 
     return net.fetch(`${devUrl}${url.pathname}${url.search}`, {

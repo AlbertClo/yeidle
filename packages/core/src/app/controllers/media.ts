@@ -34,9 +34,11 @@ type MediaRecord = {
 
 export function registerMediaRoutes(router: Router, ctx: AppContext): void {
     const files = ctx.host.files;
-    const storage = (...parts: string[]) => files.join(ctx.workspace().storagePath, ...parts);
+    const storage = (...parts: string[]) =>
+        files.join(ctx.workspace().storagePath, ...parts);
     const uploadDirectory = (uploadId: string) => storage('uploads', uploadId);
-    const metaPath = (uploadId: string) => files.join(uploadDirectory(uploadId), 'meta.json');
+    const metaPath = (uploadId: string) =>
+        files.join(uploadDirectory(uploadId), 'meta.json');
 
     // Upload ids are UUIDs we minted; anything else can't name an upload (and mustn't name a path)
     const findUpload = (uploadId: string): UploadMeta | null =>
@@ -45,7 +47,9 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
             : null;
 
     const findMedia = (id: string): MediaRecord => {
-        const media = ctx.db().get<MediaRecord>('SELECT * FROM media WHERE id = ?', [id]);
+        const media = ctx
+            .db()
+            .get<MediaRecord>('SELECT * FROM media WHERE id = ?', [id]);
 
         if (!media) {
             abort(404, `No query results for model [App\\Models\\Media] ${id}`);
@@ -102,7 +106,10 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
             return json({ message: 'Upload not found' }, 404);
         }
 
-        files.writeFile(files.join(uploadDirectory(uploadId), `chunk_${chunkIndex}`), chunk.bytes);
+        files.writeFile(
+            files.join(uploadDirectory(uploadId), `chunk_${chunkIndex}`),
+            chunk.bytes,
+        );
         meta.received_chunks++;
         writeMeta(uploadId, meta);
 
@@ -182,7 +189,10 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
         // Blobs are extension-less content hashes; link them under the original
         // filename so the OS can pick the right application
         files.mkdir(storage('media-open'));
-        const target = storage('media-open', `${media.id}-${files.basename(media.original_name)}`);
+        const target = storage(
+            'media-open',
+            `${media.id}-${files.basename(media.original_name)}`,
+        );
 
         if (!files.exists(target)) {
             files.link(blob, target);

@@ -36,5 +36,11 @@ export interface Host {
     showItemInFolder(path: string): void;
     openExternal(url: string): void;
     /** Downloads a URL (Roam attachments). */
-    fetch(url: string): Promise<{ status: number; contentType: string | null; bytes: Uint8Array }>;
+    fetch(
+        url: string,
+    ): Promise<{
+        status: number;
+        contentType: string | null;
+        bytes: Uint8Array;
+    }>;
 }

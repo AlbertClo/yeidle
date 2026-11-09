@@ -55,40 +55,83 @@ describe('key binding routes', () => {
 
         expect(ctx.settings.get('key_bindings')).toEqual({
             version: 1,
-            profiles: { local: { key_bindings: { 'command-palette': 'Mod+Shift+P', 'toggle-pin': null } } },
+            profiles: {
+                local: {
+                    key_bindings: {
+                        'command-palette': 'Mod+Shift+P',
+                        'toggle-pin': null,
+                    },
+                },
+            },
         });
-        expect(ctx.db().get<{ count: number }>('SELECT COUNT(*) AS count FROM nodes')!.count).toBe(0);
+        expect(
+            ctx
+                .db()
+                .get<{ count: number }>('SELECT COUNT(*) AS count FROM nodes')!
+                .count,
+        ).toBe(0);
     });
 
     it('scopes bindings to the cloud user and adopts the shared local profile', async () => {
         expect(
-            (await call(router, 'PUT', '/api/key-bindings', { bindings: { 'all-pages': 'Mod+Shift+A' } })).status,
+            (
+                await call(router, 'PUT', '/api/key-bindings', {
+                    bindings: { 'all-pages': 'Mod+Shift+A' },
+                })
+            ).status,
         ).toBe(200);
 
         profileKey = 'cloud:user-a';
-        expect((await call(router, 'GET', '/api/key-bindings')).json.bindings['all-pages']).toBe('Mod+Shift+A');
         expect(
-            (await call(router, 'PUT', '/api/key-bindings', { bindings: { 'all-pages': 'Mod+Shift+B' } })).status,
+            (await call(router, 'GET', '/api/key-bindings')).json.bindings[
+                'all-pages'
+            ],
+        ).toBe('Mod+Shift+A');
+        expect(
+            (
+                await call(router, 'PUT', '/api/key-bindings', {
+                    bindings: { 'all-pages': 'Mod+Shift+B' },
+                })
+            ).status,
         ).toBe(200);
 
         profileKey = 'cloud:user-b';
-        expect((await call(router, 'GET', '/api/key-bindings')).json.bindings['all-pages']).toBe('Mod+Shift+A');
+        expect(
+            (await call(router, 'GET', '/api/key-bindings')).json.bindings[
+                'all-pages'
+            ],
+        ).toBe('Mod+Shift+A');
 
         profileKey = 'cloud:user-a';
-        expect((await call(router, 'GET', '/api/key-bindings')).json.bindings['all-pages']).toBe('Mod+Shift+B');
+        expect(
+            (await call(router, 'GET', '/api/key-bindings')).json.bindings[
+                'all-pages'
+            ],
+        ).toBe('Mod+Shift+B');
     });
 
     it('rejects unknown, invalid and conflicting bindings', async () => {
-        for (const bindings of [{ unknown: 'Mod+U' }, { 'all-pages': 'A' }, { 'all-pages': 'Mod+K' }]) {
-            const response = await call(router, 'PUT', '/api/key-bindings', { bindings });
+        for (const bindings of [
+            { unknown: 'Mod+U' },
+            { 'all-pages': 'A' },
+            { 'all-pages': 'Mod+K' },
+        ]) {
+            const response = await call(router, 'PUT', '/api/key-bindings', {
+                bindings,
+            });
             expect(response.status).toBe(422);
             expect(response.json.errors).toHaveProperty('bindings');
         }
 
-        expect((await call(router, 'PUT', '/api/key-bindings', {})).status).toBe(422);
         expect(
-            (await call(router, 'PUT', '/api/key-bindings', { bindings: { 'all-pages': 'Mod+'.repeat(20) + 'A' } }))
-                .json.errors,
+            (await call(router, 'PUT', '/api/key-bindings', {})).status,
+        ).toBe(422);
+        expect(
+            (
+                await call(router, 'PUT', '/api/key-bindings', {
+                    bindings: { 'all-pages': 'Mod+'.repeat(20) + 'A' },
+                })
+            ).json.errors,
         ).toHaveProperty(['bindings.all-pages']);
     });
 
@@ -104,11 +147,25 @@ describe('key binding routes', () => {
 
         // The PHP test sent no header here and relied on the host OS; be explicit
         expect(
-            (await call(router, 'PUT', '/api/key-bindings', { bindings: defaultKeyBindings(true) }, mac)).status,
+            (
+                await call(
+                    router,
+                    'PUT',
+                    '/api/key-bindings',
+                    { bindings: defaultKeyBindings(true) },
+                    mac,
+                )
+            ).status,
         ).toBe(200);
         expect(keyBindings.overrides()).toEqual({});
 
-        const others = await call(router, 'GET', '/api/key-bindings', {}, other);
+        const others = await call(
+            router,
+            'GET',
+            '/api/key-bindings',
+            {},
+            other,
+        );
         expect(others.json.bindings['move-node-up']).toBe('Alt+Shift+ArrowUp');
         expect(others.json.bindings.back).toBe('Alt+ArrowLeft');
     });
@@ -119,11 +176,19 @@ describe('key binding routes', () => {
         });
         expect(saved.status).toBe(200);
         expect(saved.json.bindings['all-pages']).toBe('G A');
-        expect((await call(router, 'GET', '/api/key-bindings')).json.bindings['daily-notes']).toBe('G J');
+        expect(
+            (await call(router, 'GET', '/api/key-bindings')).json.bindings[
+                'daily-notes'
+            ],
+        ).toBe('G J');
 
-        expect((await call(router, 'PUT', '/api/key-bindings', { bindings: { 'all-pages': 'G A B' } })).status).toBe(
-            422,
-        );
+        expect(
+            (
+                await call(router, 'PUT', '/api/key-bindings', {
+                    bindings: { 'all-pages': 'G A B' },
+                })
+            ).status,
+        ).toBe(422);
 
         const conflict = await call(
             router,
@@ -149,12 +214,18 @@ describe('key binding routes', () => {
         ).toBe(200);
 
         const listing = await call(router, 'GET', '/api/key-bindings');
-        expect(listing.json.bindings['previous-daily-note']).toBe('Ctrl+Shift+BracketLeft');
-        expect(listing.json.bindings['next-daily-note']).toBe('Ctrl+Shift+BracketRight');
+        expect(listing.json.bindings['previous-daily-note']).toBe(
+            'Ctrl+Shift+BracketLeft',
+        );
+        expect(listing.json.bindings['next-daily-note']).toBe(
+            'Ctrl+Shift+BracketRight',
+        );
     });
 
     it('normalizes modifier order and key case', async () => {
-        const saved = await call(router, 'PUT', '/api/key-bindings', { bindings: { 'all-pages': 'Shift+Alt+x' } });
+        const saved = await call(router, 'PUT', '/api/key-bindings', {
+            bindings: { 'all-pages': 'Shift+Alt+x' },
+        });
         expect(saved.json.bindings['all-pages']).toBe('Alt+Shift+X');
     });
 });

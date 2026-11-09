@@ -23,7 +23,10 @@ export function syncIdentity(db: Database): SyncIdentity {
 
     if (state === undefined) {
         const clientId = uuidv7();
-        db.run('INSERT INTO sync_state (client_id, last_server_seq) VALUES (?, 0)', [clientId]);
+        db.run(
+            'INSERT INTO sync_state (client_id, last_server_seq) VALUES (?, 0)',
+            [clientId],
+        );
         state = { client_id: clientId, cloud_user_id: null };
     }
 
@@ -48,7 +51,10 @@ export function activeAccountRoot(
         return localRootId;
     }
 
-    const cloudRootId = userRootId(systemRootId, `cloud:${state.cloud_user_id}`);
+    const cloudRootId = userRootId(
+        systemRootId,
+        `cloud:${state.cloud_user_id}`,
+    );
 
     if (localRootId !== cloudRootId) {
         adopt(localRootId, cloudRootId);
@@ -65,7 +71,11 @@ export function entryId(rootId: string, name: string): string {
     return uuid5(rootId, name);
 }
 
-export function setChange(id: string, pageId: string, fields: Record<string, unknown>): NodeChange {
+export function setChange(
+    id: string,
+    pageId: string,
+    fields: Record<string, unknown>,
+): NodeChange {
     return { type: 'node.set', payload: { id, page_id: pageId, fields } };
 }
 
@@ -74,7 +84,10 @@ export function deleteChange(id: string, pageId: string): NodeChange {
 }
 
 /** Ensures the hidden system root and the account root exist (and are live). */
-export function containerChanges(systemRootId: string, userRootId: string): NodeChange[] {
+export function containerChanges(
+    systemRootId: string,
+    userRootId: string,
+): NodeChange[] {
     return [
         setChange(systemRootId, systemRootId, {
             parent_id: null,
@@ -94,7 +107,11 @@ export function containerChanges(systemRootId: string, userRootId: string): Node
 }
 
 /** Fields for a new entry under an account root. */
-export function entryFields(rootId: string, position: string, content: string): Record<string, unknown> {
+export function entryFields(
+    rootId: string,
+    position: string,
+    content: string,
+): Record<string, unknown> {
     return {
         parent_id: rootId,
         position,

@@ -36,7 +36,9 @@ function compareSiblings(a: Block, b: Block): number {
 }
 
 function insertSorted(siblings: Block[], block: Block): void {
-    const at = siblings.findIndex((sibling) => compareSiblings(block, sibling) < 0);
+    const at = siblings.findIndex(
+        (sibling) => compareSiblings(block, sibling) < 0,
+    );
 
     if (at === -1) {
         siblings.push(block);
@@ -127,7 +129,8 @@ export function applyNodeChanges(
                 }
 
                 if ('page_type' in fields) {
-                    meta.page_type = fields.page_type === 'daily_note' ? 'daily_note' : null;
+                    meta.page_type =
+                        fields.page_type === 'daily_note' ? 'daily_note' : null;
                 }
 
                 if ('daily_note_date' in fields) {
@@ -137,7 +140,10 @@ export function applyNodeChanges(
                             : null;
                 }
 
-                if ('created_at' in fields && typeof fields.created_at === 'string') {
+                if (
+                    'created_at' in fields &&
+                    typeof fields.created_at === 'string'
+                ) {
                     meta.created_at = fields.created_at;
                 }
 
@@ -173,13 +179,20 @@ export function applyNodeChanges(
             block = {
                 id,
                 parent_id:
-                    typeof fields.parent_id === 'string' ? fields.parent_id : pageId,
-                position: typeof fields.position === 'string' ? fields.position : 'a0',
+                    typeof fields.parent_id === 'string'
+                        ? fields.parent_id
+                        : pageId,
+                position:
+                    typeof fields.position === 'string'
+                        ? fields.position
+                        : 'a0',
                 content: '',
                 tiptap_content: null,
                 is_checked: null,
                 created_at:
-                    typeof fields.created_at === 'string' ? fields.created_at : undefined,
+                    typeof fields.created_at === 'string'
+                        ? fields.created_at
+                        : undefined,
                 children: [],
             };
             byId.set(id, block);
@@ -190,7 +203,9 @@ export function applyNodeChanges(
 
             if ('parent_id' in fields) {
                 block.parent_id =
-                    typeof fields.parent_id === 'string' ? fields.parent_id : pageId;
+                    typeof fields.parent_id === 'string'
+                        ? fields.parent_id
+                        : pageId;
             }
 
             if (typeof fields.position === 'string') {
@@ -202,9 +217,13 @@ export function applyNodeChanges(
         }
 
         if ('tiptap_content' in fields) {
-            block.tiptap_content = (fields.tiptap_content ?? null) as TiptapContent;
+            block.tiptap_content = (fields.tiptap_content ??
+                null) as TiptapContent;
 
-            if (block.tiptap_content === null && typeof fields.content === 'string') {
+            if (
+                block.tiptap_content === null &&
+                typeof fields.content === 'string'
+            ) {
                 block.tiptap_content = paragraph(fields.content);
             }
 
@@ -216,14 +235,16 @@ export function applyNodeChanges(
 
         if ('is_checked' in fields) {
             block.is_checked =
-                typeof fields.is_checked === 'boolean' ? fields.is_checked : null;
+                typeof fields.is_checked === 'boolean'
+                    ? fields.is_checked
+                    : null;
             treeChanged = true;
         }
     }
 
     // Parents created later in the same batch adopt their children; anything
     // still orphaned keeps its content at the end of the page
-    for (let progress = true; progress && orphans.length > 0; ) {
+    for (let progress = true; progress && orphans.length > 0;) {
         progress = false;
 
         for (const orphan of [...orphans]) {

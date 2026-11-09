@@ -9,7 +9,10 @@ import type { AppContext } from '../context';
  */
 export function registerCloudRoutes(router: Router, ctx: AppContext): void {
     const unavailable = () =>
-        json({ message: 'Yeidle Cloud is not available in this version yet.' }, 422);
+        json(
+            { message: 'Yeidle Cloud is not available in this version yet.' },
+            422,
+        );
 
     router.get('/api/account', () =>
         json({
@@ -27,7 +30,9 @@ export function registerCloudRoutes(router: Router, ctx: AppContext): void {
     router.post('/api/account/connect', unavailable);
     router.delete('/api/account/connect', () => json({ cancelled: true }));
     router.post('/api/account/complete', unavailable);
-    router.post('/api/account/broadcasting-auth', () => json({ message: 'Forbidden.' }, 403));
+    router.post('/api/account/broadcasting-auth', () =>
+        json({ message: 'Forbidden.' }, 403),
+    );
     router.post('/api/account/refresh', unavailable);
     router.post('/api/account/sync-active-workspace', unavailable);
     router.delete('/api/account', () => json({ signed_out: true }));
@@ -51,7 +56,13 @@ export function registerCloudRoutes(router: Router, ctx: AppContext): void {
         }),
     );
     router.get('/api/cloud/realtime-config', () => json({ enabled: false }));
-    router.post('/api/cloud/broadcasting-auth', () => json({ message: 'Forbidden.' }, 403));
-    router.post('/api/cloud/realtime-ops', () => json({ applied: 0, needs_pull: false, ignored: true }));
-    router.post('/api/sync/cloud-exchange', () => json({ pushed: 0, pulled: 0 }));
+    router.post('/api/cloud/broadcasting-auth', () =>
+        json({ message: 'Forbidden.' }, 403),
+    );
+    router.post('/api/cloud/realtime-ops', () =>
+        json({ applied: 0, needs_pull: false, ignored: true }),
+    );
+    router.post('/api/sync/cloud-exchange', () =>
+        json({ pushed: 0, pulled: 0 }),
+    );
 }

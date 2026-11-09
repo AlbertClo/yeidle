@@ -64,10 +64,7 @@ import {
 } from '@/stores/pins';
 import { DocumentSession } from '@/sync/documentSession';
 import type { DocumentState } from '@/sync/documentSession';
-import {
-    documentsInEvent,
-    LOCAL_OPS_AVAILABLE_EVENT,
-} from '@/sync/localOps';
+import { documentsInEvent, LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
 import type { LocalOpsAvailableEvent } from '@/sync/localOps';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import { notifyLocalNodesChanged } from '@/sync/nodeChanges';
@@ -377,7 +374,11 @@ let lastSelection: EditorSelectionBookmark | null = null;
 
 type Shape = { id: string; parent: string | null; children: string[] };
 
-function shapeOf(nodes: Node[], parent: string | null, into: Map<string, Shape>) {
+function shapeOf(
+    nodes: Node[],
+    parent: string | null,
+    into: Map<string, Shape>,
+) {
     for (const node of nodes) {
         into.set(node.id, {
             id: node.id,

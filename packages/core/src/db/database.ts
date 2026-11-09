@@ -10,7 +10,10 @@ export type RunResult = { changes: number; lastInsertRowid: number };
 
 export interface Database {
     all<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[];
-    get<T = Record<string, unknown>>(sql: string, params?: unknown[]): T | undefined;
+    get<T = Record<string, unknown>>(
+        sql: string,
+        params?: unknown[],
+    ): T | undefined;
     run(sql: string, params?: unknown[]): RunResult;
     exec(sql: string): void;
     /** Runs fn atomically. Nested calls use savepoints. */

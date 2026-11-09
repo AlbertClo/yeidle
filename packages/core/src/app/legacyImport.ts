@@ -20,7 +20,10 @@ import type { WorkspaceRecord } from './workspaces';
 
 type LegacyWorkspace = { id: string; name: string; database: string };
 
-export type LegacyImportResult = { imported: string[]; activeWorkspaceId: string | null };
+export type LegacyImportResult = {
+    imported: string[];
+    activeWorkspaceId: string | null;
+};
 
 export function legacyIndexPath(host: Host, legacyDirectory: string): string {
     return host.files.join(legacyDirectory, 'database', 'workspaces.json');
@@ -52,11 +55,18 @@ export function importLegacyWorkspaces(
 
         const source = files.join(legacyDatabaseDirectory, workspace.database);
 
-        if (!files.isFile(source) || workspace.database.split(/[\\/]/).includes('..')) {
+        if (
+            !files.isFile(source) ||
+            workspace.database.split(/[\\/]/).includes('..')
+        ) {
             continue;
         }
 
-        const target = files.join(host.dataDirectory, 'workspaces', `${workspace.id}.sqlite`);
+        const target = files.join(
+            host.dataDirectory,
+            'workspaces',
+            `${workspace.id}.sqlite`,
+        );
         files.mkdir(files.dirname(target));
         files.unlink(target);
 
@@ -86,9 +96,27 @@ export function importLegacyWorkspaces(
 
         const media =
             workspace.database === 'database.sqlite'
-                ? files.join(legacyDirectory, 'storage', 'app', 'private', 'media')
-                : files.join(legacyDatabaseDirectory, 'workspaces', workspace.id, 'storage', 'media');
-        const targetMedia = files.join(host.dataDirectory, 'workspaces', workspace.id, 'storage', 'media');
+                ? files.join(
+                      legacyDirectory,
+                      'storage',
+                      'app',
+                      'private',
+                      'media',
+                  )
+                : files.join(
+                      legacyDatabaseDirectory,
+                      'workspaces',
+                      workspace.id,
+                      'storage',
+                      'media',
+                  );
+        const targetMedia = files.join(
+            host.dataDirectory,
+            'workspaces',
+            workspace.id,
+            'storage',
+            'media',
+        );
 
         if (files.isDirectory(media)) {
             files.mkdir(files.dirname(targetMedia));
@@ -97,7 +125,11 @@ export function importLegacyWorkspaces(
 
         records.push({
             id: workspace.id,
-            name: typeof workspace.name === 'string' && workspace.name.trim() !== '' ? workspace.name : 'Workspace',
+            name:
+                typeof workspace.name === 'string' &&
+                workspace.name.trim() !== ''
+                    ? workspace.name
+                    : 'Workspace',
             database: `workspaces/${workspace.id}.sqlite`,
             cloud_account_id: null,
             cloud_status: 'local',
@@ -111,7 +143,9 @@ export function importLegacyWorkspaces(
         return { imported: [], activeWorkspaceId: null };
     }
 
-    const active = records.some((record) => record.id === state.active_workspace_id)
+    const active = records.some(
+        (record) => record.id === state.active_workspace_id,
+    )
         ? state.active_workspace_id!
         : records[0].id;
     files.mkdir(host.dataDirectory);
@@ -120,5 +154,8 @@ export function importLegacyWorkspaces(
         `${JSON.stringify({ version: 3, active_workspace_id: active, workspaces: records }, null, 4)}\n`,
     );
 
-    return { imported: records.map((record) => record.id), activeWorkspaceId: active };
+    return {
+        imported: records.map((record) => record.id),
+        activeWorkspaceId: active,
+    };
 }

@@ -38,7 +38,9 @@ export function registerWorkspaceRoutes(router: Router, ctx: AppContext): void {
     router.patch('/api/workspaces/{workspaceId}', ({ params, input }) => {
         const name = input.string('name', { max: 100 });
 
-        return failing(422, () => ({ workspace: ctx.workspaces.rename(params.workspaceId, name) }));
+        return failing(422, () => ({
+            workspace: ctx.workspaces.rename(params.workspaceId, name),
+        }));
     });
 
     router.delete('/api/workspaces/{workspaceId}', ({ params }) =>
@@ -46,34 +48,43 @@ export function registerWorkspaceRoutes(router: Router, ctx: AppContext): void {
     );
 
     router.post('/api/workspaces/{workspaceId}/activate', ({ params }) =>
-        failing(404, () => ({ workspace: ctx.workspaces.activate(params.workspaceId) })),
+        failing(404, () => ({
+            workspace: ctx.workspaces.activate(params.workspaceId),
+        })),
     );
 
     router.post('/api/workspaces/{workspaceId}/sync', () =>
-        json({ message: 'Cloud sync is not available in this version yet.' }, 422),
+        json(
+            { message: 'Cloud sync is not available in this version yet.' },
+            422,
+        ),
     );
 
-    router.post('/api/workspaces/{workspaceId}/show-on-disk', ({ params, input }) =>
-        failing(404, () => {
-            const record = ctx.workspaces.find(params.workspaceId);
-            const target = input.optionalString('target') ?? 'database';
-            const files = ctx.host.files;
+    router.post(
+        '/api/workspaces/{workspaceId}/show-on-disk',
+        ({ params, input }) =>
+            failing(404, () => {
+                const record = ctx.workspaces.find(params.workspaceId);
+                const target = input.optionalString('target') ?? 'database';
+                const files = ctx.host.files;
 
-            if (target === 'media') {
-                const media = ctx.workspaces.mediaPath(record);
-                files.mkdir(media);
-                ctx.host.showItemInFolder(media);
-            } else {
-                const database = ctx.workspaces.databasePath(record);
+                if (target === 'media') {
+                    const media = ctx.workspaces.mediaPath(record);
+                    files.mkdir(media);
+                    ctx.host.showItemInFolder(media);
+                } else {
+                    const database = ctx.workspaces.databasePath(record);
 
-                if (!files.isFile(database)) {
-                    throw new WorkspaceError('The workspace database was not found on this device.');
+                    if (!files.isFile(database)) {
+                        throw new WorkspaceError(
+                            'The workspace database was not found on this device.',
+                        );
+                    }
+
+                    ctx.host.showItemInFolder(database);
                 }
 
-                ctx.host.showItemInFolder(database);
-            }
-
-            return null;
-        }),
+                return null;
+            }),
     );
 }

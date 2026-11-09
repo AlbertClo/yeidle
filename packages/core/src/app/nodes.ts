@@ -12,7 +12,11 @@ export const SystemNodes = {
     PREFERENCES_ROOT_ID: 'a80584ce-bfc0-537d-b1fd-a76e68f1a949',
     COLLAPSED_NODES_ROOT_ID: 'cb358d9c-f818-406a-bce5-0e4c78b72b13',
     get ROOT_IDS(): string[] {
-        return [this.PINS_ROOT_ID, this.PREFERENCES_ROOT_ID, this.COLLAPSED_NODES_ROOT_ID];
+        return [
+            this.PINS_ROOT_ID,
+            this.PREFERENCES_ROOT_ID,
+            this.COLLAPSED_NODES_ROOT_ID,
+        ];
     },
     isRoot(id: string): boolean {
         return this.ROOT_IDS.includes(id);
@@ -66,7 +70,8 @@ export function serializeNode(row: NodeRow): NodeJson {
         created_at: jsonTimestamp(row.created_at),
         updated_at: jsonTimestamp(row.updated_at),
         deleted_at: jsonTimestamp(row.deleted_at),
-        tiptap_content: row.tiptap_content === null ? null : JSON.parse(row.tiptap_content),
+        tiptap_content:
+            row.tiptap_content === null ? null : JSON.parse(row.tiptap_content),
         modified_hlc: row.modified_hlc,
         page_type: row.page_type,
         daily_note_date: row.daily_note_date,

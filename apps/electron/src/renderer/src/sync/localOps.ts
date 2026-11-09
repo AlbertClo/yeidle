@@ -61,6 +61,9 @@ export function documentsInEvent(ops: CommittedOp[] | null): string[] | null {
     }
 
     return ops
-        .map((op) => (op.payload as Record<string, unknown> | undefined)?.page_id)
+        .map(
+            (op) =>
+                (op.payload as Record<string, unknown> | undefined)?.page_id,
+        )
         .filter((id): id is string => typeof id === 'string');
 }

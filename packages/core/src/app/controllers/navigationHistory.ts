@@ -27,26 +27,33 @@ export function registerNavigationHistoryRoutes(
         return json({ current_id: id });
     });
 
-    router.put('/api/navigation-history/locations/{locationId}', ({ params, input }) => {
-        const location = validateLocation(input);
-        const makeCurrent = input.has('make_current') ? input.boolean('make_current') : false;
+    router.put(
+        '/api/navigation-history/locations/{locationId}',
+        ({ params, input }) => {
+            const location = validateLocation(input);
+            const makeCurrent = input.has('make_current')
+                ? input.boolean('make_current')
+                : false;
 
-        if (!isUuid(params.locationId)) {
-            abort(404);
-        }
+            if (!isUuid(params.locationId)) {
+                abort(404);
+            }
 
-        location.url = canonicalUrl(location.url);
+            location.url = canonicalUrl(location.url);
 
-        if (urlPath(location.url) === '/navigation-history') {
-            return empty(204);
-        }
+            if (urlPath(location.url) === '/navigation-history') {
+                return empty(204);
+            }
 
-        return json(history.save(params.locationId, location, makeCurrent));
-    });
+            return json(history.save(params.locationId, location, makeCurrent));
+        },
+    );
 }
 
 /** Props for the NavigationHistory/Index Inertia page; the page loads its data from the API. */
-export function navigationHistoryPageProps(_ctx: AppContext): Record<string, unknown> {
+export function navigationHistoryPageProps(
+    _ctx: AppContext,
+): Record<string, unknown> {
     return {};
 }
 
@@ -54,16 +61,27 @@ function validateLocation(input: Input): NavigationLocationInput {
     const url = input.string('url', { max: 2048 });
 
     if (!url.startsWith('/')) {
-        invalid('url', 'The url field must start with one of the following: /.');
+        invalid(
+            'url',
+            'The url field must start with one of the following: /.',
+        );
     }
 
     const selectionType = input.optionalString('selection_type');
 
-    if (selectionType !== null && selectionType !== 'text' && selectionType !== 'node') {
+    if (
+        selectionType !== null &&
+        selectionType !== 'text' &&
+        selectionType !== 'node'
+    ) {
         invalid('selection_type', 'The selected selection_type is invalid.');
     }
 
-    if (!input.has('scroll_top') || input.raw('scroll_top') === null || input.raw('scroll_top') === '') {
+    if (
+        !input.has('scroll_top') ||
+        input.raw('scroll_top') === null ||
+        input.raw('scroll_top') === ''
+    ) {
         invalid('scroll_top', 'The scroll_top field is required.');
     }
 
@@ -116,7 +134,10 @@ function splitUrl(url: string): { path: string; query: string } {
 
     return index === -1
         ? { path: withoutFragment, query: '' }
-        : { path: withoutFragment.slice(0, index), query: withoutFragment.slice(index + 1) };
+        : {
+              path: withoutFragment.slice(0, index),
+              query: withoutFragment.slice(index + 1),
+          };
 }
 
 function urlPath(url: string): string {
@@ -126,7 +147,8 @@ function urlPath(url: string): string {
 /** Root becomes /pages and the NativePHP `_windowId` query parameter is dropped. */
 function canonicalUrl(url: string): string {
     const parts = splitUrl(url);
-    const path = parts.path === '' || parts.path === '/' ? '/pages' : parts.path;
+    const path =
+        parts.path === '' || parts.path === '/' ? '/pages' : parts.path;
     const query = new URLSearchParams(parts.query);
     query.delete('_windowId');
     const queryString = query.toString();

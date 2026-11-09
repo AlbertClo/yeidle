@@ -19,10 +19,18 @@ beforeEach(() => {
 
 afterEach(() => ctx.cleanup());
 
-const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+const sha256 = (text: string) =>
+    createHash('sha256').update(text).digest('hex');
 
-async function sendChunk(uploadId: string, index: number, contents: string | null) {
-    const req = request('POST', '/api/media/chunk', { upload_id: uploadId, chunk_index: String(index) });
+async function sendChunk(
+    uploadId: string,
+    index: number,
+    contents: string | null,
+) {
+    const req = request('POST', '/api/media/chunk', {
+        upload_id: uploadId,
+        chunk_index: String(index),
+    });
 
     if (contents !== null) {
         req.files.chunk = {
@@ -34,10 +42,17 @@ async function sendChunk(uploadId: string, index: number, contents: string | nul
 
     const response = await router.handle(req);
 
-    return { status: response.status, json: JSON.parse(response.body as string) };
+    return {
+        status: response.status,
+        json: JSON.parse(response.body as string),
+    };
 }
 
-async function upload(name: string, chunks: string[], mimeType = 'application/octet-stream') {
+async function upload(
+    name: string,
+    chunks: string[],
+    mimeType = 'application/octet-stream',
+) {
     const init = await call(router, 'POST', '/api/media/init', {
         filename: name,
         size: chunks.join('').length,
@@ -47,10 +62,14 @@ async function upload(name: string, chunks: string[], mimeType = 'application/oc
     expect(init.status).toBe(201);
 
     for (const [i, chunk] of chunks.entries()) {
-        expect((await sendChunk(init.json.upload_id, i, chunk)).json).toEqual({ received: i + 1 });
+        expect((await sendChunk(init.json.upload_id, i, chunk)).json).toEqual({
+            received: i + 1,
+        });
     }
 
-    return call(router, 'POST', '/api/media/complete', { upload_id: init.json.upload_id });
+    return call(router, 'POST', '/api/media/complete', {
+        upload_id: init.json.upload_id,
+    });
 }
 
 describe('media routes', () => {
@@ -68,9 +87,17 @@ describe('media routes', () => {
         expect(response.json.id).toMatch(/^[0-9a-f-]{36}$/);
 
         const storage = ctx.workspace().storagePath;
-        expect(fs.readFileSync(path.join(storage, 'media', hash), 'utf8')).toBe('abcdef');
+        expect(fs.readFileSync(path.join(storage, 'media', hash), 'utf8')).toBe(
+            'abcdef',
+        );
         expect(fs.readdirSync(path.join(storage, 'uploads'))).toEqual([]);
-        expect(ctx.db().get('SELECT filename, original_name FROM media WHERE id = ?', [response.json.id])).toEqual({
+        expect(
+            ctx
+                .db()
+                .get('SELECT filename, original_name FROM media WHERE id = ?', [
+                    response.json.id,
+                ]),
+        ).toEqual({
             filename: hash,
             original_name: 'test.bin',
         });
@@ -82,12 +109,22 @@ describe('media routes', () => {
 
         expect(first.json.id).not.toBe(second.json.id);
         expect(first.json.filename).toBe(second.json.filename);
-        expect(fs.readdirSync(path.join(ctx.workspace().storagePath, 'media'))).toEqual([sha256('same')]);
-        expect(ctx.db().get<{ count: number }>('SELECT COUNT(*) AS count FROM media')!.count).toBe(2);
+        expect(
+            fs.readdirSync(path.join(ctx.workspace().storagePath, 'media')),
+        ).toEqual([sha256('same')]);
+        expect(
+            ctx
+                .db()
+                .get<{ count: number }>('SELECT COUNT(*) AS count FROM media')!
+                .count,
+        ).toBe(2);
     });
 
     it('validates uploads and rejects unknown upload ids', async () => {
-        const init = await call(router, 'POST', '/api/media/init', { filename: 'x', mime_type: 'text/plain' });
+        const init = await call(router, 'POST', '/api/media/init', {
+            filename: 'x',
+            mime_type: 'text/plain',
+        });
         expect(init.status).toBe(422);
         expect(init.json.errors).toHaveProperty('size');
 
@@ -99,10 +136,17 @@ describe('media routes', () => {
         });
         expect(zero.status).toBe(422);
 
-        expect((await sendChunk('00000000-0000-4000-8000-000000000000', 0, 'x')).status).toBe(404);
+        expect(
+            (await sendChunk('00000000-0000-4000-8000-000000000000', 0, 'x'))
+                .status,
+        ).toBe(404);
         expect((await sendChunk('../escape', 0, 'x')).status).toBe(404);
 
-        const missingFile = await sendChunk('00000000-0000-4000-8000-000000000000', 0, null);
+        const missingFile = await sendChunk(
+            '00000000-0000-4000-8000-000000000000',
+            0,
+            null,
+        );
         expect(missingFile.status).toBe(422);
         expect(missingFile.json.errors).toHaveProperty('chunk');
 
@@ -116,46 +160,90 @@ describe('media routes', () => {
     it('serves a blob inline under its original name', async () => {
         const uploaded = await upload('photo.png', ['png-bytes'], 'image/png');
 
-        const response = await router.handle(request('GET', `/api/media/${uploaded.json.id}`));
+        const response = await router.handle(
+            request('GET', `/api/media/${uploaded.json.id}`),
+        );
 
         expect(response.status).toBe(200);
         expect(response.headers['content-type']).toBe('image/png');
-        expect(response.headers['content-disposition']).toBe('inline; filename="photo.png"');
-        expect(response.headers['cache-control']).toBe('public, max-age=31536000');
+        expect(response.headers['content-disposition']).toBe(
+            'inline; filename="photo.png"',
+        );
+        expect(response.headers['cache-control']).toBe(
+            'public, max-age=31536000',
+        );
         expect(response.body).toEqual({
-            file: path.join(ctx.workspace().storagePath, 'media', sha256('png-bytes')),
+            file: path.join(
+                ctx.workspace().storagePath,
+                'media',
+                sha256('png-bytes'),
+            ),
         });
     });
 
     it('returns 404 for unknown media and 503 when the blob is missing locally', async () => {
-        expect((await call(router, 'GET', '/api/media/00000000-0000-7000-8000-000000000001')).status).toBe(404);
+        expect(
+            (
+                await call(
+                    router,
+                    'GET',
+                    '/api/media/00000000-0000-7000-8000-000000000001',
+                )
+            ).status,
+        ).toBe(404);
 
         const id = '00000000-0000-7000-8000-000000000002';
         ctx.documents().applyChanges([
             {
                 type: 'media.create',
-                payload: { id, hash: sha256('remote only'), original_name: 'r.txt', mime_type: 'text/plain', size: 11 },
+                payload: {
+                    id,
+                    hash: sha256('remote only'),
+                    original_name: 'r.txt',
+                    mime_type: 'text/plain',
+                    size: 11,
+                },
             },
         ]);
 
         const missing = await call(router, 'GET', `/api/media/${id}`);
         expect(missing.status).toBe(503);
-        expect(missing.json.message).toBe('Media is not currently available on this device.');
+        expect(missing.json.message).toBe(
+            'Media is not currently available on this device.',
+        );
     });
 
     it('opens a linked copy with the original filename and shows the blob in its folder', async () => {
-        const uploaded = await upload('report.pdf', ['%PDF'], 'application/pdf');
+        const uploaded = await upload(
+            'report.pdf',
+            ['%PDF'],
+            'application/pdf',
+        );
         const storage = ctx.workspace().storagePath;
 
-        const opened = await call(router, 'POST', `/api/media/${uploaded.json.id}/open`);
+        const opened = await call(
+            router,
+            'POST',
+            `/api/media/${uploaded.json.id}/open`,
+        );
         expect(opened.status).toBe(200);
         expect(opened.json).toBeNull();
-        const target = path.join(storage, 'media-open', `${uploaded.json.id}-report.pdf`);
+        const target = path.join(
+            storage,
+            'media-open',
+            `${uploaded.json.id}-report.pdf`,
+        );
         expect(ctx.opened).toEqual([target]);
         expect(fs.readFileSync(target, 'utf8')).toBe('%PDF');
 
-        const folder = await call(router, 'POST', `/api/media/${uploaded.json.id}/open-folder`);
+        const folder = await call(
+            router,
+            'POST',
+            `/api/media/${uploaded.json.id}/open-folder`,
+        );
         expect(folder.status).toBe(200);
-        expect(ctx.shownInFolder).toEqual([path.join(storage, 'media', sha256('%PDF'))]);
+        expect(ctx.shownInFolder).toEqual([
+            path.join(storage, 'media', sha256('%PDF')),
+        ]);
     });
 });

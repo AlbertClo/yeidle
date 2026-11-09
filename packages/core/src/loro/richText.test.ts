@@ -42,7 +42,9 @@ const paragraph = (...content: JsonNode[]): JsonNode => ({
     content,
 });
 const text = (value: string, marks?: Mark[]): JsonNode =>
-    marks ? { type: 'text', text: value, marks } : { type: 'text', text: value };
+    marks
+        ? { type: 'text', text: value, marks }
+        : { type: 'text', text: value };
 
 describe('rich text encoding', () => {
     it.each([
@@ -158,10 +160,7 @@ describe('minimal rich text edits', () => {
         b.setPeerId(2);
         b.import(a.export({ mode: 'snapshot' }));
 
-        setContent(
-            a,
-            paragraph(text('one', [{ type: 'bold' }]), text(' two')),
-        );
+        setContent(a, paragraph(text('one', [{ type: 'bold' }]), text(' two')));
         setContent(b, paragraph(text('one two three')));
         a.import(b.export({ mode: 'update' }));
 

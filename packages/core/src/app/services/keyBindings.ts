@@ -114,7 +114,8 @@ const KEYS = [
     'Backquote',
 ];
 
-const isCommand = (command: string): boolean => Object.hasOwn(DEFAULT_KEY_BINDINGS, command);
+const isCommand = (command: string): boolean =>
+    Object.hasOwn(DEFAULT_KEY_BINDINGS, command);
 
 export function defaultKeyBindings(isMac: boolean): Record<string, string> {
     return { ...DEFAULT_KEY_BINDINGS, ...(isMac ? MAC_DEFAULT_OVERRIDES : {}) };
@@ -139,13 +140,19 @@ export class UserKeyBindings {
         const defaults = defaultKeyBindings(this.isMac(platform));
 
         return {
-            bindings: { ...defaults, ...(this.profile(state).key_bindings ?? {}) },
+            bindings: {
+                ...defaults,
+                ...(this.profile(state).key_bindings ?? {}),
+            },
             defaults,
         };
     }
 
     /** Applies changes on top of the current bindings; throws KeyBindingError when invalid. */
-    replace(bindings: Record<string, unknown>, platform: KeyboardPlatform | null = null): KeyBindingListing {
+    replace(
+        bindings: Record<string, unknown>,
+        platform: KeyboardPlatform | null = null,
+    ): KeyBindingListing {
         const state = this.read();
         const profileKey = this.profileKey();
         const isMac = this.isMac(platform);
@@ -157,11 +164,15 @@ export class UserKeyBindings {
 
         for (const [command, binding] of Object.entries(bindings)) {
             if (!isCommand(command)) {
-                throw new KeyBindingError(`Unknown shortcut command [${command}].`);
+                throw new KeyBindingError(
+                    `Unknown shortcut command [${command}].`,
+                );
             }
 
             if (binding !== null && typeof binding !== 'string') {
-                throw new KeyBindingError('Shortcut bindings must be strings or null.');
+                throw new KeyBindingError(
+                    'Shortcut bindings must be strings or null.',
+                );
             }
 
             current[command] = binding === null ? null : normalize(binding);
@@ -173,13 +184,17 @@ export class UserKeyBindings {
             .map((binding) => binding.replace(/\bMod(?=\+)/g, modifier));
 
         if (assigned.length !== new Set(assigned).size) {
-            throw new KeyBindingError('Each shortcut must use a unique key combination.');
+            throw new KeyBindingError(
+                'Each shortcut must use a unique key combination.',
+            );
         }
 
         for (const binding of assigned) {
             for (const other of assigned) {
                 if (other.startsWith(`${binding} `)) {
-                    throw new KeyBindingError('A shortcut cannot also be the start of another shortcut.');
+                    throw new KeyBindingError(
+                        'A shortcut cannot also be the start of another shortcut.',
+                    );
                 }
             }
         }
@@ -208,7 +223,10 @@ export class UserKeyBindings {
         const normalized: Record<string, string | null> = {};
 
         for (const [command, binding] of Object.entries(bindings)) {
-            if (!isCommand(command) || (binding !== null && typeof binding !== 'string')) {
+            if (
+                !isCommand(command) ||
+                (binding !== null && typeof binding !== 'string')
+            ) {
                 continue;
             }
 
@@ -222,7 +240,9 @@ export class UserKeyBindings {
     }
 
     private isMac(platform: KeyboardPlatform | null): boolean {
-        return platform === null ? this.ctx.host.platform === 'darwin' : platform === 'mac';
+        return platform === null
+            ? this.ctx.host.platform === 'darwin'
+            : platform === 'mac';
     }
 
     /** A signed-in profile adopts the local profile the first time it is used. */
@@ -258,12 +278,21 @@ export class UserKeyBindings {
 
         for (const profile of Object.values(state.profiles)) {
             if (!isRecord(profile) || !isRecord(profile.key_bindings)) {
-                throw new Error('The local user preferences contain an invalid profile.');
+                throw new Error(
+                    'The local user preferences contain an invalid profile.',
+                );
             }
 
-            for (const [command, binding] of Object.entries(profile.key_bindings)) {
-                if (!isCommand(command) || (binding !== null && typeof binding !== 'string')) {
-                    throw new Error('The local user preferences contain an invalid shortcut.');
+            for (const [command, binding] of Object.entries(
+                profile.key_bindings,
+            )) {
+                if (
+                    !isCommand(command) ||
+                    (binding !== null && typeof binding !== 'string')
+                ) {
+                    throw new Error(
+                        'The local user preferences contain an invalid shortcut.',
+                    );
                 }
             }
         }
@@ -284,8 +313,13 @@ function normalize(binding: string): string {
     const strokes = binding.trim().split(/\s+/);
 
     if (strokes.length > 1) {
-        if (strokes.length !== 2 || strokes.some((stroke) => !/^[a-z]$/i.test(stroke))) {
-            throw new KeyBindingError('Key sequences must contain two letters, for example G A.');
+        if (
+            strokes.length !== 2 ||
+            strokes.some((stroke) => !/^[a-z]$/i.test(stroke))
+        ) {
+            throw new KeyBindingError(
+                'Key sequences must contain two letters, for example G A.',
+            );
         }
 
         return strokes.join(' ').toUpperCase();
@@ -318,13 +352,21 @@ function normalize(binding: string): string {
 
     for (const modifier of parts) {
         if (!MODIFIERS.includes(modifier)) {
-            throw new KeyBindingError(`Shortcut modifier [${modifier}] is not supported.`);
+            throw new KeyBindingError(
+                `Shortcut modifier [${modifier}] is not supported.`,
+            );
         }
     }
 
-    if (parts.includes('Mod') && (parts.includes('Ctrl') || parts.includes('Meta'))) {
+    if (
+        parts.includes('Mod') &&
+        (parts.includes('Ctrl') || parts.includes('Meta'))
+    ) {
         throw new KeyBindingError('Mod cannot be combined with Ctrl or Meta.');
     }
 
-    return [...MODIFIERS.filter((modifier) => parts.includes(modifier)), key].join('+');
+    return [
+        ...MODIFIERS.filter((modifier) => parts.includes(modifier)),
+        key,
+    ].join('+');
 }

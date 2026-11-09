@@ -130,10 +130,7 @@ function isInline(node: JsonNode): boolean {
     return INLINE_TYPES.has(node.type);
 }
 
-function marksToAttrs(
-    marks: JsonNode['marks'],
-    into: Attrs,
-): void {
+function marksToAttrs(marks: JsonNode['marks'], into: Attrs): void {
     for (const mark of marks ?? []) {
         into[MARK_PREFIX + mark.type] = hasAttrs(mark.attrs)
             ? mark.attrs
@@ -147,7 +144,8 @@ function sanitizeText(text: string): string {
 
 /** TipTap content → rich text units. */
 export function contentToUnits(content: TiptapContent): Unit[] {
-    const blocks = content === null ? [] : Array.isArray(content) ? content : [content];
+    const blocks =
+        content === null ? [] : Array.isArray(content) ? content : [content];
     const units: Unit[] = [];
 
     for (const block of blocks) {
@@ -228,8 +226,7 @@ function attrsToMarks(attrs: Attrs): JsonNode['marks'] {
 function pushInline(content: JsonNode[], unit: Unit): void {
     const marks = attrsToMarks(unit.attrs);
     const inline = unit.attrs[INLINE_KEY] as
-        | { type: string; attrs?: Record<string, unknown> | null }
-        | undefined;
+        { type: string; attrs?: Record<string, unknown> | null } | undefined;
 
     if (unit.ch === OBJECT) {
         if (!inline) {
@@ -473,7 +470,10 @@ export function unitsEqual(a: Unit[], b: Unit[]): boolean {
     }
 
     for (let i = 0; i < a.length; i++) {
-        if (a[i].ch !== b[i].ch || attrsKey(a[i].attrs) !== attrsKey(b[i].attrs)) {
+        if (
+            a[i].ch !== b[i].ch ||
+            attrsKey(a[i].attrs) !== attrsKey(b[i].attrs)
+        ) {
             return false;
         }
     }

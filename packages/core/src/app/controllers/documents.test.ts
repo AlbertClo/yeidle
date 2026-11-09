@@ -21,7 +21,10 @@ afterEach(() => ctx.cleanup());
 function createPage(title: string): string {
     const id = uuidv7();
     ctx.documents().applyChanges([
-        { type: 'node.set', payload: { id, page_id: id, fields: { content: title } } },
+        {
+            type: 'node.set',
+            payload: { id, page_id: id, fields: { content: title } },
+        },
     ]);
 
     return id;
@@ -47,37 +50,67 @@ describe('document routes', () => {
                 parent_id: pageId,
                 position: '',
                 content: 'typed',
-                tiptap_content: { type: 'paragraph', content: [{ type: 'text', text: 'typed' }] },
+                tiptap_content: {
+                    type: 'paragraph',
+                    content: [{ type: 'text', text: 'typed' }],
+                },
                 is_checked: null,
             },
         ]);
         doc.commit();
 
-        const pushed = await call(router, 'POST', `/api/documents/${pageId}/updates`, {
-            updates: [
-                {
-                    update_id: uuidv7(),
-                    client_id: 'window-1',
-                    bytes: toBase64(doc.export({ mode: 'update', from: before })),
-                },
-            ],
-        });
+        const pushed = await call(
+            router,
+            'POST',
+            `/api/documents/${pageId}/updates`,
+            {
+                updates: [
+                    {
+                        update_id: uuidv7(),
+                        client_id: 'window-1',
+                        bytes: toBase64(
+                            doc.export({ mode: 'update', from: before }),
+                        ),
+                    },
+                ],
+            },
+        );
         expect(pushed.status).toBe(200);
         expect(
-            ctx.db().get<{ content: string }>('SELECT content FROM nodes WHERE id = ?', [blockId]),
+            ctx
+                .db()
+                .get<{ content: string }>(
+                    'SELECT content FROM nodes WHERE id = ?',
+                    [blockId],
+                ),
         ).toEqual({ content: 'typed' });
 
-        const since = await call(router, 'GET', `/api/documents/${pageId}/updates?since=${loaded.json.seq}`);
+        const since = await call(
+            router,
+            'GET',
+            `/api/documents/${pageId}/updates?since=${loaded.json.seq}`,
+        );
         expect(since.json.updates).toHaveLength(1);
 
-        const changes = await call(router, 'GET', `/api/documents/changes?since=${loaded.json.seq}`);
-        expect(changes.json.documents).toEqual([{ id: pageId, seq: pushed.json.seq }]);
+        const changes = await call(
+            router,
+            'GET',
+            `/api/documents/changes?since=${loaded.json.seq}`,
+        );
+        expect(changes.json.documents).toEqual([
+            { id: pageId, seq: pushed.json.seq },
+        ]);
     });
 
     it('rejects malformed updates', async () => {
-        const response = await call(router, 'POST', `/api/documents/${uuidv7()}/updates`, {
-            updates: [{ update_id: 'nope', client_id: 'x', bytes: '' }],
-        });
+        const response = await call(
+            router,
+            'POST',
+            `/api/documents/${uuidv7()}/updates`,
+            {
+                updates: [{ update_id: 'nope', client_id: 'x', bytes: '' }],
+            },
+        );
 
         expect(response.status).toBe(422);
     });

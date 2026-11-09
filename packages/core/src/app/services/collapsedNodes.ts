@@ -45,9 +45,15 @@ export class CollapsedNodes {
         this.ctx.db().transaction(() => {
             const rootId = this.activeRootId();
             const existing = new Set(
-                this.entriesForNodeIds(rootId, valid.map((node) => node.id)).map((entry) => entry.content),
+                this.entriesForNodeIds(
+                    rootId,
+                    valid.map((node) => node.id),
+                ).map((entry) => entry.content),
             );
-            const changes: NodeChange[] = containerChanges(CollapsedNodes.ROOT_ID, rootId);
+            const changes: NodeChange[] = containerChanges(
+                CollapsedNodes.ROOT_ID,
+                rootId,
+            );
 
             for (const node of valid) {
                 if (existing.has(node.id)) {
@@ -55,7 +61,11 @@ export class CollapsedNodes {
                 }
 
                 changes.push(
-                    setChange(entryId(rootId, node.id), rootId, entryFields(rootId, positionAt(0), node.id)),
+                    setChange(
+                        entryId(rootId, node.id),
+                        rootId,
+                        entryFields(rootId, positionAt(0), node.id),
+                    ),
                 );
             }
 
@@ -66,7 +76,9 @@ export class CollapsedNodes {
     expand(nodes: NodeRow[]): void {
         this.ctx.db().transaction(() => {
             const rootId = this.activeRootId();
-            const nodeIds = nodes.filter((node) => isCollapsible(node)).map((node) => node.id);
+            const nodeIds = nodes
+                .filter((node) => isCollapsible(node))
+                .map((node) => node.id);
 
             if (nodeIds.length === 0) {
                 return;
@@ -86,8 +98,11 @@ export class CollapsedNodes {
     }
 
     activeRootId(): string {
-        return activeAccountRoot(this.ctx.db(), CollapsedNodes.ROOT_ID, (localRootId, cloudRootId) =>
-            this.adoptAccountRoot(localRootId, cloudRootId),
+        return activeAccountRoot(
+            this.ctx.db(),
+            CollapsedNodes.ROOT_ID,
+            (localRootId, cloudRootId) =>
+                this.adoptAccountRoot(localRootId, cloudRootId),
         );
     }
 
@@ -96,7 +111,9 @@ export class CollapsedNodes {
             return;
         }
 
-        const cloudEntries = new Set(this.entries(cloudRootId).map((entry) => entry.content));
+        const cloudEntries = new Set(
+            this.entries(cloudRootId).map((entry) => entry.content),
+        );
         const changes = containerChanges(CollapsedNodes.ROOT_ID, cloudRootId);
 
         for (const entry of this.entries(localRootId)) {
@@ -120,9 +137,10 @@ export class CollapsedNodes {
     private entries(rootId: string): NodeRow[] {
         return this.ctx
             .db()
-            .all<NodeRow>('SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id', [
-                rootId,
-            ]);
+            .all<NodeRow>(
+                'SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id',
+                [rootId],
+            );
     }
 
     private entriesForNodeIds(rootId: string, nodeIds: string[]): NodeRow[] {
@@ -132,7 +150,9 @@ export class CollapsedNodes {
 
         const wanted = new Set(nodeIds);
 
-        return this.entries(rootId).filter((entry) => wanted.has(entry.content));
+        return this.entries(rootId).filter((entry) =>
+            wanted.has(entry.content),
+        );
     }
 }
 

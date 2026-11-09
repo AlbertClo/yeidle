@@ -81,12 +81,21 @@ export type PreferenceListing = {
     workspace_storage: WorkspaceStorage | null;
 };
 
-function oneOf<T extends string>(values: readonly T[], value: string | undefined): T | null {
-    return value !== undefined && (values as readonly string[]).includes(value) ? (value as T) : null;
+function oneOf<T extends string>(
+    values: readonly T[],
+    value: string | undefined,
+): T | null {
+    return value !== undefined && (values as readonly string[]).includes(value)
+        ? (value as T)
+        : null;
 }
 
 /** PHP's FILTER_VALIDATE_INT with a range. */
-function validInt(value: string | undefined, min: number, max: number): number | null {
+function validInt(
+    value: string | undefined,
+    min: number,
+    max: number,
+): number | null {
     const trimmed = value?.trim() ?? '';
 
     if (!/^[+-]?(0|[1-9]\d*)$/.test(trimmed)) {
@@ -106,14 +115,22 @@ export class PreferenceNodes {
     listing(): PreferenceListing {
         const db = this.ctx.db();
         const rootId = this.activeRootId();
-        const value = (key: string) => findNode(db, entryId(rootId, key))?.content;
+        const value = (key: string) =>
+            findNode(db, entryId(rootId, key))?.content;
 
         return {
             root_id: rootId,
             theme: oneOf(THEMES, value(THEME_KEY)),
             font_family: oneOf(FONT_FAMILIES, value(FONT_FAMILY_KEY)),
-            font_size: validInt(value(FONT_SIZE_KEY), MIN_FONT_SIZE, MAX_FONT_SIZE),
-            workspace_storage: oneOf(WORKSPACE_STORAGE_OPTIONS, value(WORKSPACE_STORAGE_KEY)),
+            font_size: validInt(
+                value(FONT_SIZE_KEY),
+                MIN_FONT_SIZE,
+                MAX_FONT_SIZE,
+            ),
+            workspace_storage: oneOf(
+                WORKSPACE_STORAGE_OPTIONS,
+                value(WORKSPACE_STORAGE_KEY),
+            ),
         };
     }
 
@@ -133,19 +150,31 @@ export class PreferenceNodes {
     }
 
     activeRootId(): string {
-        return activeAccountRoot(this.ctx.db(), PreferenceNodes.ROOT_ID, (localRootId, cloudRootId) =>
-            this.adoptAccountRoot(localRootId, cloudRootId),
+        return activeAccountRoot(
+            this.ctx.db(),
+            PreferenceNodes.ROOT_ID,
+            (localRootId, cloudRootId) =>
+                this.adoptAccountRoot(localRootId, cloudRootId),
         );
     }
 
-    private set(entries: [key: string, value: string, position: number][]): void {
+    private set(
+        entries: [key: string, value: string, position: number][],
+    ): void {
         this.ctx.db().transaction(() => {
             const rootId = this.activeRootId();
-            const changes: NodeChange[] = containerChanges(PreferenceNodes.ROOT_ID, rootId);
+            const changes: NodeChange[] = containerChanges(
+                PreferenceNodes.ROOT_ID,
+                rootId,
+            );
 
             for (const [key, value, position] of entries) {
                 changes.push(
-                    setChange(entryId(rootId, key), rootId, entryFields(rootId, positionAt(position), value)),
+                    setChange(
+                        entryId(rootId, key),
+                        rootId,
+                        entryFields(rootId, positionAt(position), value),
+                    ),
                 );
             }
 
@@ -172,7 +201,11 @@ export class PreferenceNodes {
                     setChange(
                         entryId(cloudRootId, key),
                         cloudRootId,
-                        entryFields(cloudRootId, positionAt(position), localEntry.content),
+                        entryFields(
+                            cloudRootId,
+                            positionAt(position),
+                            localEntry.content,
+                        ),
                     ),
                 );
             }

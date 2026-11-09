@@ -35,13 +35,19 @@ export class Inertia {
         url?: string,
     ): AppResponse {
         const headers = context.request.headers;
-        const pageUrl = url ?? `${context.request.url.pathname}${context.request.url.search}`;
+        const pageUrl =
+            url ??
+            `${context.request.url.pathname}${context.request.url.search}`;
         const all = { ...this.options.sharedProps(), ...props };
         let selected = Object.keys(all);
 
         if (headers['x-inertia-partial-component'] === component) {
-            const only = (headers['x-inertia-partial-data'] ?? '').split(',').filter(Boolean);
-            const except = (headers['x-inertia-partial-except'] ?? '').split(',').filter(Boolean);
+            const only = (headers['x-inertia-partial-data'] ?? '')
+                .split(',')
+                .filter(Boolean);
+            const except = (headers['x-inertia-partial-except'] ?? '')
+                .split(',')
+                .filter(Boolean);
 
             if (only.length > 0) {
                 selected = selected.filter((key) => only.includes(key));
@@ -54,7 +60,8 @@ export class Inertia {
 
         for (const key of selected) {
             const value = all[key];
-            resolved[key] = typeof value === 'function' ? (value as LazyProp)() : value;
+            resolved[key] =
+                typeof value === 'function' ? (value as LazyProp)() : value;
         }
 
         const page: InertiaPage = {
@@ -73,7 +80,11 @@ export class Inertia {
                 headers['x-inertia-version'] !== this.options.version
             ) {
                 // Asset version changed: make the client do a full reload
-                return { status: 409, headers: { 'x-inertia-location': pageUrl }, body: null };
+                return {
+                    status: 409,
+                    headers: { 'x-inertia-location': pageUrl },
+                    body: null,
+                };
             }
 
             return {

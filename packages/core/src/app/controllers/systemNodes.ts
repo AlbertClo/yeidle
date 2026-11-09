@@ -18,25 +18,35 @@ import {
 } from '../services/preferences';
 
 /** Pins, collapsed nodes, preferences and daily notes. */
-export function registerSystemNodeRoutes(router: Router, ctx: AppContext): void {
+export function registerSystemNodeRoutes(
+    router: Router,
+    ctx: AppContext,
+): void {
     const pins = () => new PinNodes(ctx);
     const collapsed = () => new CollapsedNodes(ctx);
     const preferences = () => new PreferenceNodes(ctx);
 
     // Route model binding: missing and soft-deleted nodes are 404s
-    const boundNode = (id: string): NodeRow => findNode(ctx.db(), id) ?? abort(404);
+    const boundNode = (id: string): NodeRow =>
+        findNode(ctx.db(), id) ?? abort(404);
 
     router.post('/api/daily-notes', ({ input }) => {
         const v = new Validator(input.all());
         const date = input.raw('date');
 
         if (v.required('date') && !isDailyNoteDate(date)) {
-            v.fail('date', `The ${label('date')} field must match the format Y-m-d.`);
+            v.fail(
+                'date',
+                `The ${label('date')} field must match the format Y-m-d.`,
+            );
         }
 
         v.throwIfFailed();
 
-        const page = new DailyNoteService(ctx).open(ctx.workspace().id, date as string);
+        const page = new DailyNoteService(ctx).open(
+            ctx.workspace().id,
+            date as string,
+        );
 
         return json({ id: page.id, date: page.daily_note_date });
     });
@@ -44,7 +54,10 @@ export function registerSystemNodeRoutes(router: Router, ctx: AppContext): void 
     router.get('/api/pins', () => {
         const listing = pins().listing();
 
-        return json({ root_id: listing.root_id, items: listing.items.map(serializeNode) });
+        return json({
+            root_id: listing.root_id,
+            items: listing.items.map(serializeNode),
+        });
     });
 
     router.put('/api/pins/order', ({ input }) => {
@@ -52,12 +65,21 @@ export function registerSystemNodeRoutes(router: Router, ctx: AppContext): void 
         const nodeIds = input.raw('node_ids');
 
         if (!('node_ids' in input.all())) {
-            v.fail('node_ids', `The ${label('node_ids')} field must be present.`);
+            v.fail(
+                'node_ids',
+                `The ${label('node_ids')} field must be present.`,
+            );
         } else if (!Array.isArray(nodeIds)) {
-            v.fail('node_ids', `The ${label('node_ids')} field must be an array.`);
+            v.fail(
+                'node_ids',
+                `The ${label('node_ids')} field must be an array.`,
+            );
         } else {
             if (nodeIds.length > 1000) {
-                v.fail('node_ids', `The ${label('node_ids')} field must not have more than 1000 items.`);
+                v.fail(
+                    'node_ids',
+                    `The ${label('node_ids')} field must not have more than 1000 items.`,
+                );
             }
 
             v.uuidItems('node_ids', nodeIds);
@@ -66,9 +88,15 @@ export function registerSystemNodeRoutes(router: Router, ctx: AppContext): void 
         v.throwIfFailed();
 
         if (!pins().reorder(nodeIds as string[])) {
-            throw new HttpError(422, 'The pinned list changed. Reload it and try again.', {
-                node_ids: ['The pinned list changed. Reload it and try again.'],
-            });
+            throw new HttpError(
+                422,
+                'The pinned list changed. Reload it and try again.',
+                {
+                    node_ids: [
+                        'The pinned list changed. Reload it and try again.',
+                    ],
+                },
+            );
         }
 
         return json({ reordered: true });
@@ -96,18 +124,32 @@ export function registerSystemNodeRoutes(router: Router, ctx: AppContext): void 
 
         if (v.required('node_ids')) {
             if (!Array.isArray(nodeIds)) {
-                v.fail('node_ids', `The ${label('node_ids')} field must be an array.`);
+                v.fail(
+                    'node_ids',
+                    `The ${label('node_ids')} field must be an array.`,
+                );
             } else {
                 if (nodeIds.length > 25000) {
-                    v.fail('node_ids', `The ${label('node_ids')} field must not have more than 25000 items.`);
+                    v.fail(
+                        'node_ids',
+                        `The ${label('node_ids')} field must not have more than 25000 items.`,
+                    );
                 }
 
                 v.uuidItems('node_ids', nodeIds);
             }
         }
 
-        if (v.required('collapsed') && ![true, false, 0, 1, '0', '1'].includes(input.raw('collapsed') as never)) {
-            v.fail('collapsed', `The ${label('collapsed')} field must be true or false.`);
+        if (
+            v.required('collapsed') &&
+            ![true, false, 0, 1, '0', '1'].includes(
+                input.raw('collapsed') as never,
+            )
+        ) {
+            v.fail(
+                'collapsed',
+                `The ${label('collapsed')} field must be true or false.`,
+            );
         }
 
         v.throwIfFailed();
@@ -165,7 +207,10 @@ export function registerSystemNodeRoutes(router: Router, ctx: AppContext): void 
             fontSize = laravelInteger(input.raw('font_size'));
 
             if (fontSize === null) {
-                v.fail('font_size', `The ${label('font_size')} field must be an integer.`);
+                v.fail(
+                    'font_size',
+                    `The ${label('font_size')} field must be an integer.`,
+                );
             } else if (fontSize < MIN_FONT_SIZE || fontSize > MAX_FONT_SIZE) {
                 v.fail(
                     'font_size',
@@ -282,7 +327,10 @@ class Validator {
             }
 
             if ((counts.get(item) ?? 0) > 1) {
-                this.fail(key, `The ${label(key)} field has a duplicate value.`);
+                this.fail(
+                    key,
+                    `The ${label(key)} field has a duplicate value.`,
+                );
             }
         });
     }
@@ -296,7 +344,9 @@ class Validator {
 
         const more = messages.length - 1;
         const message =
-            more > 0 ? `${messages[0]} (and ${more} more error${more === 1 ? '' : 's'})` : messages[0];
+            more > 0
+                ? `${messages[0]} (and ${more} more error${more === 1 ? '' : 's'})`
+                : messages[0];
 
         throw new HttpError(422, message, this.errors);
     }

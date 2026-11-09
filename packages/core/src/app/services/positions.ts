@@ -44,7 +44,9 @@ function increment(position: string): string {
     }
 
     if (head === 'z') {
-        throw new RangeError('Too many siblings to assign fractional positions.');
+        throw new RangeError(
+            'Too many siblings to assign fractional positions.',
+        );
     }
 
     head = String.fromCharCode(head.charCodeAt(0) + 1);

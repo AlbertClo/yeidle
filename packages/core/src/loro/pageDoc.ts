@@ -227,7 +227,10 @@ export function applyBlocks(
             const node = byId.get(block.id)!;
 
             if (blockChecked(node) !== (block.is_checked ?? null)) {
-                if (block.is_checked === null || block.is_checked === undefined) {
+                if (
+                    block.is_checked === null ||
+                    block.is_checked === undefined
+                ) {
                     node.data.delete('checked');
                 } else {
                     node.data.set('checked', block.is_checked);
@@ -283,7 +286,8 @@ function readBlock(node: LoroTreeNode, id: string, parentId: string): Block {
         text instanceof LoroText ? readUnits(text) : [],
     );
     const created = node.data.get('created_at');
-    const blocks = content === null ? [] : Array.isArray(content) ? content : [content];
+    const blocks =
+        content === null ? [] : Array.isArray(content) ? content : [content];
 
     return {
         id,
@@ -320,7 +324,9 @@ export function readBlocks(doc: LoroDoc, pageId: string): Block[] {
         }
 
         const positions =
-            list.length > 0 ? generateNKeysBetween(null, null, list.length) : [];
+            list.length > 0
+                ? generateNKeysBetween(null, null, list.length)
+                : [];
         list.forEach((block, i) => (block.position = positions[i]));
 
         return list;

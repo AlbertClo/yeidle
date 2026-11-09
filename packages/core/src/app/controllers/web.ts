@@ -15,8 +15,13 @@ import { PreferenceNodes } from '../services/preferences';
 import { navigationHistoryPageProps } from './navigationHistory';
 
 /** The Inertia pages (what PageWebController and friends rendered). */
-export function registerWebRoutes(router: Router, ctx: AppContext, inertia: Inertia): void {
-    const index = (missingPage: boolean) =>
+export function registerWebRoutes(
+    router: Router,
+    ctx: AppContext,
+    inertia: Inertia,
+): void {
+    const index =
+        (missingPage: boolean) =>
         (context: Parameters<Parameters<Router['get']>[1]>[0]) => {
             const db = ctx.db();
             const rootIds = SystemNodes.ROOT_IDS;
@@ -37,7 +42,8 @@ export function registerWebRoutes(router: Router, ctx: AppContext, inertia: Iner
                     pages,
                     themeSetupRequired: preferences.theme === null,
                     storageSetupRequired:
-                        preferences.workspace_storage === null && cloudStatus === 'local',
+                        preferences.workspace_storage === null &&
+                        cloudStatus === 'local',
                     workspaceCloudStatus: cloudStatus,
                     openDailyNote: context.request.url.pathname === '/',
                     missingPage,
@@ -65,11 +71,10 @@ export function registerWebRoutes(router: Router, ctx: AppContext, inertia: Iner
 
         const stored = ctx.documents().store.load(page.id);
         const collapsed = new CollapsedNodes(ctx).listing();
-        db.run('INSERT INTO page_visits (id, node_id, visited_at) VALUES (?, ?, ?)', [
-            uuidv7(),
-            page.id,
-            sqlTimestamp(),
-        ]);
+        db.run(
+            'INSERT INTO page_visits (id, node_id, visited_at) VALUES (?, ?, ?)',
+            [uuidv7(), page.id, sqlTimestamp()],
+        );
 
         return inertia.render(context, 'Pages/Show', {
             page: loadNodeTree(db, page.id),
@@ -87,6 +92,10 @@ export function registerWebRoutes(router: Router, ctx: AppContext, inertia: Iner
     });
 
     router.get('/navigation-history', (context) =>
-        inertia.render(context, 'NavigationHistory/Index', navigationHistoryPageProps(ctx)),
+        inertia.render(
+            context,
+            'NavigationHistory/Index',
+            navigationHistoryPageProps(ctx),
+        ),
     );
 }

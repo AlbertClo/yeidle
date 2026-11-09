@@ -10,9 +10,22 @@ import { openNodeDatabase } from '@yeidle/core/db/nodeSqlite';
 import { pageAttribute } from '@yeidle/core/http/inertia';
 import type { InertiaPage } from '@yeidle/core/http/inertia';
 import { nodeFiles } from '@yeidle/core/support/nodeFiles';
-import { app, BrowserWindow, ipcMain, Menu, net, protocol, shell } from 'electron';
+import {
+    app,
+    BrowserWindow,
+    ipcMain,
+    Menu,
+    net,
+    protocol,
+    shell,
+} from 'electron';
 
-import { proxyToDevServer, serveStatic, toAppRequest, toResponse } from './protocol';
+import {
+    proxyToDevServer,
+    serveStatic,
+    toAppRequest,
+    toResponse,
+} from './protocol';
 
 const SCHEME = 'yeidle';
 const ORIGIN = `${SCHEME}://app`;
@@ -38,7 +51,8 @@ protocol.registerSchemesAsPrivileged([
 app.setName('Yeidle');
 app.setPath(
     'userData',
-    process.env.YEIDLE_DATA_DIR ?? path.join(app.getPath('appData'), 'yeidle-app'),
+    process.env.YEIDLE_DATA_DIR ??
+        path.join(app.getPath('appData'), 'yeidle-app'),
 );
 
 const host: Host = {
@@ -76,8 +90,14 @@ const server = createAppServer(context, {
     version: app.getVersion(),
     renderHtml: (page: InertiaPage, appearance) =>
         (htmlTemplate ?? '')
-            .replace('<html lang="en">', `<html lang="en" data-theme="${appearance.theme}"${appearance.dark ? ' class="dark"' : ''}>`)
-            .replace('<div id="app"></div>', `<div id="app" data-page="${pageAttribute(page)}"></div>`),
+            .replace(
+                '<html lang="en">',
+                `<html lang="en" data-theme="${appearance.theme}"${appearance.dark ? ' class="dark"' : ''}>`,
+            )
+            .replace(
+                '<div id="app"></div>',
+                `<div id="app" data-page="${pageAttribute(page)}"></div>`,
+            ),
 });
 
 async function loadHtmlTemplate(): Promise<void> {
@@ -88,7 +108,13 @@ async function loadHtmlTemplate(): Promise<void> {
 
 async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const probe = { method: request.method, url, headers: {}, body: {}, files: {} };
+    const probe = {
+        method: request.method,
+        url,
+        headers: {},
+        body: {},
+        files: {},
+    };
 
     if (server.matches(probe)) {
         if (devServerUrl && request.headers.get('x-inertia') === null) {
@@ -120,7 +146,8 @@ function createWindow(): BrowserWindow {
 
     // In-app navigation is owned by Yeidle's location history; a second
     // Chromium history stack would make Back/Forward run twice
-    const clearBrowserHistory = () => window.webContents.navigationHistory.clear();
+    const clearBrowserHistory = () =>
+        window.webContents.navigationHistory.clear();
     window.webContents.on('did-navigate', clearBrowserHistory);
     window.webContents.on('did-navigate-in-page', clearBrowserHistory);
 
@@ -137,7 +164,10 @@ function createWindow(): BrowserWindow {
     window.on('swipe', (event, direction) => {
         if (direction === 'right' || direction === 'left') {
             event.preventDefault();
-            window.webContents.send('yeidle:navigation-command', direction === 'right' ? 'back' : 'forward');
+            window.webContents.send(
+                'yeidle:navigation-command',
+                direction === 'right' ? 'back' : 'forward',
+            );
         }
     });
 
@@ -154,7 +184,8 @@ function createWindow(): BrowserWindow {
         }
     });
 
-    const sendMaximized = () => window.webContents.send('yeidle:maximized', window.isMaximized());
+    const sendMaximized = () =>
+        window.webContents.send('yeidle:maximized', window.isMaximized());
     window.on('maximize', sendMaximized);
     window.on('unmaximize', sendMaximized);
 
@@ -167,7 +198,9 @@ function createWindow(): BrowserWindow {
         selfCheck(window);
     }
 
-    void window.loadURL(`${ORIGIN}/${process.env.YEIDLE_SELF_CHECK_PATH ?? ''}`);
+    void window.loadURL(
+        `${ORIGIN}/${process.env.YEIDLE_SELF_CHECK_PATH ?? ''}`,
+    );
 
     return window;
 }
@@ -185,16 +218,19 @@ function selfCheck(window: BrowserWindow): void {
         messages.push(`[gone] ${details.reason}`);
     });
     window.webContents.once('did-finish-load', () => {
-        setTimeout(async () => {
-            const script = process.env.YEIDLE_SELF_CHECK_SCRIPT;
-            const summary = await window.webContents.executeJavaScript(
-                script
-                    ? fs.readFileSync(script, 'utf8')
-                    : `JSON.stringify({ url: location.href, title: document.title, text: document.body.innerText.slice(0, 600) })`,
-            );
-            process.stdout.write(`${summary}\n${messages.join('\n')}\n`);
-            app.quit();
-        }, Number(process.env.YEIDLE_SELF_CHECK_WAIT ?? 3000));
+        setTimeout(
+            async () => {
+                const script = process.env.YEIDLE_SELF_CHECK_SCRIPT;
+                const summary = await window.webContents.executeJavaScript(
+                    script
+                        ? fs.readFileSync(script, 'utf8')
+                        : `JSON.stringify({ url: location.href, title: document.title, text: document.body.innerText.slice(0, 600) })`,
+                );
+                process.stdout.write(`${summary}\n${messages.join('\n')}\n`);
+                app.quit();
+            },
+            Number(process.env.YEIDLE_SELF_CHECK_WAIT ?? 3000),
+        );
     });
 }
 
@@ -241,7 +277,8 @@ void app.whenReady().then(async () => {
     if (!fs.existsSync(path.join(host.dataDirectory, 'workspaces.json'))) {
         importLegacyWorkspaces(
             host,
-            process.env.YEIDLE_LEGACY_DIR ?? path.join(app.getPath('appData'), 'yeidle'),
+            process.env.YEIDLE_LEGACY_DIR ??
+                path.join(app.getPath('appData'), 'yeidle'),
             (file) => openNodeDatabase(file),
         );
     }

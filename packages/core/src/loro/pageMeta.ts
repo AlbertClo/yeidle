@@ -16,7 +16,13 @@ export type PageMeta = {
     deleted: boolean;
 };
 
-const FIELDS = ['title', 'page_type', 'daily_note_date', 'created_at', 'deleted'] as const;
+const FIELDS = [
+    'title',
+    'page_type',
+    'daily_note_date',
+    'created_at',
+    'deleted',
+] as const;
 
 function pageMap(doc: LoroDoc): LoroMap {
     return doc.getMap(PAGE);
@@ -44,7 +50,10 @@ export function hasPageMeta(doc: LoroDoc): boolean {
 }
 
 /** Writes the given fields, skipping unchanged ones. Returns whether anything changed. */
-export function updatePageMeta(doc: LoroDoc, fields: Partial<PageMeta>): boolean {
+export function updatePageMeta(
+    doc: LoroDoc,
+    fields: Partial<PageMeta>,
+): boolean {
     const map = pageMap(doc);
     let changed = false;
 

@@ -4,7 +4,11 @@ export type Backlink = { id: string; page_id: string; page_title: string };
 
 /** Pages linking to a node: one entry per source page, with its title. */
 export function loadBacklinks(db: Database, targetNodeId: string): Backlink[] {
-    const rows = db.all<{ id: string; page_id: string; page_title: string | null }>(
+    const rows = db.all<{
+        id: string;
+        page_id: string;
+        page_title: string | null;
+    }>(
         `WITH RECURSIVE ancestors AS (
             SELECT node_links.id AS link_id, nodes.id AS node_id,
                 nodes.parent_id, nodes.content
@@ -42,7 +46,10 @@ export function loadBacklinks(db: Database, targetNodeId: string): Backlink[] {
             id: row.id,
             page_id: row.page_id,
             // PHP's `?:` also treats "0" as empty
-            page_title: row.page_title && row.page_title !== '0' ? row.page_title : '[untitled]',
+            page_title:
+                row.page_title && row.page_title !== '0'
+                    ? row.page_title
+                    : '[untitled]',
         });
     }
 

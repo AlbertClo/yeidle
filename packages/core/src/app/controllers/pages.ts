@@ -25,7 +25,9 @@ export function registerPageRoutes(router: Router, ctx: AppContext): void {
         json(
             ctx
                 .db()
-                .all<NodeRow>(`SELECT * FROM nodes WHERE ${LIVE_PAGES_SQL} ORDER BY modified_hlc DESC, id DESC`)
+                .all<NodeRow>(
+                    `SELECT * FROM nodes WHERE ${LIVE_PAGES_SQL} ORDER BY modified_hlc DESC, id DESC`,
+                )
                 .map(serializeNode),
         ),
     );
@@ -64,7 +66,10 @@ export function registerPageRoutes(router: Router, ctx: AppContext): void {
         const q = requiredString(input, 'q');
 
         if (Array.from(q).length > 200) {
-            invalid('q', 'The q field must not be greater than 200 characters.');
+            invalid(
+                'q',
+                'The q field must not be greater than 200 characters.',
+            );
         }
 
         return json(searchNodes(ctx.db(), q));
@@ -103,11 +108,10 @@ export function registerPageRoutes(router: Router, ctx: AppContext): void {
             invalid('node_id', 'The selected node id is invalid.');
         }
 
-        ctx.db().run('INSERT INTO page_visits (id, node_id, visited_at) VALUES (?, ?, ?)', [
-            uuidv7(),
-            nodeId,
-            sqlTimestamp(),
-        ]);
+        ctx.db().run(
+            'INSERT INTO page_visits (id, node_id, visited_at) VALUES (?, ?, ?)',
+            [uuidv7(), nodeId, sqlTimestamp()],
+        );
 
         return json({}, 201);
     });
@@ -210,11 +214,18 @@ function boundNode(db: Database, id: string): NodeRow {
 }
 
 function withChildren(db: Database, node: NodeRow): NodeJson {
-    return { ...serializeNode(node), children: childrenOf(db, node.id).map(serializeNode) };
+    return {
+        ...serializeNode(node),
+        children: childrenOf(db, node.id).map(serializeNode),
+    };
 }
 
 // Ancestors guard against parent cycles
-function childrenRecursive(db: Database, parentId: string, ancestors: Set<string>): NodeJson[] {
+function childrenRecursive(
+    db: Database,
+    parentId: string,
+    ancestors: Set<string>,
+): NodeJson[] {
     return childrenOf(db, parentId).map((child) => ({
         ...serializeNode(child),
         children: ancestors.has(child.id)
@@ -266,7 +277,10 @@ function validateStore(db: Database, input: Input): StoreFields {
     const parentId = input.raw('parent_id');
 
     if (!isBlank(parentId)) {
-        if (typeof parentId !== 'string' || findNode(db, parentId, { withTrashed: true }) === null) {
+        if (
+            typeof parentId !== 'string' ||
+            findNode(db, parentId, { withTrashed: true }) === null
+        ) {
             invalid('parent_id', 'The selected parent id is invalid.');
         }
 
@@ -289,10 +303,14 @@ function validateStore(db: Database, input: Input): StoreFields {
 
     if (!isBlank(checked)) {
         if (![true, false, 0, 1, '0', '1'].includes(checked as never)) {
-            invalid('is_checked', 'The is checked field must be true or false.');
+            invalid(
+                'is_checked',
+                'The is checked field must be true or false.',
+            );
         }
 
-        fields.is_checked = checked === true || checked === 1 || checked === '1';
+        fields.is_checked =
+            checked === true || checked === 1 || checked === '1';
     }
 
     const pageType = nullableString(input, 'page_type', 'page type');
@@ -309,7 +327,10 @@ function validateStore(db: Database, input: Input): StoreFields {
 
     if (date !== null) {
         if (!isDate(date)) {
-            invalid('daily_note_date', 'The daily note date field must match the format Y-m-d.');
+            invalid(
+                'daily_note_date',
+                'The daily note date field must match the format Y-m-d.',
+            );
         }
 
         fields.daily_note_date = date;
@@ -337,7 +358,11 @@ function requiredString(input: Input, key: string, label = key): string {
     return value;
 }
 
-function nullableString(input: Input, key: string, label = key.replaceAll('_', ' ')): string | null {
+function nullableString(
+    input: Input,
+    key: string,
+    label = key.replaceAll('_', ' '),
+): string | null {
     const value = input.raw(key);
 
     if (isBlank(value)) {
@@ -361,7 +386,11 @@ function isDate(value: string): boolean {
     const [year, month, day] = match.slice(1).map(Number);
     const date = new Date(Date.UTC(year, month - 1, day));
 
-    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+    return (
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day
+    );
 }
 
 function isUrl(value: string): boolean {

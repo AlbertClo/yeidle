@@ -8,7 +8,11 @@ import type { AppContext } from '../context';
 export function registerDocumentRoutes(router: Router, ctx: AppContext): void {
     // Before documents/{id} so "changes" isn't captured as an id
     router.get('/api/documents/changes', ({ query }) =>
-        json(ctx.documents().store.changesSince(query.integer('since', { min: 0 }))),
+        json(
+            ctx
+                .documents()
+                .store.changesSince(query.integer('since', { min: 0 })),
+        ),
     );
 
     router.get('/api/documents/{documentId}', ({ params }) => {
@@ -33,11 +37,20 @@ export function registerDocumentRoutes(router: Router, ctx: AppContext): void {
             params.documentId,
             updates.map((update, i) => {
                 if (!isUuid(update.update_id)) {
-                    invalid(`updates.${i}.update_id`, 'The update id must be a UUID.');
+                    invalid(
+                        `updates.${i}.update_id`,
+                        'The update id must be a UUID.',
+                    );
                 }
 
-                if (typeof update.client_id !== 'string' || typeof update.bytes !== 'string') {
-                    invalid(`updates.${i}`, 'Each update needs a client_id and bytes.');
+                if (
+                    typeof update.client_id !== 'string' ||
+                    typeof update.bytes !== 'string'
+                ) {
+                    invalid(
+                        `updates.${i}`,
+                        'Each update needs a client_id and bytes.',
+                    );
                 }
 
                 return {
@@ -56,11 +69,13 @@ export function registerDocumentRoutes(router: Router, ctx: AppContext): void {
         const store = ctx.documents().store;
 
         return json({
-            updates: store.updatesSince(params.documentId, since).map((update) => ({
-                seq: update.seq,
-                client_id: update.client_id,
-                bytes: toBase64(update.bytes),
-            })),
+            updates: store
+                .updatesSince(params.documentId, since)
+                .map((update) => ({
+                    seq: update.seq,
+                    client_id: update.client_id,
+                    bytes: toBase64(update.bytes),
+                })),
             seq: Math.max(since, store.latestSeq(params.documentId)),
         });
     });

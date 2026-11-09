@@ -105,7 +105,10 @@ export function projectMedia(doc: LoroDoc): DocumentRows {
     return { page: null, blocks: [], media };
 }
 
-export function projectDocument(doc: LoroDoc, documentId: string): DocumentRows {
+export function projectDocument(
+    doc: LoroDoc,
+    documentId: string,
+): DocumentRows {
     return documentId === MEDIA_DOCUMENT_ID
         ? projectMedia(doc)
         : projectPage(doc, documentId);

@@ -9,6 +9,7 @@ import { registerKeyBindingRoutes } from './controllers/keyBindings';
 import { registerMediaRoutes } from './controllers/media';
 import { registerNavigationHistoryRoutes } from './controllers/navigationHistory';
 import { registerPageRoutes } from './controllers/pages';
+import { registerRoamImportRoutes } from './controllers/roamImport';
 import { registerSystemNodeRoutes } from './controllers/systemNodes';
 import { registerWebRoutes } from './controllers/web';
 import { registerWorkspaceRoutes } from './controllers/workspaces';
@@ -23,7 +24,10 @@ export type ServerOptions = {
 };
 
 /** Every route the app answers: the JSON API and the Inertia pages. */
-export function createAppServer(ctx: AppContext, options: ServerOptions): Router {
+export function createAppServer(
+    ctx: AppContext,
+    options: ServerOptions,
+): Router {
     const router = new Router();
     const inertia = new Inertia({
         version: options.version,
@@ -50,6 +54,7 @@ export function createAppServer(ctx: AppContext, options: ServerOptions): Router
     registerKeyBindingRoutes(router, ctx);
     registerNavigationHistoryRoutes(router, ctx);
     registerWorkspaceRoutes(router, ctx);
+    registerRoamImportRoutes(router, ctx);
     registerCloudRoutes(router, ctx);
     registerWebRoutes(router, ctx, inertia);
 

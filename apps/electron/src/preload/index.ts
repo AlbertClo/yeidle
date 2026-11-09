@@ -11,13 +11,19 @@ type Direction = 'back' | 'forward';
 let nextSubscriptionId = 1;
 type Listener = (event: IpcRendererEvent, ...args: unknown[]) => void;
 
-const subscriptions = new Map<number, { channel: string; listener: Listener }>();
+const subscriptions = new Map<
+    number,
+    { channel: string; listener: Listener }
+>();
 
 function subscribe<T>(channel: string, callback: (value: T) => void): number {
     const id = nextSubscriptionId++;
     const listener = (_event: IpcRendererEvent, value: T) => callback(value);
     ipcRenderer.on(channel, listener);
-    subscriptions.set(id, { channel, listener: listener as unknown as Listener });
+    subscriptions.set(id, {
+        channel,
+        listener: listener as unknown as Listener,
+    });
 
     return id;
 }
@@ -31,7 +37,8 @@ function unsubscribe(id: number): void {
     }
 }
 
-const windowAction = (action: string): boolean => ipcRenderer.sendSync('yeidle:window', action);
+const windowAction = (action: string): boolean =>
+    ipcRenderer.sendSync('yeidle:window', action);
 
 const Native = {
     windowControls: {
@@ -40,8 +47,9 @@ const Native = {
         close: () => void windowAction('close'),
         toggleMaximize: () => windowAction('toggle-maximize'),
         isMaximized: () => windowAction('state'),
-        subscribeNavigationCommand: (callback: (direction: Direction) => void) =>
-            subscribe('yeidle:navigation-command', callback),
+        subscribeNavigationCommand: (
+            callback: (direction: Direction) => void,
+        ) => subscribe('yeidle:navigation-command', callback),
         unsubscribeNavigationCommand: unsubscribe,
         subscribeMaximizedChange: (callback: (maximized: boolean) => void) =>
             subscribe('yeidle:maximized', callback),

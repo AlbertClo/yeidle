@@ -64,7 +64,9 @@ export class DocumentSession {
             throw new Error(`Could not load document ${id}.`);
         }
 
-        return DocumentSession.fromState((await response.json()) as DocumentState);
+        return DocumentSession.fromState(
+            (await response.json()) as DocumentState,
+        );
     }
 
     static cached(id: string): DocumentSession | null {
@@ -114,9 +116,12 @@ export class DocumentSession {
      * disagree in between.
      */
     async fetchUpdates(): Promise<(() => boolean) | null> {
-        const response = await fetch(`/api/documents/${this.id}/updates?since=${this.seq}`, {
-            headers: { Accept: 'application/json' },
-        });
+        const response = await fetch(
+            `/api/documents/${this.id}/updates?since=${this.seq}`,
+            {
+                headers: { Accept: 'application/json' },
+            },
+        );
 
         if (!response.ok) {
             return null;
@@ -130,10 +135,14 @@ export class DocumentSession {
         return () => {
             const before = this.doc.oplogVersion();
             const hadUnsent = this.hasUnsentChanges();
-            const foreign = data.updates.filter((update) => update.client_id !== clientId);
+            const foreign = data.updates.filter(
+                (update) => update.client_id !== clientId,
+            );
 
             if (foreign.length > 0) {
-                this.doc.importBatch(foreign.map((update) => fromBase64(update.bytes)));
+                this.doc.importBatch(
+                    foreign.map((update) => fromBase64(update.bytes)),
+                );
             }
 
             // The app already has what was just imported
@@ -172,7 +181,10 @@ export class DocumentSession {
             return true;
         }
 
-        const bytes = this.doc.export({ mode: 'update', from: this.sentVersion });
+        const bytes = this.doc.export({
+            mode: 'update',
+            from: this.sentVersion,
+        });
 
         try {
             const response = await fetch(`/api/documents/${this.id}/updates`, {

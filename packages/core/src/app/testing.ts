@@ -22,14 +22,22 @@ export function testContext(): AppContext & {
     opened: string[];
     shownInFolder: string[];
     openedUrls: string[];
-    downloads: Map<string, { status?: number; contentType?: string; bytes: Uint8Array }>;
+    downloads: Map<
+        string,
+        { status?: number; contentType?: string; bytes: Uint8Array }
+    >;
     cleanup(): void;
 } {
-    const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'yeidle-test-'));
+    const dataDirectory = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'yeidle-test-'),
+    );
     const opened: string[] = [];
     const shownInFolder: string[] = [];
     const openedUrls: string[] = [];
-    const downloads = new Map<string, { status?: number; contentType?: string; bytes: Uint8Array }>();
+    const downloads = new Map<
+        string,
+        { status?: number; contentType?: string; bytes: Uint8Array }
+    >();
     const host: Host = {
         platform: 'linux',
         appVersion: 'test',
@@ -91,7 +99,12 @@ export async function call(
     url: string,
     body: Record<string, unknown> = {},
     headers: Record<string, string> = {},
-): Promise<{ status: number; headers: Record<string, string>; json: any; response: AppResponse }> {
+): Promise<{
+    status: number;
+    headers: Record<string, string>;
+    json: any;
+    response: AppResponse;
+}> {
     const response = await router.handle(request(method, url, body, headers));
     const text =
         typeof response.body === 'string'
@@ -107,11 +120,19 @@ export async function call(
         parsed = text;
     }
 
-    return { status: response.status, headers: response.headers, json: parsed, response };
+    return {
+        status: response.status,
+        headers: response.headers,
+        json: parsed,
+        response,
+    };
 }
 
 /** A RequestContext for calling handlers directly. */
-export function contextFor(body: Record<string, unknown> = {}, url = 'yeidle://app/'): RequestContext {
+export function contextFor(
+    body: Record<string, unknown> = {},
+    url = 'yeidle://app/',
+): RequestContext {
     const req = request('GET', url, body);
 
     return {
