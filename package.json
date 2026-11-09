@@ -1,0 +1,11 @@
+{
+    "name": "yeidle",
+    "private": true,
+    "workspaces": [
+        "packages/*",
+        "apps/electron"
+    ],
+    "scripts": {
+        "test": "npm test --workspaces --if-present"
+    }
+}
