@@ -323,6 +323,12 @@ function closeDialog(): void {
     sessionStorage.removeItem(ACCOUNT_DIALOG_OPEN_KEY);
     open.value = false;
 
+    // Closing the first-run prompt any way (×, Escape, outside click) means
+    // "not now", same as Continue offline; otherwise it reopens on every page
+    if (cloudAccount.value?.signed_in !== true && !pending.value) {
+        localStorage.setItem(FIRST_RUN_KEY, 'true');
+    }
+
     if (justSignedIn.value) {
         sessionStorage.removeItem(SIGN_IN_CONFIRMATION_KEY);
         justSignedIn.value = false;
