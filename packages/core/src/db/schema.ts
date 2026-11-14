@@ -1,12 +1,8 @@
 import type { Database } from './database';
 
 /**
- * Workspace database schema. Version 1 matches the tables the NativePHP app
- * created (so its workspace files open unchanged) plus the document tables.
- * The version lives in PRAGMA user_version.
+ * Workspace database schema, built by numbered steps (see MIGRATIONS).
  */
-
-export const SCHEMA_VERSION = 1;
 
 const CONTENT_TABLES = `
 CREATE TABLE IF NOT EXISTS "nodes" (
@@ -168,17 +164,14 @@ function hasColumn(db: Database, table: string, column: string): boolean {
         .some((row) => row.name === column);
 }
 
-/** Brings a workspace database (new, or written by the NativePHP app) to the current schema. */
-export function migrate(db: Database): void {
-    const version = db.get<{ user_version: number }>(
-        'PRAGMA user_version',
-    )!.user_version;
-
-    if (version >= SCHEMA_VERSION) {
-        return;
-    }
-
-    db.transaction(() => {
+/**
+ * Schema steps, applied in order. Step N brings a database to version N
+ * (stored in PRAGMA user_version). Append new steps; never edit old ones.
+ */
+const MIGRATIONS: ((db: Database) => void)[] = [
+    // 1: the NativePHP app's tables (so its workspace files open unchanged)
+    // plus the Loro document tables
+    (db) => {
         db.exec(CONTENT_TABLES);
 
         if (!hasTable(db, 'node_search')) {
@@ -195,6 +188,36 @@ export function migrate(db: Database): void {
             'CREATE INDEX IF NOT EXISTS "nodes_document_id_index" on "nodes" ("document_id")',
         );
         db.exec(DOCUMENT_TABLES);
-        db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    });
+    },
+
+    // 2: cloud pairings from the operation-log era point at a log of ops,
+    // not document updates; the workspace pairs again from scratch
+    (db) => {
+        db.exec(`UPDATE sync_state SET
+            cloud_url = NULL,
+            cloud_token = NULL,
+            workspace_id = NULL,
+            last_server_seq = 0,
+            cloud_seed_pending = 0,
+            last_sync_attempt_at = NULL,
+            last_sync_success_at = NULL,
+            last_sync_error = NULL`);
+        db.exec('UPDATE document_updates SET cloud_seq = NULL');
+    },
+];
+
+export const SCHEMA_VERSION = MIGRATIONS.length;
+
+/** Brings a workspace database (new, or written by the NativePHP app) to the current schema. */
+export function migrate(db: Database): void {
+    let version = db.get<{ user_version: number }>(
+        'PRAGMA user_version',
+    )!.user_version;
+
+    for (; version < MIGRATIONS.length; version++) {
+        db.transaction(() => {
+            MIGRATIONS[version](db);
+            db.exec(`PRAGMA user_version = ${version + 1}`);
+        });
+    }
 }

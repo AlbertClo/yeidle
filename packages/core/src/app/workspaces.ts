@@ -166,6 +166,95 @@ export class Workspaces {
         return record;
     }
 
+    /**
+     * Reconciles the index with the account's cloud workspaces without
+     * downloading anything: new ones get an empty local database, ones the
+     * account lost access to are hidden (their files stay on disk).
+     */
+    syncCloudCatalog(
+        accountId: string,
+        cloudWorkspaces: {
+            id: string;
+            name: string;
+            role?: string;
+            owned?: boolean;
+        }[],
+    ): WorkspaceState {
+        for (const cloud of cloudWorkspaces) {
+            if (
+                !isUuid(cloud.id) ||
+                typeof cloud.name !== 'string' ||
+                cloud.name.trim() === ''
+            ) {
+                throw new WorkspaceError(
+                    'The cloud workspace catalog is invalid.',
+                );
+            }
+        }
+
+        const state = this.read();
+        const accessible = new Set(cloudWorkspaces.map((cloud) => cloud.id));
+        state.workspaces = state.workspaces.filter(
+            (workspace) =>
+                workspace.cloud_status === 'local' ||
+                accessible.has(workspace.id),
+        );
+
+        for (const cloud of cloudWorkspaces) {
+            let record = state.workspaces.find(
+                (workspace) => workspace.id === cloud.id,
+            );
+
+            if (!record) {
+                record = this.createRecord(cloud.id, cloud.name.trim());
+                state.workspaces.push(record);
+            }
+
+            record.name = cloud.name.trim();
+            record.cloud_account_id = accountId;
+            record.cloud_status =
+                record.cloud_status === 'ready' ? 'ready' : 'available';
+            record.cloud_role = cloud.role ?? 'member';
+            record.cloud_owned = cloud.owned ?? false;
+            record.cloud_error = null;
+        }
+
+        if (state.workspaces.length === 0) {
+            state.workspaces.push(this.createRecord(uuidv7(), 'Personal'));
+        }
+
+        if (
+            !state.workspaces.some(
+                (workspace) => workspace.id === state.active_workspace_id,
+            )
+        ) {
+            state.active_workspace_id = state.workspaces[0].id;
+        }
+
+        this.write(state);
+
+        return this.state();
+    }
+
+    markCloudStatus(
+        id: string,
+        status: Exclude<CloudStatus, 'local'>,
+        error: string | null = null,
+    ): void {
+        const state = this.read();
+        const record = state.workspaces.find(
+            (workspace) => workspace.id === id,
+        );
+
+        if (!record) {
+            throw new WorkspaceError(`Local workspace [${id}] was not found.`);
+        }
+
+        record.cloud_status = status;
+        record.cloud_error = error;
+        this.write(state);
+    }
+
     delete(id: string): WorkspaceState {
         const state = this.read();
         const record = this.find(id);

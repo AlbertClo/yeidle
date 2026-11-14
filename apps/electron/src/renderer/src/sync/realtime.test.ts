@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     echoes: [] as Array<Record<string, any>>,
-    handleCommittedOps: vi.fn(),
-    recoverRealtimeSync: vi.fn().mockResolvedValue(undefined),
+    requestCloudExchange: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('laravel-echo', () => {
@@ -71,9 +70,8 @@ vi.mock('laravel-echo', () => {
 
 vi.mock('pusher-js', () => ({ default: class FakePusher {} }));
 
-vi.mock('./realtimeOps', () => ({
-    handleCommittedOps: mocks.handleCommittedOps,
-    recoverRealtimeSync: mocks.recoverRealtimeSync,
+vi.mock('./cloud', () => ({
+    requestCloudExchange: mocks.requestCloudExchange,
 }));
 
 const enabledConfig = {
@@ -87,8 +85,7 @@ const enabledConfig = {
 
 beforeEach(() => {
     mocks.echoes.length = 0;
-    mocks.handleCommittedOps.mockClear();
-    mocks.recoverRealtimeSync.mockClear();
+    mocks.requestCloudExchange.mockClear();
 });
 
 afterEach(() => {
@@ -118,13 +115,13 @@ describe('realtime health', () => {
         expect(echo.privateChannel).toBe('workspaces.workspace-1.sync');
 
         echo.connection.emit('connected');
-        expect(mocks.recoverRealtimeSync).not.toHaveBeenCalled();
+        expect(mocks.requestCloudExchange).not.toHaveBeenCalled();
         expect(realtimeHealth.state).toBe('connecting');
 
         echo.channel.subscribedCallback?.();
         expect(realtimeHealth.state).toBe('connected');
         expect(realtimeHealth.error).toBeNull();
-        expect(mocks.recoverRealtimeSync).toHaveBeenCalledOnce();
+        expect(mocks.requestCloudExchange).toHaveBeenCalledOnce();
     });
 
     it('reports when realtime delivery is unavailable', async () => {

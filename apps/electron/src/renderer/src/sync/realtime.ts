@@ -2,8 +2,7 @@ import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 import { reactive, readonly } from 'vue';
 
-import { handleCommittedOps, recoverRealtimeSync } from './realtimeOps';
-import type { CommittedOpsEvent } from './realtimeOps';
+import { requestCloudExchange } from './cloud';
 
 interface RealtimeConfig {
     enabled: boolean;
@@ -207,12 +206,14 @@ async function configureRealtimeSync(): Promise<void> {
         });
 
         echo.private(`workspaces.${config.workspace_id}.sync`)
-            .listen('.ops.committed', (event: CommittedOpsEvent) => {
-                void handleCommittedOps(event);
+            // The cloud's document log grew: the app pulls (and skips this
+            // device's own updates)
+            .listen('.updates.committed', () => {
+                void requestCloudExchange();
             })
             .subscribed(() => {
                 setRealtimeHealth('connected');
-                void recoverRealtimeSync();
+                void requestCloudExchange();
             })
             .error((error: Record<string, unknown>) => {
                 const status = error.status;

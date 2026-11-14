@@ -6,7 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import EmbeddedBlockTree from '@/components/EmbeddedBlockTree.vue';
 import { LOCAL_NODES_CHANGED_EVENT } from '@/sync/nodeChanges';
 import type { LocalNodesChangedEvent } from '@/sync/nodeChanges';
-import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/realtimeOps';
+import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
 import type { Node } from '@/types/node';
 
 type EmbedTarget = {

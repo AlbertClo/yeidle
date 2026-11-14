@@ -35,10 +35,14 @@ export interface Host {
     openPath(path: string): void;
     showItemInFolder(path: string): void;
     openExternal(url: string): void;
+    /** Yeidle Cloud's base URL; cloud sign-in is unavailable without it. */
+    cloudUrl?: string;
+    /** Shown in the cloud's device list ("Yeidle on <host>"). */
+    deviceName?: string;
+    /** HTTP client for Yeidle Cloud (defaults to the global fetch; tests replace it). */
+    cloudFetch?: (input: string, init?: RequestInit) => Promise<Response>;
     /** Downloads a URL (Roam attachments). */
-    fetch(
-        url: string,
-    ): Promise<{
+    fetch(url: string): Promise<{
         status: number;
         contentType: string | null;
         bytes: Uint8Array;

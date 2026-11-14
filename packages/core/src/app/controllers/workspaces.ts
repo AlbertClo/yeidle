@@ -1,5 +1,6 @@
 import { json } from '../../http/http';
 import type { Router } from '../../http/router';
+import { cloudFor, CloudError } from '../cloud';
 import type { AppContext } from '../context';
 import { WorkspaceError } from '../workspaces';
 
@@ -10,6 +11,21 @@ export function registerWorkspaceRoutes(router: Router, ctx: AppContext): void {
             return json(fn());
         } catch (error) {
             if (error instanceof WorkspaceError) {
+                return json({ message: error.message }, status);
+            }
+
+            throw error;
+        }
+    };
+
+    const cloudFailing = async (status: number, fn: () => Promise<unknown>) => {
+        try {
+            return json(await fn());
+        } catch (error) {
+            if (
+                error instanceof WorkspaceError ||
+                error instanceof CloudError
+            ) {
                 return json({ message: error.message }, status);
             }
 
@@ -33,18 +49,31 @@ export function registerWorkspaceRoutes(router: Router, ctx: AppContext): void {
         }
     });
 
-    // Cloud workspaces are renamed and deleted through the cloud account,
-    // which isn't ported yet; local ones are handled here
-    router.patch('/api/workspaces/{workspaceId}', ({ params, input }) => {
+    // Cloud workspaces are renamed and deleted through the cloud account
+    const isCloud = (id: string) =>
+        ctx.workspaces.find(id).cloud_status !== 'local';
+
+    router.patch('/api/workspaces/{workspaceId}', async ({ params, input }) => {
         const name = input.string('name', { max: 100 });
 
-        return failing(422, () => ({
-            workspace: ctx.workspaces.rename(params.workspaceId, name),
+        return cloudFailing(422, async () => ({
+            workspace: isCloud(params.workspaceId)
+                ? await cloudFor(ctx).account.renameWorkspace(
+                      params.workspaceId,
+                      name,
+                  )
+                : ctx.workspaces.rename(params.workspaceId, name),
         }));
     });
 
-    router.delete('/api/workspaces/{workspaceId}', ({ params }) =>
-        failing(422, () => ctx.workspaces.delete(params.workspaceId)),
+    router.delete('/api/workspaces/{workspaceId}', async ({ params }) =>
+        cloudFailing(422, async () =>
+            isCloud(params.workspaceId)
+                ? await cloudFor(ctx).account.deleteWorkspace(
+                      params.workspaceId,
+                  )
+                : ctx.workspaces.delete(params.workspaceId),
+        ),
     );
 
     router.post('/api/workspaces/{workspaceId}/activate', ({ params }) =>
@@ -53,11 +82,12 @@ export function registerWorkspaceRoutes(router: Router, ctx: AppContext): void {
         })),
     );
 
-    router.post('/api/workspaces/{workspaceId}/sync', () =>
-        json(
-            { message: 'Cloud sync is not available in this version yet.' },
-            422,
-        ),
+    router.post('/api/workspaces/{workspaceId}/sync', async ({ params }) =>
+        cloudFailing(422, async () => ({
+            workspace: await cloudFor(ctx).account.enableWorkspaceSync(
+                params.workspaceId,
+            ),
+        })),
     );
 
     router.post(

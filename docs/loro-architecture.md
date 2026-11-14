@@ -172,8 +172,8 @@ cloud's copies of `nodes`, `node_links`, and `media`.
   - Append-only. It also serves as backup and history.
 - **`document_snapshots`:** `workspace_id`, `document_id`, `bytes`,
   `covers_seq`, `uploaded_by`. Uploaded by clients.
-- **Ownership:** a document id belongs to the first workspace that writes it.
-  The server rejects updates for that id from any other workspace.
+- **Isolation:** every row is scoped to its workspace; the same document id
+  (for example the `media` document) in two workspaces is two documents.
 
 ### API
 
@@ -181,17 +181,21 @@ All routes are `auth:sanctum` and require workspace membership.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /workspaces/{ws}/updates` | Push a batch. Idempotent per `update_id`; assigns `server_seq`; broadcasts |
-| `GET /workspaces/{ws}/updates?since=` | Pull in pages, capped by count and bytes |
-| `GET /workspaces/{ws}/bootstrap` | Latest snapshots, plus the updates after them |
-| `POST /workspaces/{ws}/snapshots` | Upload a compacted snapshot covering a `server_seq` |
+| `POST /workspaces/{ws}/documents/updates` | Push a batch. Idempotent per `update_id`; assigns `server_seq`; broadcasts |
+| `GET /workspaces/{ws}/documents/updates?since=&exclude_device=` | Pull in pages, capped by count and bytes; returns the next `cursor` |
+| `GET /workspaces/{ws}/documents/status` | Log position, user id, and public Reverb settings (pairing probe) |
+| `GET /workspaces/{ws}/bootstrap` | Not built yet: latest snapshots, plus the updates after them |
+| `POST /workspaces/{ws}/snapshots` | Not built yet: upload a compacted snapshot covering a `server_seq` |
 | Blob endpoints | Unchanged: content-addressed, presigned R2/S3 URLs |
+
+As built, update ids are unique per workspace (`(workspace_id, update_id)`),
+so no cross-workspace document ownership table is needed. Bytes travel as
+base64 in JSON and are stored as `bytea`.
 
 ### Realtime (Reverb)
 
-- **`private-workspaces.{id}`:** `updates.committed`. The update bytes are
-  sent inline when small; otherwise the event is a hint, and clients pull
-  after receiving it.
+- **`private-workspaces.{id}.sync`:** `updates.committed`, a hint carrying
+  the new log position; clients pull after receiving it.
 - **`presence-documents.{id}`:** live cursors and "who's here", sent as
   client whispers carrying Loro ephemeral-state bytes. Never stored.
 

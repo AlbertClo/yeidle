@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
+import { cloudFor } from '@yeidle/core/app/cloud/index';
 import { createContext, fileSettings } from '@yeidle/core/app/context';
 import { importLegacyWorkspaces } from '@yeidle/core/app/legacyImport';
 import type { Host } from '@yeidle/core/app/host';
@@ -63,6 +65,8 @@ const host: Host = {
     openPath: (target) => void shell.openPath(target),
     showItemInFolder: (target) => shell.showItemInFolder(target),
     openExternal: (url) => void shell.openExternal(url),
+    cloudUrl: process.env.YEIDLE_CLOUD_URL ?? 'http://localhost:8200',
+    deviceName: `Yeidle on ${os.hostname()}`,
     fetch: async (url) => {
         const response = await net.fetch(url);
 
@@ -78,6 +82,9 @@ function broadcastDocumentChanges(documentIds: string[]): void {
     for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send('yeidle:documents-changed', documentIds);
     }
+
+    // Local changes go to the cloud soon (a pulled change finds nothing to push)
+    cloudFor(context).scheduler.nudge();
 }
 
 const workspaces = new Workspaces(host, openNodeDatabase, (workspace) =>
@@ -285,6 +292,7 @@ void app.whenReady().then(async () => {
 
     // Open (and convert) the active workspace before the first page
     workspaces.active();
+    cloudFor(context).scheduler.start();
     createWindow();
 
     app.on('activate', () => {
@@ -300,4 +308,7 @@ app.on('window-all-closed', () => {
     }
 });
 
-app.on('will-quit', () => workspaces.close());
+app.on('will-quit', () => {
+    cloudFor(context).scheduler.stop();
+    workspaces.close();
+});

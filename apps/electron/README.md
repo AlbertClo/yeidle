@@ -45,9 +45,39 @@ Environment overrides, mostly for testing:
 | `YEIDLE_LEGACY_DIR` | Import NativePHP workspaces from another directory |
 | `YEIDLE_SELF_CHECK=1` | Print what the window rendered (or the result of `YEIDLE_SELF_CHECK_SCRIPT`) and quit |
 | `YEIDLE_SELF_CHECK_PATH` | Page to open for the self-check, e.g. `pages/<id>` |
+| `YEIDLE_CLOUD_URL` | Yeidle Cloud to sign in to (default `http://localhost:8200`, the Sail app) |
+
+## Cloud sync
+
+Signing in uses the device flow: the app opens the cloud in the browser, you
+approve the device, and the app stores the token in `cloud-account.json` in
+its data directory. A synced workspace exchanges Loro updates with the cloud
+relay (`packages/core/src/app/cloud/sync.ts`): local updates whose
+`cloud_seq` is empty are pushed, other devices' updates are pulled after the
+`sync_state.last_server_seq` cursor. Exchanges run shortly after local
+changes, on a 15-second interval, and immediately when Reverb reports new
+updates.
+
+An empty cloud workspace is seeded from the device that enables sync; a
+device that opens it with an empty local copy downloads it. If both sides
+already have notes, pairing is refused (the same notes converted on two
+devices would merge into duplicates).
+
+To try two devices on one machine, start Sail in `apps/web`, build once,
+then run two instances with their own data directories:
+
+```bash
+npm run build -w @yeidle/electron
+cd apps/electron
+YEIDLE_DATA_DIR=/tmp/yeidle-a YEIDLE_LEGACY_DIR=/nonexistent npx electron-vite preview
+YEIDLE_DATA_DIR=/tmp/yeidle-b YEIDLE_LEGACY_DIR=/nonexistent npx electron-vite preview
+```
+
+`YEIDLE_LEGACY_DIR=/nonexistent` skips copying the NativePHP workspaces.
 
 ## Not ported yet
 
-- Yeidle Cloud (sign-in, sync, realtime). The routes answer as if no cloud
-  is configured.
+- Media files in cloud sync (blob upload and download): media metadata
+  syncs, the files themselves don't yet.
+- Page history.
 - Installable packages (electron-builder).
