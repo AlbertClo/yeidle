@@ -11,6 +11,17 @@ interface RealtimeConfig {
     host?: string;
     port?: number;
     scheme?: 'http' | 'https';
+    /** Who this window is signed in as, for labelling its cursor elsewhere. */
+    user?: { id: string; name: string | null } | null;
+    device_name?: string | null;
+}
+
+/** The live connection, for page presence channels. */
+export interface RealtimeConnection {
+    echo: Echo<'reverb'>;
+    workspaceId: string;
+    user: { id: string; name: string | null } | null;
+    deviceName: string | null;
 }
 
 export type RealtimeConnectionState =
@@ -36,6 +47,12 @@ export const realtimeHealth = readonly(mutableRealtimeHealth);
 
 let echo: Echo<'reverb'> | null = null;
 let activeConfig = '';
+let connection: RealtimeConnection | null = null;
+
+/** The connection once its workspace channel is subscribed, else null. */
+export function realtimeConnection(): RealtimeConnection | null {
+    return realtimeHealth.state === 'connected' ? connection : null;
+}
 let configRequest: Promise<void> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -53,6 +70,7 @@ function stopRealtimeSync(
 ): void {
     echo?.disconnect();
     echo = null;
+    connection = null;
     activeConfig = '';
     setRealtimeHealth(state, error);
 }
@@ -197,11 +215,17 @@ async function configureRealtimeSync(): Promise<void> {
             Pusher,
         });
 
-        const connection = echo.connector.pusher.connection;
-        connection.bind('state_change', ({ current }: { current: string }) => {
+        connection = {
+            echo,
+            workspaceId: config.workspace_id,
+            user: config.user ?? null,
+            deviceName: config.device_name ?? null,
+        };
+        const socket = echo.connector.pusher.connection;
+        socket.bind('state_change', ({ current }: { current: string }) => {
             updateConnectionState(current);
         });
-        connection.bind('error', (error: unknown) => {
+        socket.bind('error', (error: unknown) => {
             setRealtimeHealth('error', connectionErrorMessage(error));
         });
 

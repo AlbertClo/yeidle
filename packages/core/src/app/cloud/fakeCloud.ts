@@ -105,6 +105,10 @@ export function fakeRelay() {
             }
         }
 
+        if (url.pathname === '/api/broadcasting/auth') {
+            return respond(200, { auth: 'key:signature' });
+        }
+
         const base = `/api/workspaces/${WORKSPACE}/documents`;
         const latest = log.at(-1)?.server_seq ?? 0;
 

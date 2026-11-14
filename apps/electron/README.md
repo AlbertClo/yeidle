@@ -65,6 +65,12 @@ the app uploads local files the cloud doesn't have and downloads files it's
 missing; a file that's shown before it has arrived is downloaded on the spot.
 Text never waits for file transfers.
 
+Other windows' cursors on the same page show as colored carets with a name
+(`src/renderer/src/presence/`). Each window keeps its selection as Loro
+cursors in a Loro ephemeral store and sends the store's updates as client
+events on a per-page Reverb presence channel; they go window to window and
+are never stored.
+
 An empty cloud workspace is seeded from the device that enables sync; a
 device that opens it with an empty local copy downloads it. If both sides
 already have notes, pairing is refused (the same notes converted on two

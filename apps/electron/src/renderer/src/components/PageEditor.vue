@@ -90,6 +90,12 @@ import { hasOpenModal } from '@/ui/modal';
 import { NODE_COMMAND_EVENT } from '@/ui/nodeCommands';
 import type { NodeCommand } from '@/ui/nodeCommands';
 import { OPEN_RAW_NODE_EDITOR_EVENT } from '@/ui/rawNodeEditor';
+import type { LocalSelection, RemoteCursor } from '@/presence/pagePresence';
+import { fromBlockPosition, toBlockPosition } from '@/presence/positions';
+import {
+    RemoteCursors,
+    setRemoteCursors as drawRemoteCursors,
+} from '@/presence/remoteCursorsExtension';
 
 const lowlight = createLowlight(common);
 
@@ -159,6 +165,8 @@ const emit = defineEmits<{
     selectionChange: [selection: EditorSelectionBookmark];
     navigationDeparture: [selection: EditorSelectionBookmark];
     dailyNoteBoundary: [offset: -1 | 1, focus: 'start' | 'end'];
+    /** This window's selection in block terms, for other windows' cursors. */
+    presenceSelection: [selection: LocalSelection];
 }>();
 
 const RAW_MARKDOWN_NODE_TYPES = new Set([
@@ -933,7 +941,44 @@ function focusBlock(blockId: string) {
     }
 }
 
+function emitPresenceSelection(targetEditor: TiptapEditor): void {
+    if (!targetEditor.isFocused) {
+        return;
+    }
+
+    const { doc, selection } = targetEditor.state;
+    const anchor = toBlockPosition(doc, selection.anchor);
+    const head = toBlockPosition(doc, selection.head);
+
+    if (anchor && head) {
+        emit('presenceSelection', { anchor, head });
+    }
+}
+
+/** Shows other windows' cursors (in block terms) in this editor. */
+function setRemoteCursors(cursors: RemoteCursor[]): void {
+    const e = editor.value;
+
+    if (!e || e.isDestroyed) {
+        return;
+    }
+
+    const doc = e.state.doc;
+    drawRemoteCursors(
+        e.view,
+        cursors.flatMap((cursor) => {
+            const anchor = fromBlockPosition(doc, cursor.anchor);
+            const head = fromBlockPosition(doc, cursor.head);
+
+            return anchor === null || head === null
+                ? []
+                : [{ key: cursor.key, label: cursor.label, color: cursor.color, anchor, head }];
+        }),
+    );
+}
+
 defineExpose({
+    setRemoteCursors,
     focusStart,
     applyRemoteContent,
     selectionBlockId,
@@ -3618,6 +3663,7 @@ const editor = useEditor({
         ActiveLineHighlight,
         RawNodeEditor,
         CollapsedNodeDecorations,
+        RemoteCursors,
         History,
         HistorySelectionScroll,
         Bold,
@@ -4432,9 +4478,11 @@ const editor = useEditor({
     onFocus: ({ editor }) => {
         userHasInteracted = true;
         emitSelectionBookmark(editor);
+        emitPresenceSelection(editor);
     },
     onSelectionUpdate: ({ editor }) => {
         emitSelectionBookmark(editor);
+        emitPresenceSelection(editor);
     },
     onTransaction: ({ transaction, editor }) => {
         if (!transaction.docChanged) {

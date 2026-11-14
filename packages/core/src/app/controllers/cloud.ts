@@ -104,7 +104,21 @@ export function registerCloudRoutes(router: Router, ctx: AppContext): void {
 
     router.get('/api/cloud/realtime-config', async () => {
         try {
-            return json(await cloud().sync().realtimeConfig());
+            const config = await cloud().sync().realtimeConfig();
+            const user = cloud().account.account()?.user;
+
+            // Who this window is, for labelling its cursor on other devices
+            return json(
+                config.enabled
+                    ? {
+                          ...config,
+                          user: user
+                              ? { id: String(user.id), name: user.name ?? null }
+                              : null,
+                          device_name: ctx.host.deviceName ?? null,
+                      }
+                    : config,
+            );
         } catch {
             return json(
                 { message: 'Realtime sync configuration is unavailable.' },

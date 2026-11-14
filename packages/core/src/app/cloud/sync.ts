@@ -322,7 +322,15 @@ export class CloudSync {
             throw new CloudError('Cloud sync is not configured.');
         }
 
-        if (channelName !== `private-workspaces.${state.workspace_id}.sync`) {
+        const workspace = `workspaces.${state.workspace_id}`;
+        const allowed =
+            channelName === `private-${workspace}.sync` ||
+            // Who's on a page, and their cursors
+            new RegExp(
+                `^presence-${workspace.replaceAll('.', '\\.')}\\.documents\\.[0-9a-zA-Z-]{1,64}$`,
+            ).test(channelName);
+
+        if (!allowed) {
             throw new CloudError('The realtime channel is not allowed.');
         }
 

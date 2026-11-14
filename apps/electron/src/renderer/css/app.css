@@ -489,3 +489,40 @@ html.native-window.native-window-maximized body {
 [data-main-scroll-content] {
     width: calc(100% + var(--app-scrollbar-width));
 }
+
+/* Other windows' cursors (presence/remoteCursorsExtension.ts) */
+.ProseMirror .remote-caret {
+    position: relative;
+    margin-left: -1px;
+    margin-right: -1px;
+    border-left: 2px solid;
+    pointer-events: none;
+    word-break: normal;
+}
+
+.ProseMirror .remote-caret-label {
+    position: absolute;
+    bottom: 100%;
+    left: -2px;
+    padding: 0 0.3em;
+    border-radius: 3px 3px 3px 0;
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    user-select: none;
+    /* Shown when the cursor moves, then fades */
+    animation: remote-caret-label 3s ease-in forwards;
+}
+
+@keyframes remote-caret-label {
+    0%,
+    70% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}

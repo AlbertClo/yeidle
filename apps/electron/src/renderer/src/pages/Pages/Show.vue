@@ -8,7 +8,7 @@ import {
     Pin,
     Trash2,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import PageEditor from '@/components/PageEditor.vue';
 import { Button } from '@/components/ui/button';
@@ -62,7 +62,11 @@ import {
     setNodePinned,
     updatePinnedItemTitle,
 } from '@/stores/pins';
+import { joinPagePresence } from '@/presence/channel';
+import type { PagePresenceHandle } from '@/presence/channel';
+import type { LocalSelection, RemoteCursor } from '@/presence/pagePresence';
 import { DocumentSession } from '@/sync/documentSession';
+import { realtimeHealth } from '@/sync/realtime';
 import type { DocumentState } from '@/sync/documentSession';
 import { documentsInEvent, LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
 import type { LocalOpsAvailableEvent } from '@/sync/localOps';
@@ -138,6 +142,7 @@ type PageEditorHandle = {
     selectionBlockId: () => string | null;
     applyRemoteContent: (node: Node) => boolean;
     expandAllPageNodes: () => boolean;
+    setRemoteCursors: (cursors: RemoteCursor[]) => void;
 };
 
 const pageEditorRef = ref<PageEditorHandle>();
@@ -491,6 +496,8 @@ async function pullRemote() {
         rememberContent(remote);
         setCachedPage(props.page.id, titleContent.value, remote);
         refreshBacklinks();
+        // Carets on text that just arrived can be placed now
+        refreshRemoteCursors();
     } finally {
         pulling = false;
 
@@ -678,6 +685,78 @@ function handleEditorSelectionChange(selection: EditorSelectionBookmark): void {
     rememberEditorSelection(editorHistoryKey, selection);
 }
 
+/*
+ * Other windows' cursors on this page (cloud workspaces with realtime).
+ * Positions are Loro cursors on the session document, so local edits are
+ * flushed into it before translating in either direction.
+ */
+let pagePresence: PagePresenceHandle | null = null;
+let pendingPresenceSelection: LocalSelection | null = null;
+let presenceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startPresence() {
+    if (pagePresence === null) {
+        pagePresence = joinPagePresence(
+            session.id,
+            () => session.doc,
+            refreshRemoteCursors,
+        );
+    }
+}
+
+function stopPresence() {
+    if (presenceTimer !== null) {
+        clearTimeout(presenceTimer);
+        presenceTimer = null;
+    }
+
+    pagePresence?.leave();
+    pagePresence = null;
+}
+
+function refreshRemoteCursors() {
+    if (pagePresence === null || !pageEditorRef.value) {
+        return;
+    }
+
+    flushLocal();
+    pageEditorRef.value.setRemoteCursors(
+        pagePresence.presence.remoteCursors(),
+    );
+}
+
+// At most ~10 updates a second (the realtime server's client event limit)
+function handlePresenceSelection(selection: LocalSelection) {
+    pendingPresenceSelection = selection;
+
+    if (presenceTimer !== null) {
+        return;
+    }
+
+    presenceTimer = setTimeout(() => {
+        presenceTimer = null;
+
+        if (pagePresence && pendingPresenceSelection) {
+            flushLocal();
+            pagePresence.presence.setSelection(pendingPresenceSelection);
+        }
+    }, 100);
+}
+
+watch(
+    () => realtimeHealth.state,
+    (state) => {
+        if (state === 'connected') {
+            startPresence();
+        } else {
+            stopPresence();
+        }
+    },
+);
+
+// A remounted editor starts without decorations
+watch(pageEditorRef, () => nextTick(refreshRemoteCursors));
+
 function handleEditorNavigationDeparture(
     selection: EditorSelectionBookmark,
 ): void {
@@ -692,6 +771,7 @@ onMounted(() => {
     restoreNavigationScrollPosition();
     // Catch anything that changed while the page was cached
     void pullRemote();
+    startPresence();
 });
 
 onBeforeUnmount(() => {
@@ -702,6 +782,7 @@ onBeforeUnmount(() => {
     );
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     document.removeEventListener('keydown', handleGlobalKeydown);
+    stopPresence();
     flushSync();
     markCachedPageInactive(props.page.id);
 });
@@ -822,6 +903,7 @@ onBeforeUnmount(() => {
                             initialEditorSelection = null
                         "
                         @selection-change="handleEditorSelectionChange"
+                        @presence-selection="handlePresenceSelection"
                         @navigation-departure="handleEditorNavigationDeparture"
                         @daily-note-boundary="crossDailyNoteBoundary"
                     />

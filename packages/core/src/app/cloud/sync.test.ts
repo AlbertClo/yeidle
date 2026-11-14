@@ -190,4 +190,34 @@ describe('CloudSync', () => {
         expect(recovered).toMatchObject({ ok: true, pushed: 1 });
         expect(sync.status()).toMatchObject({ health: 'healthy', outbox: 0 });
     });
+
+    it("signs only this workspace's sync and page presence channels", async () => {
+        const relay = fakeRelay();
+        const a = device();
+        const sync = syncOf(a, relay);
+        await sync.connect(CLOUD, 'token', WORKSPACE);
+
+        await expect(
+            sync.authorizeRealtime(
+                '1.2',
+                `private-workspaces.${WORKSPACE}.sync`,
+            ),
+        ).resolves.toMatchObject({ auth: 'key:signature' });
+        await expect(
+            sync.authorizeRealtime(
+                '1.2',
+                `presence-workspaces.${WORKSPACE}.documents.${uuidv7()}`,
+            ),
+        ).resolves.toMatchObject({ auth: 'key:signature' });
+
+        for (const channel of [
+            `presence-workspaces.${uuidv7()}.documents.${uuidv7()}`,
+            `private-workspaces.${uuidv7()}.sync`,
+            `presence-workspaces.${WORKSPACE}.documents.x.y`,
+        ]) {
+            await expect(
+                sync.authorizeRealtime('1.2', channel),
+            ).rejects.toThrow(CloudError);
+        }
+    });
 });
