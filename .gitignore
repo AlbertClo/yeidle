@@ -4,3 +4,4 @@
 /apps/electron/out
 /packages/*/node_modules
 *.tsbuildinfo
+/result

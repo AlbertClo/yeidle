@@ -1,5 +1,8 @@
 {
     "name": "@yeidle/electron",
+    "productName": "Yeidle",
+    "version": "0.1.0",
+    "description": "Local-first notes",
     "private": true,
     "type": "module",
     "main": "out/main/index.js",

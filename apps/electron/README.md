@@ -16,6 +16,34 @@ npm run dev    # run with hot reload
 npm test       # core and renderer tests
 ```
 
+## Installing on NixOS
+
+The repository is a flake (`flake.nix`, `nix/package.nix`). It builds the
+app and runs it with nixpkgs' Electron, with a desktop entry and icon.
+
+```bash
+nix run github:AlbertClo/yeidle?ref=explore/loro   # try it
+nix build .#yeidle                                 # build from a checkout
+```
+
+In a NixOS configuration:
+
+```nix
+# flake.nix inputs
+yeidle.url = "github:AlbertClo/yeidle?ref=explore/loro";
+
+# configuration
+environment.systemPackages = [ inputs.yeidle.packages.${pkgs.system}.default ];
+```
+
+Update with `nix flake update yeidle` and a rebuild. After changing
+`package-lock.json`, refresh `npmDepsHash` in `nix/package.nix` with
+`nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
+
+The installed app uses the same data directory as `npm start`
+(`~/.config/yeidle-app`) and signs in to `YEIDLE_CLOUD_URL`
+(default `http://localhost:8200`).
+
 ## How it fits together
 
 - **Main process** (`src/main`): serves the app on `yeidle://app`. Requests
@@ -93,4 +121,5 @@ YEIDLE_DATA_DIR=/tmp/yeidle-b YEIDLE_LEGACY_DIR=/nonexistent npx electron-vite p
 - Streaming for large media files: transfers read and write whole files
   in memory.
 - Page history.
-- Installable packages (electron-builder).
+- Other installable packages (AppImage, Windows, macOS, AUR) and
+  auto-update; NixOS has the flake.

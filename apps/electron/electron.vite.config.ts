@@ -13,8 +13,16 @@ const loroBrowserBuild = resolve(
 
 export default defineConfig({
     main: {
-        // The core is TypeScript source, so it's bundled into the main process
-        plugins: [externalizeDepsPlugin({ exclude: ['@yeidle/core'] })],
+        // Everything is bundled into the main process (the core is TypeScript
+        // source) except Loro, whose Node build loads its WebAssembly from
+        // its own directory. A packaged app then needs only out/ and
+        // node_modules/loro-crdt.
+        build: {
+            externalizeDeps: false,
+            rollupOptions: {
+                external: ['loro-crdt'],
+            },
+        },
     },
     preload: {
         plugins: [externalizeDepsPlugin()],
