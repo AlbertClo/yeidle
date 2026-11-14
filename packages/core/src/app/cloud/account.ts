@@ -36,6 +36,8 @@ type StoredAccount = {
     user: { id: string } & Record<string, unknown>;
     workspaces: CloudWorkspace[];
     preferences: { key_bindings?: unknown };
+    /** Local key bindings not uploaded yet (saved while offline). */
+    preferences_dirty?: boolean;
 };
 
 type PendingAuthorization = {
@@ -243,11 +245,12 @@ export class CloudAccount {
             'GET',
             '/api/workspaces',
         );
-        const preferences = await this.request(
-            account,
-            'GET',
-            '/api/user/preferences',
-        );
+        // Local changes made offline win over the cloud copy
+        const preferences = account.preferences_dirty
+            ? await this.request(account, 'PUT', '/api/user/preferences', {
+                  key_bindings: new UserKeyBindings(this.ctx).overrides(),
+              })
+            : await this.request(account, 'GET', '/api/user/preferences');
 
         if (
             [workspaces.status, preferences.status].some(
@@ -269,6 +272,7 @@ export class CloudAccount {
             account.preferences = {
                 key_bindings: preferences.body?.key_bindings ?? [],
             };
+            account.preferences_dirty = false;
             this.importKeyBindings(account.preferences);
         }
 
@@ -420,6 +424,40 @@ export class CloudAccount {
         return this.ctx.workspaces.delete(workspaceId);
     }
 
+    /**
+     * Uploads this user's key binding overrides. They are marked dirty first,
+     * so an upload that fails is retried by the next refresh.
+     */
+    async saveKeyBindings(
+        keyBindings: Record<string, string | null>,
+    ): Promise<void> {
+        const account = this.read().account;
+
+        if (account === null) {
+            return;
+        }
+
+        account.preferences = { key_bindings: keyBindings };
+        account.preferences_dirty = true;
+        this.write({ account });
+
+        const response = await this.request(
+            account,
+            'PUT',
+            '/api/user/preferences',
+            { key_bindings: keyBindings },
+        );
+        const current = this.read().account;
+
+        if (response.ok && current !== null) {
+            current.preferences = {
+                key_bindings: response.body?.key_bindings ?? keyBindings,
+            };
+            current.preferences_dirty = false;
+            this.write({ account: current });
+        }
+    }
+
     async logout(): Promise<void> {
         const { account } = this.read();
 
@@ -472,7 +510,7 @@ export class CloudAccount {
 
     private request(
         account: StoredAccount,
-        method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+        method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
         path: string,
         json?: unknown,
     ) {

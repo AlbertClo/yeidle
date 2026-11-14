@@ -1,6 +1,7 @@
 import { HttpError, invalid, json } from '../../http/http';
 import type { AppRequest } from '../../http/http';
 import type { Router } from '../../http/router';
+import { cloudFor } from '../cloud';
 import type { AppContext } from '../context';
 import { KeyBindingError, UserKeyBindings } from '../services/keyBindings';
 import type { KeyboardPlatform } from '../services/keyBindings';
@@ -20,11 +21,11 @@ export function registerKeyBindingRoutes(
         try {
             const listing = keyBindings.replace(bindings, platform(request));
 
-            try {
-                saveKeyBindingsToCloud(ctx, keyBindings.overrides());
-            } catch {
-                // Saving a local shortcut must keep working while cloud is unavailable.
-            }
+            // In the background: saving a shortcut never waits on the cloud,
+            // and an offline save is uploaded by the next account refresh
+            void cloudFor(ctx)
+                .account.saveKeyBindings(keyBindings.overrides())
+                .catch(() => undefined);
 
             return json(listing);
         } catch (error) {
@@ -36,15 +37,6 @@ export function registerKeyBindingRoutes(
         }
     });
 }
-
-/**
- * Not ported yet: the PHP app pushed overrides to the cloud account
- * (CloudAccountService::saveKeyBindings). Intentionally a no-op.
- */
-function saveKeyBindingsToCloud(
-    _ctx: AppContext,
-    _overrides: Record<string, string | null>,
-): void {}
 
 /** `bindings` required array, `bindings.*` nullable string max 40. */
 function validateBindings(value: unknown): Record<string, unknown> {

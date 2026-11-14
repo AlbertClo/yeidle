@@ -30,8 +30,7 @@ export function syncIdentity(db: Database): SyncIdentity {
         state = { client_id: clientId, cloud_user_id: null };
     }
 
-    // The PHP app refreshed cloud_user_id from the cloud here when paired but
-    // unknown; cloud sync is not ported yet, so the stored value is used as is.
+    // Pairing a workspace with the cloud records cloud_user_id (CloudSync.connect)
     return state;
 }
 

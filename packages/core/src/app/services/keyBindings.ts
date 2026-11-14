@@ -1,3 +1,4 @@
+import { cloudProfileKey } from '../cloud/profile';
 import type { AppContext } from '../context';
 
 /**
@@ -121,12 +122,9 @@ export function defaultKeyBindings(isMac: boolean): Record<string, string> {
     return { ...DEFAULT_KEY_BINDINGS, ...(isMac ? MAC_DEFAULT_OVERRIDES : {}) };
 }
 
-/**
- * Seam for the cloud account: bindings were scoped to `cloud:<user id>` when
- * signed in. Cloud accounts aren't ported yet, so everything is `local`.
- */
-export function keyBindingProfileKey(_ctx: AppContext): string {
-    return 'local';
+/** Bindings belong to the signed-in cloud user (`cloud:<id>`), else `local`. */
+export function keyBindingProfileKey(ctx: AppContext): string {
+    return cloudProfileKey(ctx);
 }
 
 export class UserKeyBindings {

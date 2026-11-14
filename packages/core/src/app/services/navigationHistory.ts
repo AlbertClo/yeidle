@@ -1,6 +1,7 @@
 import { invalid } from '../../http/http';
 import { placeholders } from '../../db/database';
 import { parseTimestamp, sqlTimestamp } from '../../support/time';
+import { cloudProfileKey } from '../cloud/profile';
 import type { AppContext } from '../context';
 
 /**
@@ -52,12 +53,9 @@ type LocationRow = {
     node_text?: string | null;
 };
 
-/**
- * Seam for the cloud account: history was scoped to `cloud:<user id>` when
- * signed in. Cloud accounts aren't ported yet, so everything is `local`.
- */
-export function navigationProfileKey(_ctx: AppContext): string {
-    return 'local';
+/** History belongs to the signed-in cloud user (`cloud:<id>`), else `local`. */
+export function navigationProfileKey(ctx: AppContext): string {
+    return cloudProfileKey(ctx);
 }
 
 export class NavigationHistoryStore {
@@ -211,10 +209,9 @@ export class NavigationHistoryStore {
     private currentId(profileKey: string): string | null {
         const state = this.ctx
             .db()
-            .get<{ current_location_id: string | null }>(
-                'SELECT current_location_id FROM navigation_history_states WHERE profile_key = ?',
-                [profileKey],
-            );
+            .get<{
+                current_location_id: string | null;
+            }>('SELECT current_location_id FROM navigation_history_states WHERE profile_key = ?', [profileKey]);
 
         return typeof state?.current_location_id === 'string'
             ? state.current_location_id
