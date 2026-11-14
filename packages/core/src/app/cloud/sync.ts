@@ -99,6 +99,19 @@ export class CloudSync {
         );
     }
 
+    /** Where and as whom to reach the cloud, or null when not paired. */
+    connection(): { url: string; token: string; workspaceId: string } | null {
+        const state = this.state();
+
+        return this.configured()
+            ? {
+                  url: state.cloud_url!,
+                  token: state.cloud_token!,
+                  workspaceId: state.workspace_id!,
+              }
+            : null;
+    }
+
     /** Pairs this workspace with a cloud workspace, then syncs once. */
     async connect(
         url: string,

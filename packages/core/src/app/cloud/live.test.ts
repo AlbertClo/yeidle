@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { uuidv7 } from '../../support/ids';
@@ -122,9 +124,9 @@ describe.skipIf(!url || !token)('live cloud sync', () => {
             // Device B: sees the workspace in its catalog, opens it empty
             const b = await signedInDevice(userId);
             await call(b.router, 'POST', '/api/account/refresh');
-            expect(
-                b.ctx.workspaces.find(workspace.id).cloud_status,
-            ).toBe('available');
+            expect(b.ctx.workspaces.find(workspace.id).cloud_status).toBe(
+                'available',
+            );
             b.ctx.workspaces.activate(workspace.id);
             const bootstrapped = await call(
                 b.router,
@@ -156,6 +158,39 @@ describe.skipIf(!url || !token)('live cloud sync', () => {
             expect(
                 (await call(a.router, 'GET', '/api/cloud/status')).json,
             ).toMatchObject({ health: 'healthy', outbox: 0 });
+
+            // A media file: notes carry its metadata, storage carries the bytes
+            const bytes = new TextEncoder().encode(`live blob ${uuidv7()}`);
+            const hash = createHash('sha256').update(bytes).digest('hex');
+            const media = (ctx: ReturnType<typeof testContext>) =>
+                ctx.host.files.join(ctx.workspace().storagePath, 'media');
+            a.ctx.host.files.mkdir(media(a.ctx));
+            a.ctx.host.files.writeFile(
+                a.ctx.host.files.join(media(a.ctx), hash),
+                bytes,
+            );
+            a.ctx.documents().applyChanges([
+                {
+                    type: 'media.create',
+                    payload: {
+                        id: uuidv7(),
+                        hash,
+                        original_name: 'live.txt',
+                        mime_type: 'text/plain',
+                        size: bytes.length,
+                    },
+                },
+            ]);
+            await cloudFor(a.ctx).sync().exchange();
+            expect(await cloudFor(a.ctx).blobs().uploadPending()).toBe(1);
+
+            await cloudFor(b.ctx).sync().exchange();
+            expect(await cloudFor(b.ctx).blobs().downloadMissing()).toBe(1);
+            expect(
+                b.ctx.host.files.readFile(
+                    b.ctx.host.files.join(media(b.ctx), hash),
+                ),
+            ).toEqual(bytes);
         } finally {
             await call(a.router, 'DELETE', `/api/workspaces/${workspace.id}`);
         }

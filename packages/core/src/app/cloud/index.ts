@@ -2,6 +2,7 @@ import type { AppContext } from '../context';
 import type { Workspace } from '../workspaces';
 
 import { CloudAccount } from './account';
+import { CloudBlobs } from './blobs';
 import type { CloudFetch } from './http';
 import { CloudSync } from './sync';
 
@@ -12,6 +13,8 @@ export type Cloud = {
     account: CloudAccount;
     /** Sync for the active workspace (a new one after a switch). */
     sync(): CloudSync;
+    /** Media files for the active workspace. */
+    blobs(): CloudBlobs;
     scheduler: SyncScheduler;
 };
 
@@ -23,22 +26,35 @@ export function cloudFor(ctx: AppContext): Cloud {
     if (!cloud) {
         const fetchImpl: CloudFetch =
             ctx.host.cloudFetch ?? ((input, init) => fetch(input, init));
-        const syncs = new WeakMap<Workspace, CloudSync>();
-        const sync = () => {
+        const perWorkspace = new WeakMap<
+            Workspace,
+            { sync: CloudSync; blobs: CloudBlobs }
+        >();
+        const services = () => {
             const workspace = ctx.workspace();
-            let instance = syncs.get(workspace);
+            let instance = perWorkspace.get(workspace);
 
             if (!instance) {
-                instance = new CloudSync(
+                const sync = new CloudSync(
                     workspace.db,
                     workspace.documents,
                     fetchImpl,
                 );
-                syncs.set(workspace, instance);
+                const blobs = new CloudBlobs(
+                    workspace.db,
+                    ctx.host.files,
+                    ctx.host.files.join(workspace.storagePath, 'media'),
+                    fetchImpl,
+                    () => sync.connection(),
+                );
+                instance = { sync, blobs };
+                perWorkspace.set(workspace, instance);
             }
 
             return instance;
         };
+        const sync = () => services().sync;
+        const blobs = () => services().blobs;
 
         cloud = {
             account: new CloudAccount(
@@ -48,7 +64,8 @@ export function cloudFor(ctx: AppContext): Cloud {
                 ctx.host.cloudUrl ?? null,
             ),
             sync,
-            scheduler: new SyncScheduler(sync),
+            blobs,
+            scheduler: new SyncScheduler(sync, blobs),
         };
         clouds.set(ctx, cloud);
     }
@@ -64,7 +81,10 @@ export class SyncScheduler {
     private timer: ReturnType<typeof setTimeout> | null = null;
     private interval: ReturnType<typeof setInterval> | null = null;
 
-    constructor(private sync: () => CloudSync) {}
+    constructor(
+        private sync: () => CloudSync,
+        private blobs: () => CloudBlobs,
+    ) {}
 
     start(intervalMs = 15_000): void {
         this.stop();
@@ -99,10 +119,16 @@ export class SyncScheduler {
     private run(): void {
         try {
             const sync = this.sync();
+            const blobs = this.blobs();
 
             if (sync.configured()) {
-                // Failures are recorded in sync_state for the status endpoint
-                void sync.exchange().catch(() => undefined);
+                // Failures are recorded in sync_state for the status endpoint.
+                // Files move after notes, in their own pass, so a large
+                // upload never holds back text
+                void sync
+                    .exchange()
+                    .catch(() => undefined)
+                    .then(() => blobs.run());
             }
         } catch {
             // No workspace open (shutting down)

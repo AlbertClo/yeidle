@@ -23,7 +23,7 @@ export type CloudResponse = {
 
 export async function cloudRequest(
     fetchImpl: CloudFetch,
-    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
     options: {
         token?: string;

@@ -5,6 +5,7 @@ import type { Input } from '../../http/http';
 import type { Router } from '../../http/router';
 import { isUuid, uuidv7 } from '../../support/ids';
 import { jsonTimestamp } from '../../support/time';
+import { cloudFor, CloudError } from '../cloud';
 import type { AppContext } from '../context';
 
 /**
@@ -59,17 +60,36 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
     };
 
     /**
-     * The PHP app downloaded missing blobs from the cloud here
-     * (CloudBlobService::localPath). Cloud blobs aren't ported yet.
+     * The file behind a media row, downloaded from the cloud first when this
+     * device doesn't have it yet.
      */
-    const localBlob = (media: MediaRecord): string => {
+    const localBlob = async (media: MediaRecord): Promise<string> => {
         const path = storage('media', media.filename);
 
-        if (!/^[0-9a-f]{64}$/.test(media.filename) || !files.isFile(path)) {
+        if (!/^[0-9a-f]{64}$/.test(media.filename)) {
             abort(503, 'Media is not currently available on this device.');
         }
 
-        return path;
+        if (files.isFile(path)) {
+            return path;
+        }
+
+        const cloud = cloudFor(ctx);
+
+        if (!cloud.sync().configured()) {
+            abort(503, 'Media is not currently available on this device.');
+        }
+
+        try {
+            return await cloud.blobs().ensureLocal(media.filename);
+        } catch (error) {
+            abort(
+                503,
+                error instanceof CloudError
+                    ? error.message
+                    : 'Media is not currently available on this device.',
+            );
+        }
     };
 
     router.post('/api/media/init', ({ input }) => {
@@ -173,18 +193,18 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
         return json(serializeMedia(findMedia(mediaId)), 201);
     });
 
-    router.get('/api/media/{media}', ({ params }) => {
+    router.get('/api/media/{media}', async ({ params }) => {
         const media = findMedia(params.media);
 
-        return file(localBlob(media), media.mime_type, {
+        return file(await localBlob(media), media.mime_type, {
             'content-disposition': contentDisposition(media.original_name),
             'cache-control': 'public, max-age=31536000',
         });
     });
 
-    router.post('/api/media/{media}/open', ({ params }) => {
+    router.post('/api/media/{media}/open', async ({ params }) => {
         const media = findMedia(params.media);
-        const blob = localBlob(media);
+        const blob = await localBlob(media);
 
         // Blobs are extension-less content hashes; link them under the original
         // filename so the OS can pick the right application

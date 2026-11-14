@@ -82,7 +82,25 @@ export function registerCloudRoutes(router: Router, ctx: AppContext): void {
         return json({ signed_out: true });
     });
 
-    router.get('/api/cloud/status', () => json(cloud().sync().status()));
+    router.get('/api/cloud/status', () =>
+        json({
+            ...cloud().sync().status(),
+            pending_blob_uploads: cloud().sync().configured()
+                ? cloud().blobs().pendingUploadCount()
+                : 0,
+        }),
+    );
+
+    // Notes first; files follow in the background
+    const exchange = async () => {
+        const result = await cloud().sync().exchange();
+
+        if (result.configured) {
+            void cloud().blobs().run();
+        }
+
+        return result;
+    };
 
     router.get('/api/cloud/realtime-config', async () => {
         try {
@@ -108,7 +126,7 @@ export function registerCloudRoutes(router: Router, ctx: AppContext): void {
 
     // A realtime event only says the log grew: pull it
     router.post('/api/cloud/realtime-ops', async () => {
-        const result = await cloud().sync().exchange();
+        const result = await exchange();
 
         return json({
             applied: result.pulled,
@@ -118,7 +136,7 @@ export function registerCloudRoutes(router: Router, ctx: AppContext): void {
     });
 
     router.post('/api/sync/cloud-exchange', async () => {
-        const result = await cloud().sync().exchange();
+        const result = await exchange();
 
         return json(result);
     });

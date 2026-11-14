@@ -58,6 +58,13 @@ relay (`packages/core/src/app/cloud/sync.ts`): local updates whose
 changes, on a 15-second interval, and immediately when Reverb reports new
 updates.
 
+Media files travel separately from notes (`packages/core/src/app/cloud/blobs.ts`):
+their metadata syncs in the Loro media document, the files go straight to
+and from the cloud's object storage through presigned URLs. After each sync
+the app uploads local files the cloud doesn't have and downloads files it's
+missing; a file that's shown before it has arrived is downloaded on the spot.
+Text never waits for file transfers.
+
 An empty cloud workspace is seeded from the device that enables sync; a
 device that opens it with an empty local copy downloads it. If both sides
 already have notes, pairing is refused (the same notes converted on two
@@ -77,7 +84,7 @@ YEIDLE_DATA_DIR=/tmp/yeidle-b YEIDLE_LEGACY_DIR=/nonexistent npx electron-vite p
 
 ## Not ported yet
 
-- Media files in cloud sync (blob upload and download): media metadata
-  syncs, the files themselves don't yet.
+- Streaming for large media files: transfers read and write whole files
+  in memory.
 - Page history.
 - Installable packages (electron-builder).
