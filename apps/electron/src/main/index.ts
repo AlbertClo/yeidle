@@ -48,13 +48,14 @@ protocol.registerSchemesAsPrivileged([
     },
 ]);
 
-// Never share a data folder with the NativePHP app ("yeidle"): its
-// workspaces are imported by copying, not opened in place
+// Never share a data folder with the NativePHP app ("yeidle-app", from its
+// APP_NAME "Yeidle App"): its workspaces are imported by copying, not
+// opened in place
 app.setName('Yeidle');
 app.setPath(
     'userData',
     process.env.YEIDLE_DATA_DIR ??
-        path.join(app.getPath('appData'), 'yeidle-app'),
+        path.join(app.getPath('appData'), 'yeidle'),
 );
 
 const host: Host = {
@@ -285,7 +286,7 @@ void app.whenReady().then(async () => {
         importLegacyWorkspaces(
             host,
             process.env.YEIDLE_LEGACY_DIR ??
-                path.join(app.getPath('appData'), 'yeidle'),
+                path.join(app.getPath('appData'), 'yeidle-app'),
             (file) => openNodeDatabase(file),
         );
     }

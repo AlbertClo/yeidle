@@ -41,7 +41,7 @@ Update with `nix flake update yeidle` and a rebuild. After changing
 `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
 
 The installed app uses the same data directory as `npm start`
-(`~/.config/yeidle-app`) and signs in to `YEIDLE_CLOUD_URL`
+(`~/.config/yeidle`) and signs in to `YEIDLE_CLOUD_URL`
 (default `http://localhost:8200`).
 
 ## How it fits together
@@ -61,9 +61,10 @@ The installed app uses the same data directory as `npm start`
 
 ## Data
 
-Workspaces live in `~/.config/yeidle-app` (Linux). On first launch the app
-copies the NativePHP app's workspaces from `~/.config/yeidle` (originals are
-never opened for writing) and converts them to Loro documents.
+Workspaces live in `~/.config/yeidle` (Linux). On first launch the app
+copies the NativePHP app's workspaces from `~/.config/yeidle-app` (the
+NativePHP app's `APP_NAME` is "Yeidle App"; originals are never opened for
+writing) and converts them to Loro documents.
 
 Environment overrides, mostly for testing:
 
