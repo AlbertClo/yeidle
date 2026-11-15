@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { RoamImporter } from '../import/roam/importer';
 
 import { call, request, Router, testContext } from '../testing';
 
@@ -217,6 +219,25 @@ describe('Roam import API', () => {
             message: 'Roam page [x] is missing a string [title].',
         });
         expect(ctx.workspaces.all()).toHaveLength(1);
+    });
+
+    it('removes the new workspace when the import fails part-way', async () => {
+        const uploadId = await upload(fs.readFileSync(fixture, 'utf8'));
+        vi.spyOn(RoamImporter.prototype, 'import').mockRejectedValueOnce(
+            new Error('disk full'),
+        );
+
+        const events = await streamEvents({
+            upload_id: uploadId,
+            new_workspace_name: 'Half done',
+            download_attachments: false,
+        });
+
+        expect(events.at(-1)).toMatchObject({ type: 'error' });
+        expect(ctx.workspaces.all().map((w) => w.name)).not.toContain(
+            'Half done',
+        );
+        vi.restoreAllMocks();
     });
 
     it('removes the new workspace when the stream is closed mid-import', async () => {
