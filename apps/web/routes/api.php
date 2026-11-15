@@ -5,7 +5,6 @@ use App\Http\Controllers\Api\DeviceAuthorizationController;
 use App\Http\Controllers\Api\WorkspaceController;
 use App\Http\Controllers\BlobController;
 use App\Http\Controllers\DocumentSyncController;
-use App\Http\Controllers\SyncController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -30,11 +29,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/device', [DeviceAuthorizationController::class, 'destroy']);
 
     Route::prefix('/workspaces/{workspace}')->group(function () {
-        Route::post('/sync/push', [SyncController::class, 'push']);
-        Route::get('/sync/pull', [SyncController::class, 'pull']);
-        Route::get('/sync/bootstrap', [SyncController::class, 'bootstrap']);
-        Route::get('/sync/status', [SyncController::class, 'status']);
-
         Route::get('/documents/status', [DocumentSyncController::class, 'status']);
         Route::get('/documents/updates', [DocumentSyncController::class, 'pull']);
         Route::post('/documents/updates', [DocumentSyncController::class, 'push']);

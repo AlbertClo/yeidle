@@ -42,20 +42,4 @@ class Workspace extends Model
             ->withPivot('role')
             ->withTimestamps();
     }
-
-    /**
-     * @return HasMany<Op, $this>
-     */
-    public function ops(): HasMany
-    {
-        return $this->hasMany(Op::class);
-    }
-
-    /**
-     * @return HasMany<Node, $this>
-     */
-    public function nodes(): HasMany
-    {
-        return $this->hasMany(Node::class);
-    }
 }
