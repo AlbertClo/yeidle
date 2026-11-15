@@ -19,7 +19,7 @@ class EnsureBlobBucket extends Command
      */
     public function handle(S3ClientInterface $s3): int
     {
-        $bucket = config('filesystems.disks.s3.bucket');
+        $bucket = config('filesystems.disks.'.config('filesystems.blobs.disk').'.bucket');
 
         if (! is_string($bucket) || trim($bucket) === '') {
             $this->error('The S3 disk bucket is not configured. Set AWS_BUCKET before running this command.');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Workspace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 
@@ -14,7 +15,7 @@ class BlobController extends Controller
     {
         $this->authorizeWorkspace($request, $workspace);
 
-        if (! Storage::disk('s3')->exists($this->path($workspace, $hash))) {
+        if (! $this->disk()->exists($this->path($workspace, $hash))) {
             abort(404);
         }
 
@@ -31,11 +32,11 @@ class BlobController extends Controller
         ]);
         $path = $this->path($workspace, $hash);
 
-        if (Storage::disk('s3')->exists($path)) {
+        if ($this->disk()->exists($path)) {
             return response()->json(['exists' => true]);
         }
 
-        $upload = Storage::disk('s3_public')->temporaryUploadUrl(
+        $upload = $this->publicDisk()->temporaryUploadUrl(
             $path,
             now()->addMinutes(10),
             [
@@ -57,16 +58,32 @@ class BlobController extends Controller
         $this->authorizeWorkspace($request, $workspace);
         $path = $this->path($workspace, $hash);
 
-        if (! Storage::disk('s3')->exists($path)) {
+        if (! $this->disk()->exists($path)) {
             abort(404);
         }
 
         return response()->json([
-            'url' => Storage::disk('s3_public')->temporaryUrl(
+            'url' => $this->publicDisk()->temporaryUrl(
                 $path,
                 now()->addMinutes(10),
             ),
         ]);
+    }
+
+    /**
+     * The disk the app checks blobs on.
+     */
+    private function disk(): FilesystemAdapter
+    {
+        return Storage::disk(config('filesystems.blobs.disk'));
+    }
+
+    /**
+     * The disk that signs the URLs devices transfer blobs with.
+     */
+    private function publicDisk(): FilesystemAdapter
+    {
+        return Storage::disk(config('filesystems.blobs.public_disk'));
     }
 
     private function path(Workspace $workspace, string $hash): string

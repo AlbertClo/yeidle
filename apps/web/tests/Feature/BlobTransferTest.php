@@ -109,3 +109,22 @@ test('blob hashes must be canonical sha256 values', function () {
 
     $this->head(blobUrl($workspace, 'not-a-hash'))->assertNotFound();
 });
+
+test('it stores and signs blobs on the configured disks', function () {
+    $user = User::factory()->create();
+    $workspace = Workspace::factory()->for($user)->create();
+    $hash = str_repeat('ef', 32);
+    config()->set('filesystems.blobs.disk', 'private');
+    config()->set('filesystems.blobs.public_disk', 'private_public');
+    Storage::fake('private');
+    config()->set('filesystems.disks.private_public', config('filesystems.disks.s3_public'));
+    Storage::forgetDisk('private_public');
+    Storage::disk('private')->put("blobs/{$workspace->id}/{$hash}", 'blob');
+
+    Sanctum::actingAs($user);
+
+    $this->head(blobUrl($workspace, $hash))->assertNoContent();
+    expect($this->getJson(blobUrl($workspace, $hash, '/download-url'))->json('url'))
+        ->toContain("/yeidle/blobs/{$workspace->id}/{$hash}");
+    $this->head(blobUrl($workspace, str_repeat('12', 32)))->assertNotFound();
+});

@@ -17,6 +17,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Blob Disks
+    |--------------------------------------------------------------------------
+    |
+    | Where workspace files (blobs) are stored. "disk" is used by the app
+    | itself; "public_disk" signs the transfer URLs devices use, which can
+    | differ when the app reaches storage on an internal address (Sail's
+    | rustfs). On Laravel Cloud both are the attached bucket's disk.
+    |
+    */
+
+    'blobs' => [
+        'disk' => env('BLOB_DISK', 's3'),
+        'public_disk' => env('BLOB_PUBLIC_DISK', 's3_public'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |

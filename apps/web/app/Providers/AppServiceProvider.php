@@ -20,7 +20,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(S3ClientInterface::class, function (): S3ClientInterface {
             /** @var array<string, mixed> $config */
-            $config = config('filesystems.disks.s3', []);
+            $config = config('filesystems.disks.'.config('filesystems.blobs.disk'), []);
             $config += ['version' => 'latest'];
 
             if (! empty($config['key']) && ! empty($config['secret'])) {
