@@ -12,12 +12,12 @@ use Throwable;
 #[Description('Create the configured S3 blob bucket when it does not exist')]
 class EnsureBlobBucket extends Command
 {
-    public function __construct(private S3ClientInterface $s3)
-    {
-        parent::__construct();
-    }
-
-    public function handle(): int
+    /**
+     * The client is resolved here rather than in the constructor: artisan
+     * constructs every command when it boots (including during deploy
+     * builds, before storage is configured).
+     */
+    public function handle(S3ClientInterface $s3): int
     {
         $bucket = config('filesystems.disks.s3.bucket');
 
@@ -28,13 +28,13 @@ class EnsureBlobBucket extends Command
         }
 
         try {
-            if ($this->s3->doesBucketExistV2($bucket, false)) {
+            if ($s3->doesBucketExistV2($bucket, false)) {
                 $this->info("Blob bucket [{$bucket}] already exists.");
 
                 return self::SUCCESS;
             }
 
-            $this->s3->createBucket(['Bucket' => $bucket]);
+            $s3->createBucket(['Bucket' => $bucket]);
         } catch (Throwable $exception) {
             $this->error("Unable to ensure blob bucket [{$bucket}]: {$exception->getMessage()}");
 
