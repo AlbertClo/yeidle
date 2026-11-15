@@ -56,7 +56,7 @@ After changing
 `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
 
 The installed app keeps its data in `~/.config/yeidle` and signs in to
-`YEIDLE_CLOUD_URL` (default `http://localhost:8200`).
+Yeidle Cloud at `https://app.yeidle.com` (`YEIDLE_CLOUD_URL` overrides it).
 
 ## End-to-end tests
 
@@ -120,7 +120,7 @@ Environment overrides, mostly for testing:
 | `YEIDLE_DATA_DIR` | Use another data directory |
 | `YEIDLE_SELF_CHECK=1` | Print what the window rendered (or the result of `YEIDLE_SELF_CHECK_SCRIPT`) and quit |
 | `YEIDLE_SELF_CHECK_PATH` | Page to open for the self-check, e.g. `pages/<id>` |
-| `YEIDLE_CLOUD_URL` | Yeidle Cloud to sign in to (default `http://localhost:8200`, the Sail app) |
+| `YEIDLE_CLOUD_URL` | Yeidle Cloud to sign in to (default `https://app.yeidle.com`; `http://localhost:8200`, the Sail app, when running from the checkout) |
 
 ## Cloud sync
 

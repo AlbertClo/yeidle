@@ -47,11 +47,12 @@ protocol.registerSchemesAsPrivileged([
     },
 ]);
 
-// Data folders:
-//   yeidle      the installed app (your notes)
+// Data folders and cloud:
+//   yeidle      the installed app (your notes), signed in to Yeidle Cloud
 //   yeidle-dev  runs from the source checkout (npm run dev / npm start), so
 //               development never shares databases with the installed app
-//               and new migrations never reach it before an upgrade
+//               and schema changes never reach it before an upgrade; it
+//               signs in to the local cloud (Sail)
 // Only the checkout has the build config next to the app; packages ship
 // just the build output.
 const runningFromSource = fs.existsSync(
@@ -76,7 +77,11 @@ const host: Host = {
     openPath: (target) => void shell.openPath(target),
     showItemInFolder: (target) => shell.showItemInFolder(target),
     openExternal: (url) => void shell.openExternal(url),
-    cloudUrl: process.env.YEIDLE_CLOUD_URL ?? 'http://localhost:8200',
+    cloudUrl:
+        process.env.YEIDLE_CLOUD_URL ??
+        (runningFromSource
+            ? 'http://localhost:8200'
+            : 'https://app.yeidle.com'),
     deviceName: `Yeidle on ${os.hostname()}`,
     fetch: async (url) => {
         const response = await net.fetch(url);

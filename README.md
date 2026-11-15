@@ -73,7 +73,9 @@ composer install
 ```
 
 The cloud is served at <http://localhost:8200>, which is where the desktop app
-signs in by default (`YEIDLE_CLOUD_URL` overrides it). Register an account
+signs in when it runs from the checkout (`npm run dev`, `npm start`).
+Installed builds sign in to <https://app.yeidle.com>; `YEIDLE_CLOUD_URL`
+overrides either. Register an account
 there, then choose "Sign in" in the desktop app and approve the device in the
 browser.
 
