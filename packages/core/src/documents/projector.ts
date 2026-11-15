@@ -155,6 +155,10 @@ export class Projector {
         }
 
         let blocksChanged = false;
+        // Links are rebuilt once every row of this document exists, so a
+        // link to a later block on the same page finds it instead of
+        // creating a placeholder row for it
+        const relink: { id: string; content: unknown }[] = [];
 
         for (const block of rows.blocks) {
             const old = existing.get(block.id);
@@ -184,10 +188,14 @@ export class Projector {
                 old.deleted_at !== null ||
                 !sameJson(old.tiptap_content, block.tiptap_content)
             ) {
-                this.rebuildLinks(block.id, block.tiptap_content, stamp);
+                relink.push({ id: block.id, content: block.tiptap_content });
             }
 
             blocksChanged = true;
+        }
+
+        for (const { id, content } of relink) {
+            this.rebuildLinks(id, content, stamp);
         }
 
         const live = new Set(blockIds);

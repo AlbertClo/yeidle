@@ -204,6 +204,52 @@ describe('document service', () => {
         expect(node(blockId)!.deleted_at).not.toBeNull();
     });
 
+    it('writes a block that references a later block on the same page', () => {
+        // Both new, in one write: the reference comes first (a Roam import
+        // does this). The link must not leave a placeholder row that the
+        // later block then collides with.
+        const pageId = createPage('Notes');
+        const referrer = uuidv7();
+        const target = uuidv7();
+        documents.applyChanges([
+            {
+                type: 'node.set',
+                payload: {
+                    id: referrer,
+                    page_id: pageId,
+                    fields: {
+                        parent_id: pageId,
+                        position: 'a0',
+                        content: 'see below',
+                        tiptap_content: {
+                            type: 'paragraph',
+                            content: [
+                                { type: 'text', text: 'see ' },
+                                {
+                                    type: 'blockReference',
+                                    attrs: { targetId: target },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+            block(pageId, target, 'Learn', 'a1'),
+        ]);
+
+        expect(node(target)).toMatchObject({
+            content: 'Learn',
+            parent_id: pageId,
+            document_id: pageId,
+        });
+        expect(
+            db.get(
+                'SELECT 1 FROM node_links WHERE source_node_id = ? AND target_node_id = ?',
+                [referrer, target],
+            ),
+        ).toBeDefined();
+    });
+
     it('finds the real document when page_id names an intermediate ancestor', () => {
         const rootId = createPage('System root');
         const userRoot = uuidv7();
