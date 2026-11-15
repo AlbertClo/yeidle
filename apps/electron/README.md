@@ -22,7 +22,7 @@ The repository is a flake (`flake.nix`, with the package in `apps/electron/packa
 app and runs it with nixpkgs' Electron, with a desktop entry and icon.
 
 ```bash
-nix run github:AlbertClo/yeidle?ref=explore/loro   # try it
+nix run github:AlbertClo/yeidle   # try it
 nix build .#yeidle                                 # build from a checkout
 ```
 
@@ -30,13 +30,28 @@ In a NixOS configuration:
 
 ```nix
 # flake.nix inputs
-yeidle.url = "github:AlbertClo/yeidle?ref=explore/loro";
+yeidle.url = "github:AlbertClo/yeidle";
 
 # configuration
 environment.systemPackages = [ inputs.yeidle.packages.${pkgs.system}.default ];
 ```
 
-Update with `nix flake update yeidle` and a rebuild. After changing
+Update with `nix flake update yeidle` and a rebuild.
+
+To install from a checkout into your user profile, or update that install,
+run from the repository root:
+
+```bash
+npm run install:desktop
+```
+
+It builds the app (fixing `npmDepsHash` when `package-lock.json` changed),
+installs it with `nix profile`, or upgrades the copy installed from this
+checkout, and links the desktop entry into `~/.local/share/applications` so
+the app shows in the menu. Files git doesn't track yet aren't part of the
+build. Restart the app afterwards.
+
+After changing
 `package-lock.json`, refresh `npmDepsHash` in `apps/electron/package.nix` with
 `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
 
