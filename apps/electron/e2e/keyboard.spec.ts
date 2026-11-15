@@ -83,30 +83,37 @@ test.describe('editor keyboard', () => {
         }
     });
 
-    test.fixme('Escape on the file menu returns to the file, not the top of the page', async ({
+    test('Escape on the file menu returns to the file, and writing continues below it', async ({
         page,
     }) => {
-        // Known issue: after Escape the editor has focus with the cursor at
-        // the start of the page, so typing lands in the first block.
         await createPage(page, 'Photos');
         await page.keyboard.type('Above');
         await page.keyboard.press('Enter');
         await pasteImage(page, 'heron.png');
         await page.keyboard.press('Enter');
+        await expect(
+            page.getByText('Open folder', { exact: true }),
+        ).toBeVisible();
+
         await page.keyboard.press('Escape');
+        await expect(
+            page.getByText('Open folder', { exact: true }),
+        ).toBeHidden();
         await expect(selectedNode(page)).toHaveAttribute(
             'originalname',
             'heron.png',
         );
+
+        await page.keyboard.press('ArrowDown');
+        await page.keyboard.type('Below');
+        await expect
+            .poll(() => outline(page))
+            .toEqual(['Above', '[file: heron.png]', 'Below']);
     });
 
-    test.fixme('arrow keys stop at an image block instead of skipping it', async ({
+    test('arrow keys stop beside an image block, then select it, then move past it', async ({
         page,
     }) => {
-        // Known issue: ArrowUp from "Below" lands in "Above" and ArrowDown
-        // from "Above" lands in "Below". The editor converts file
-        // selections from arrow keys to a gap cursor (fileNodeGapCursor in
-        // PageEditor.vue), so stopping at the image looks intended.
         await createPage(page, 'Photos');
         await page.keyboard.type('Above');
         await page.keyboard.press('Enter');
@@ -114,11 +121,37 @@ test.describe('editor keyboard', () => {
         await press(page, 'ArrowDown');
         await page.keyboard.type('Below');
 
-        await pressUntil(page, 'ArrowUp', async () =>
-            editor(page).evaluate(
-                (root) => root.querySelector('.ProseMirror-gapcursor') !== null,
-            ),
+        const gapCursor = editor(page).locator('.ProseMirror-gapcursor');
+        const caretText = () =>
+            page.evaluate(() => getSelection()?.anchorNode?.textContent ?? '');
+
+        // Up from "Below": beside the image, then the image, then "Above"
+        await pressUntil(
+            page,
+            'ArrowUp',
+            async () => (await gapCursor.count()) > 0,
         );
+        await press(page, 'ArrowUp');
+        await expect(selectedNode(page)).toHaveAttribute(
+            'originalname',
+            'heron.png',
+        );
+        await press(page, 'ArrowUp');
+        await expect.poll(caretText).toBe('Above');
+
+        // And back down the same way
+        await pressUntil(
+            page,
+            'ArrowDown',
+            async () => (await gapCursor.count()) > 0,
+        );
+        await press(page, 'ArrowDown');
+        await expect(selectedNode(page)).toHaveAttribute(
+            'originalname',
+            'heron.png',
+        );
+        await press(page, 'ArrowDown');
+        await expect.poll(caretText).toBe('Below');
     });
 
     test('Enter on a selected link offers Follow link, which opens the page', async ({

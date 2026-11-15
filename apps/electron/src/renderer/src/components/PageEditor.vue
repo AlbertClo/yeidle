@@ -972,7 +972,15 @@ function setRemoteCursors(cursors: RemoteCursor[]): void {
 
             return anchor === null || head === null
                 ? []
-                : [{ key: cursor.key, label: cursor.label, color: cursor.color, anchor, head }];
+                : [
+                      {
+                          key: cursor.key,
+                          label: cursor.label,
+                          color: cursor.color,
+                          anchor,
+                          head,
+                      },
+                  ];
         }),
     );
 }
@@ -2391,8 +2399,16 @@ function showMediaMenu(btn: HTMLElement, mediaId: string) {
 }
 
 function hideMediaMenu() {
+    // Removing the menu blurs it, which calls this again
+    if (!mediaMenu.value.visible) {
+        return;
+    }
+
     mediaMenu.value.visible = false;
-    editor.value?.commands.focus();
+    // Synchronously, with the editor's own selection (the file the menu was
+    // opened on): the focus command waits a frame, and keys pressed in that
+    // gap were lost or landed at the top of the page
+    editor.value?.view.focus();
 }
 
 function mediaDownload() {
@@ -2904,6 +2920,68 @@ function moveWithinCurrentVisualLine(
         'move',
         direction === 'up' ? 'backward' : 'forward',
         'line',
+    );
+
+    return true;
+}
+
+/**
+ * Arrowing toward a block that holds only a file stops beside the file with a
+ * gap cursor (the next arrow selects the file). The block has no text for the
+ * caret to land in, so without this the browser skips over it.
+ */
+function moveBesideAdjacentFile(
+    view: EditorView,
+    event: KeyboardEvent,
+): boolean {
+    if (
+        (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+        event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        document.querySelector('.tippy-box')
+    ) {
+        return false;
+    }
+
+    const direction = event.key === 'ArrowUp' ? -1 : 1;
+    const current = view.state.selection;
+
+    if (
+        !(current instanceof TextSelection) ||
+        !current.empty ||
+        !current.$head.parent.isTextblock ||
+        !view.endOfTextblock(direction === -1 ? 'up' : 'down')
+    ) {
+        return false;
+    }
+
+    const boundary =
+        direction === -1
+            ? current.$head.before(current.$head.depth)
+            : current.$head.after(current.$head.depth);
+    const adjacent = Selection.findFrom(
+        view.state.doc.resolve(boundary),
+        direction,
+    );
+
+    if (
+        !(adjacent instanceof NodeSelection) ||
+        adjacent.node.type.name !== 'fileNode'
+    ) {
+        return false;
+    }
+
+    // The near side of the file: after it coming from below, before it
+    // coming from above
+    const gap = view.state.doc.resolve(
+        direction === -1 ? adjacent.to : adjacent.from,
+    );
+
+    event.preventDefault();
+    view.dispatch(
+        view.state.tr.setSelection(new GapCursor(gap)).scrollIntoView(),
     );
 
     return true;
@@ -3929,6 +4007,10 @@ const editor = useEditor({
             }
 
             if (moveWithinCurrentVisualLine(view, event)) {
+                return true;
+            }
+
+            if (moveBesideAdjacentFile(view, event)) {
                 return true;
             }
 
