@@ -1,0 +1,761 @@
+<script setup lang="ts">
+import { FileUp, LoaderCircle, TriangleAlert } from 'lucide-vue-next';
+import { computed, ref, watch } from 'vue';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import type { Workspace } from '@/types/workspace';
+
+type ImportResult = {
+    workspace: Workspace;
+    report: Record<string, number>;
+    warnings: string[];
+    has_failures: boolean;
+};
+
+type ImportProgress = {
+    phase: 'preparing' | 'attachments' | 'nodes';
+    current: number;
+    total: number;
+};
+
+type ImportStreamEvent =
+    | ({ type: 'progress' } & ImportProgress)
+    | { type: 'complete'; result: ImportResult }
+    | { type: 'error'; message: string };
+
+type ImportSource = 'obsidian' | 'notion' | 'roam' | 'logseq' | 'markdown';
+
+const importSources: { id: ImportSource; label: string }[] = [
+    { id: 'obsidian', label: 'Obsidian' },
+    { id: 'notion', label: 'Notion' },
+    { id: 'roam', label: 'Roam Research' },
+    { id: 'logseq', label: 'Logseq' },
+    { id: 'markdown', label: 'Markdown' },
+];
+
+const props = defineProps<{
+    open: boolean;
+    workspaces: Workspace[];
+    activeWorkspaceId: string | null;
+}>();
+
+const emit = defineEmits<{
+    'update:open': [open: boolean];
+    'workspace-added': [workspace: Workspace];
+    imported: [workspace: Workspace];
+}>();
+
+const file = ref<File | null>(null);
+const importSource = ref<ImportSource>('roam');
+const destination = ref('__new__');
+const newWorkspaceName = ref('');
+const downloadAttachments = ref(true);
+const phase = ref<'idle' | 'uploading' | 'importing' | 'complete'>('idle');
+const uploadProgress = ref(0);
+const importProgress = ref<ImportProgress | null>(null);
+const importAbortController = ref<AbortController | null>(null);
+const stopping = ref(false);
+const error = ref<string | null>(null);
+const notice = ref<string | null>(null);
+const result = ref<ImportResult | null>(null);
+const selectedImportSource = computed(
+    () =>
+        importSources.find((source) => source.id === importSource.value) ??
+        importSources[0],
+);
+
+const busy = computed(
+    () => phase.value === 'uploading' || phase.value === 'importing',
+);
+const canImport = computed(
+    () =>
+        file.value !== null &&
+        !busy.value &&
+        (destination.value !== '__new__' ||
+            newWorkspaceName.value.trim() !== ''),
+);
+
+const progressPercentage = computed<number | null>(() => {
+    if (phase.value === 'uploading') {
+        return uploadProgress.value;
+    }
+
+    if (
+        phase.value === 'importing' &&
+        importProgress.value !== null &&
+        importProgress.value.total > 0
+    ) {
+        return Math.round(
+            (importProgress.value.current / importProgress.value.total) * 100,
+        );
+    }
+
+    return null;
+});
+
+const importProgressLabel = computed(() => {
+    const progress = importProgress.value;
+
+    if (progress === null || progress.phase === 'preparing') {
+        return 'Preparing import…';
+    }
+
+    const item = progress.phase === 'attachments' ? 'attachments' : 'nodes';
+    const percentage = progressPercentage.value ?? 0;
+
+    return `Importing ${item} — ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()} (${percentage}%)`;
+});
+
+const reportRows = computed(() => {
+    if (result.value === null) {
+        return [];
+    }
+
+    const labels = [
+        'Pages',
+        'Blocks',
+        'Attachments imported',
+        'Attachments reused',
+        'Attachments failed',
+        'Nodes written',
+        'Nodes already imported',
+    ];
+
+    return labels.map((label) => ({
+        label,
+        value: result.value?.report[label] ?? 0,
+    }));
+});
+
+watch(
+    () => props.open,
+    (open) => {
+        if (!open) {
+            return;
+        }
+
+        file.value = null;
+        importSource.value = 'roam';
+        destination.value = '__new__';
+        newWorkspaceName.value = '';
+        downloadAttachments.value = true;
+        phase.value = 'idle';
+        uploadProgress.value = 0;
+        importProgress.value = null;
+        importAbortController.value = null;
+        stopping.value = false;
+        error.value = null;
+        notice.value = null;
+        result.value = null;
+    },
+);
+
+function updateOpen(open: boolean): void {
+    if (!busy.value) {
+        emit('update:open', open);
+    }
+}
+
+function preventClose(event: Event): void {
+    if (busy.value) {
+        event.preventDefault();
+    }
+}
+
+function suggestedWorkspaceName(filename: string): string {
+    const base = filename
+        .replace(/\.json$/i, '')
+        .replace(/-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/u, '')
+        .replace(/[-_]+/gu, ' ')
+        .trim();
+
+    return base.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+}
+
+function selectFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    file.value = input.files?.[0] ?? null;
+    error.value = null;
+
+    if (file.value && newWorkspaceName.value === '') {
+        newWorkspaceName.value = suggestedWorkspaceName(file.value.name);
+    }
+}
+
+async function responsePayload<T>(response: Response): Promise<T> {
+    const payload = (await response.json().catch(() => null)) as
+        | (T & { message?: string; errors?: Record<string, string[]> })
+        | null;
+
+    if (!response.ok || payload === null) {
+        const validationMessage = payload?.errors
+            ? Object.values(payload.errors).flat()[0]
+            : null;
+
+        throw new Error(
+            validationMessage ??
+                payload?.message ??
+                `Import request failed (${response.status}).`,
+        );
+    }
+
+    return payload;
+}
+
+async function cancelUpload(uploadId: string): Promise<void> {
+    await fetch(`/api/imports/roam/${uploadId}`, {
+        method: 'DELETE',
+        headers: { Accept: 'application/json' },
+    }).catch(() => null);
+}
+
+function isAbortError(reason: unknown): boolean {
+    return reason instanceof Error && reason.name === 'AbortError';
+}
+
+async function streamedImportResult(response: Response): Promise<ImportResult> {
+    if (response.body === null) {
+        throw new Error('The import progress stream was unavailable.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let completed: ImportResult | null = null;
+
+    const processLine = (line: string): void => {
+        const trimmed = line.trim();
+
+        if (trimmed === '') {
+            return;
+        }
+
+        const event = JSON.parse(trimmed) as ImportStreamEvent;
+
+        if (event.type === 'progress') {
+            importProgress.value = {
+                phase: event.phase,
+                current: event.current,
+                total: event.total,
+            };
+        } else if (event.type === 'complete') {
+            completed = event.result;
+        } else if (event.type === 'error') {
+            throw new Error(event.message);
+        }
+    };
+
+    while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+            buffer += decoder.decode();
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        lines.forEach(processLine);
+    }
+
+    processLine(buffer);
+
+    if (completed === null) {
+        throw new Error('The import ended before it completed.');
+    }
+
+    return completed;
+}
+
+function stopImport(): void {
+    if (!busy.value || stopping.value) {
+        return;
+    }
+
+    stopping.value = true;
+    importAbortController.value?.abort();
+}
+
+async function importRoam(): Promise<void> {
+    const selectedFile = file.value;
+
+    if (!selectedFile || !canImport.value) {
+        return;
+    }
+
+    let uploadId: string | null = null;
+    const abortController = new AbortController();
+
+    phase.value = 'uploading';
+    uploadProgress.value = 0;
+    importProgress.value = null;
+    importAbortController.value = abortController;
+    stopping.value = false;
+    error.value = null;
+    notice.value = null;
+
+    try {
+        const initialization = await responsePayload<{
+            upload_id: string;
+            chunk_size: number;
+            total_chunks: number;
+        }>(
+            await fetch('/api/imports/roam/init', {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: selectedFile.name,
+                    size: selectedFile.size,
+                }),
+                signal: abortController.signal,
+            }),
+        );
+        uploadId = initialization.upload_id;
+
+        for (let index = 0; index < initialization.total_chunks; index++) {
+            const form = new FormData();
+            const chunk = selectedFile.slice(
+                index * initialization.chunk_size,
+                Math.min(
+                    (index + 1) * initialization.chunk_size,
+                    selectedFile.size,
+                ),
+            );
+            form.append('upload_id', uploadId);
+            form.append('chunk_index', String(index));
+            form.append('chunk', chunk, `chunk_${index}`);
+
+            await responsePayload(
+                await fetch('/api/imports/roam/chunk', {
+                    method: 'POST',
+                    headers: { Accept: 'application/json' },
+                    body: form,
+                    signal: abortController.signal,
+                }),
+            );
+            uploadProgress.value = Math.round(
+                ((index + 1) / initialization.total_chunks) * 100,
+            );
+        }
+
+        phase.value = 'importing';
+        importProgress.value = {
+            phase: 'preparing',
+            current: 0,
+            total: 0,
+        };
+        const streamResponse = await fetch('/api/imports/roam/stream', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/x-ndjson, application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                upload_id: uploadId,
+                workspace_id:
+                    destination.value === '__new__' ? null : destination.value,
+                new_workspace_name:
+                    destination.value === '__new__'
+                        ? newWorkspaceName.value.trim()
+                        : null,
+                download_attachments: downloadAttachments.value,
+            }),
+            signal: abortController.signal,
+        });
+
+        if (!streamResponse.ok) {
+            await responsePayload(streamResponse);
+        }
+
+        result.value = await streamedImportResult(streamResponse);
+        emit('workspace-added', result.value.workspace);
+        uploadId = null;
+        phase.value = 'complete';
+    } catch (reason) {
+        if (uploadId !== null) {
+            await cancelUpload(uploadId);
+        }
+
+        if (isAbortError(reason)) {
+            notice.value =
+                destination.value === '__new__'
+                    ? 'Import stopped. The incomplete workspace was removed.'
+                    : 'Import stopped. Changes already written remain; run the same import again to finish.';
+        } else {
+            error.value =
+                reason instanceof Error
+                    ? reason.message
+                    : 'The Roam database could not be imported.';
+        }
+
+        phase.value = 'idle';
+        importProgress.value = null;
+    } finally {
+        if (importAbortController.value === abortController) {
+            importAbortController.value = null;
+        }
+
+        stopping.value = false;
+    }
+}
+
+function openImportedWorkspace(): void {
+    if (result.value === null) {
+        return;
+    }
+
+    emit('imported', result.value.workspace);
+}
+</script>
+
+<template>
+    <Dialog :open="open" @update:open="updateOpen">
+        <DialogContent
+            class="overflow-hidden p-0 sm:max-w-3xl"
+            :show-close-button="!busy"
+            @escape-key-down="preventClose"
+            @interact-outside="preventClose"
+        >
+            <DialogHeader class="sr-only">
+                <DialogTitle>Import workspace</DialogTitle>
+                <DialogDescription>
+                    Import a workspace from another application.
+                </DialogDescription>
+            </DialogHeader>
+
+            <div
+                class="grid sm:min-h-[32rem] sm:grid-cols-[11rem_minmax(0,1fr)]"
+            >
+                <aside
+                    class="border-b bg-muted/30 p-4 sm:border-r sm:border-b-0"
+                >
+                    <p class="mb-3 px-2 text-sm font-medium">Import from</p>
+                    <div
+                        class="flex gap-1 sm:grid"
+                        role="tablist"
+                        aria-label="Import source"
+                    >
+                        <button
+                            v-for="source in importSources"
+                            :key="source.id"
+                            type="button"
+                            role="tab"
+                            :aria-selected="importSource === source.id"
+                            :disabled="busy"
+                            class="rounded-md px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                            :class="{
+                                'bg-accent font-medium text-accent-foreground':
+                                    importSource === source.id,
+                            }"
+                            @click="importSource = source.id"
+                        >
+                            {{ source.label }}
+                        </button>
+                    </div>
+                </aside>
+
+                <div class="grid gap-5 p-6">
+                    <template v-if="importSource === 'roam'">
+                        <template v-if="phase !== 'complete'">
+                            <DialogHeader>
+                                <DialogTitle>Roam Research</DialogTitle>
+                                <DialogDescription>
+                                    Import a Roam JSON export into an existing
+                                    local workspace or create a separate
+                                    workspace for it.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <form
+                                class="grid gap-5"
+                                @submit.prevent="importRoam"
+                            >
+                                <div class="grid gap-2">
+                                    <Label for="roam-export"
+                                        >Roam JSON export</Label
+                                    >
+                                    <Input
+                                        id="roam-export"
+                                        type="file"
+                                        accept="application/json,.json"
+                                        :disabled="busy"
+                                        @change="selectFile"
+                                    />
+                                    <p
+                                        v-if="file"
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        {{ file.name }} ·
+                                        {{
+                                            (file.size / 1024 / 1024).toFixed(1)
+                                        }}
+                                        MB
+                                    </p>
+                                </div>
+
+                                <div class="grid gap-2">
+                                    <Label for="roam-destination"
+                                        >Destination</Label
+                                    >
+                                    <select
+                                        id="roam-destination"
+                                        v-model="destination"
+                                        class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        :disabled="busy"
+                                    >
+                                        <option value="__new__">
+                                            Create a new workspace
+                                        </option>
+                                        <option
+                                            v-for="workspace in workspaces"
+                                            :key="workspace.id"
+                                            :value="workspace.id"
+                                        >
+                                            {{ workspace.name }}
+                                            {{
+                                                workspace.id ===
+                                                activeWorkspaceId
+                                                    ? '(current)'
+                                                    : ''
+                                            }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div
+                                    v-if="destination === '__new__'"
+                                    class="grid gap-2"
+                                >
+                                    <Label for="roam-workspace-name"
+                                        >Workspace name</Label
+                                    >
+                                    <Input
+                                        id="roam-workspace-name"
+                                        v-model="newWorkspaceName"
+                                        maxlength="100"
+                                        placeholder="My Roam database"
+                                        :disabled="busy"
+                                    />
+                                </div>
+
+                                <div
+                                    v-else
+                                    class="rounded-md bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200"
+                                >
+                                    Imported pages will be merged into this
+                                    workspace. Reimporting the same export is
+                                    safe and will not create duplicates.
+                                </div>
+
+                                <div class="flex items-start gap-2">
+                                    <Checkbox
+                                        id="roam-download-attachments"
+                                        v-model="downloadAttachments"
+                                        :disabled="busy"
+                                    />
+                                    <div class="grid gap-0.5">
+                                        <Label for="roam-download-attachments">
+                                            Import file uploads
+                                        </Label>
+                                        <p
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            Download Roam-hosted images and
+                                            files into Yeidle’s media storage.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div v-if="busy" class="grid gap-2">
+                                    <div
+                                        class="flex items-center gap-2 text-sm tabular-nums"
+                                        aria-live="polite"
+                                    >
+                                        <LoaderCircle
+                                            class="size-4 animate-spin will-change-transform"
+                                        />
+                                        <span v-if="phase === 'uploading'">
+                                            Uploading export…
+                                            {{ uploadProgress }}%
+                                        </span>
+                                        <span v-else>
+                                            {{ importProgressLabel }}
+                                        </span>
+                                    </div>
+                                    <div
+                                        class="h-1.5 overflow-hidden rounded-full bg-muted"
+                                    >
+                                        <div
+                                            v-if="progressPercentage !== null"
+                                            class="h-full bg-primary transition-[width]"
+                                            :style="{
+                                                width: `${progressPercentage}%`,
+                                            }"
+                                        />
+                                        <div
+                                            v-else
+                                            class="import-progress h-full rounded-full bg-primary"
+                                        />
+                                    </div>
+                                    <p class="text-xs text-muted-foreground">
+                                        Keep this window open. Large databases
+                                        and file downloads can take several
+                                        minutes.
+                                    </p>
+                                </div>
+
+                                <div
+                                    v-if="notice"
+                                    class="rounded-md bg-muted p-3 text-sm text-muted-foreground"
+                                    role="status"
+                                >
+                                    {{ notice }}
+                                </div>
+
+                                <div
+                                    v-if="error"
+                                    class="flex gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+                                    role="alert"
+                                >
+                                    <TriangleAlert
+                                        class="mt-0.5 size-4 shrink-0"
+                                    />
+                                    <span>{{ error }}</span>
+                                </div>
+
+                                <DialogFooter>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        :disabled="stopping"
+                                        @click="
+                                            busy
+                                                ? stopImport()
+                                                : updateOpen(false)
+                                        "
+                                    >
+                                        {{
+                                            stopping
+                                                ? 'Stopping…'
+                                                : busy
+                                                  ? 'Stop import'
+                                                  : 'Cancel'
+                                        }}
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        :disabled="!canImport"
+                                    >
+                                        <LoaderCircle
+                                            v-if="busy"
+                                            class="animate-spin will-change-transform"
+                                        />
+                                        <FileUp v-else />
+                                        {{ busy ? 'Importing…' : 'Import' }}
+                                    </Button>
+                                </DialogFooter>
+                            </form>
+                        </template>
+
+                        <template v-else-if="result">
+                            <DialogHeader>
+                                <DialogTitle>Import complete</DialogTitle>
+                                <DialogDescription>
+                                    Roam was imported into
+                                    {{ result.workspace.name }}.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div
+                                class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm"
+                            >
+                                <div
+                                    v-for="row in reportRows"
+                                    :key="row.label"
+                                    class="contents"
+                                >
+                                    <span class="text-muted-foreground">
+                                        {{ row.label }}
+                                    </span>
+                                    <span class="text-right tabular-nums">
+                                        {{ row.value.toLocaleString() }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="result.has_failures"
+                                class="rounded-md bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200"
+                            >
+                                The import completed with unresolved references
+                                or file download failures. The original text and
+                                links were preserved where possible.
+                            </div>
+
+                            <div
+                                v-if="result.warnings.length > 0"
+                                class="max-h-32 overflow-y-auto rounded-md border p-3 text-xs text-muted-foreground"
+                            >
+                                <p
+                                    v-for="(warning, index) in result.warnings"
+                                    :key="index"
+                                >
+                                    {{ warning }}
+                                </p>
+                            </div>
+
+                            <DialogFooter>
+                                <Button @click="openImportedWorkspace">
+                                    Open workspace
+                                </Button>
+                            </DialogFooter>
+                        </template>
+                    </template>
+
+                    <template v-else>
+                        <DialogHeader>
+                            <DialogTitle>
+                                {{ selectedImportSource.label }}
+                            </DialogTitle>
+                            <DialogDescription>
+                                Importing from {{ selectedImportSource.label }}
+                                is not available yet.
+                            </DialogDescription>
+                        </DialogHeader>
+                    </template>
+                </div>
+            </div>
+        </DialogContent>
+    </Dialog>
+</template>
+
+<style scoped>
+@keyframes import-progress {
+    from {
+        transform: translateX(-100%);
+    }
+
+    to {
+        transform: translateX(300%);
+    }
+}
+
+.import-progress {
+    width: 33.333%;
+    animation: import-progress 1.25s ease-in-out infinite;
+}
+</style>

@@ -1,1 +1,7 @@
 .idea
+/node_modules
+/apps/electron/node_modules
+/apps/electron/out
+/packages/*/node_modules
+*.tsbuildinfo
+/result

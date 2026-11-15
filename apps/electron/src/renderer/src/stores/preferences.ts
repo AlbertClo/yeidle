@@ -1,0 +1,222 @@
+import { ref } from 'vue';
+import type { Appearance, Theme } from '@/types';
+import {
+    getSystemTheme,
+    updateAppearance,
+    useAppearance,
+} from '../composables/useAppearance';
+import {
+    activeFontFamily,
+    activeFontSize,
+    updateTypography,
+} from '../composables/useTypography';
+import { requestCloudExchange } from '../sync/cloud';
+import { SystemNodes } from '@yeidle/core/app/nodes';
+
+import { anyChanged } from '@/sync/documentChanges';
+import { DEFAULT_APPEARANCE, isTheme } from '../types/theme';
+import {
+    DEFAULT_FONT_FAMILY,
+    DEFAULT_FONT_SIZE,
+    isFontFamily,
+    isFontSize,
+} from '../types/typography';
+import type { FontFamily } from '../types/typography';
+
+const { appearance, resolvedAppearance } = useAppearance();
+const initialAppearance = appearance.value;
+
+export const themePreference = ref<Theme>(
+    initialAppearance === 'system'
+        ? resolvedAppearance.value
+        : initialAppearance,
+);
+export const fontFamilyPreference = activeFontFamily;
+export const fontSizePreference = activeFontSize;
+export const preferenceRootId = ref<string | null>(null);
+export const hasSavedThemePreference = ref(false);
+export type WorkspaceStoragePreference = 'local' | 'cloud';
+export const workspaceStoragePreference =
+    ref<WorkspaceStoragePreference | null>(null);
+
+let loaded = false;
+let loadRequest: Promise<void> | null = null;
+
+type PreferenceResponse = {
+    root_id: string;
+    theme: Theme | null;
+    font_family: FontFamily | null;
+    font_size: number | null;
+    workspace_storage: WorkspaceStoragePreference | null;
+};
+
+export async function loadPreferences(force = false): Promise<void> {
+    if (loadRequest !== null) {
+        await loadRequest;
+
+        if (force) {
+            return loadPreferences(true);
+        }
+
+        return;
+    }
+
+    if (loaded && !force) {
+        return;
+    }
+
+    loadRequest = fetch('/api/preferences', {
+        headers: { Accept: 'application/json' },
+    })
+        .then(async (response) => {
+            if (!response.ok) {
+                throw new Error('Could not load preferences.');
+            }
+
+            const payload = (await response.json()) as PreferenceResponse;
+            preferenceRootId.value = payload.root_id;
+            hasSavedThemePreference.value = isTheme(payload.theme);
+            workspaceStoragePreference.value =
+                payload.workspace_storage === 'local' ||
+                payload.workspace_storage === 'cloud'
+                    ? payload.workspace_storage
+                    : null;
+
+            if (isTheme(payload.theme)) {
+                themePreference.value = payload.theme;
+                updateAppearance(payload.theme);
+            } else {
+                themePreference.value = getSystemTheme();
+                updateAppearance(DEFAULT_APPEARANCE);
+            }
+
+            updateTypography(
+                isFontFamily(payload.font_family)
+                    ? payload.font_family
+                    : DEFAULT_FONT_FAMILY,
+                isFontSize(payload.font_size)
+                    ? payload.font_size
+                    : DEFAULT_FONT_SIZE,
+            );
+
+            loaded = true;
+        })
+        .finally(() => {
+            loadRequest = null;
+        });
+
+    return loadRequest;
+}
+
+export async function saveTypographyPreference(
+    fontFamily: FontFamily,
+    fontSize: number,
+): Promise<void> {
+    const previousFontFamily = fontFamilyPreference.value;
+    const previousFontSize = fontSizePreference.value;
+
+    updateTypography(fontFamily, fontSize);
+
+    try {
+        const response = await fetch('/api/preferences/typography', {
+            method: 'PUT',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                font_family: fontFamily,
+                font_size: fontSize,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not save the typography preference.');
+        }
+
+        const payload = (await response.json()) as PreferenceResponse;
+        preferenceRootId.value = payload.root_id;
+        loaded = true;
+        void requestCloudExchange();
+    } catch (error) {
+        updateTypography(previousFontFamily, previousFontSize);
+
+        throw error;
+    }
+}
+
+export async function saveThemePreference(theme: Theme): Promise<void> {
+    const previousAppearance: Appearance = appearance.value;
+    const previousTheme = themePreference.value;
+    const previouslySaved = hasSavedThemePreference.value;
+
+    themePreference.value = theme;
+    updateAppearance(theme);
+
+    try {
+        const response = await fetch('/api/preferences/theme', {
+            method: 'PUT',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ theme }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not save the theme preference.');
+        }
+
+        const payload = (await response.json()) as PreferenceResponse;
+        preferenceRootId.value = payload.root_id;
+        hasSavedThemePreference.value = true;
+        loaded = true;
+        void requestCloudExchange();
+    } catch (error) {
+        themePreference.value = previousTheme;
+        hasSavedThemePreference.value = previouslySaved;
+        updateAppearance(previousAppearance);
+
+        throw error;
+    }
+}
+
+export async function saveWorkspaceStoragePreference(
+    storage: WorkspaceStoragePreference,
+): Promise<void> {
+    const previousStorage = workspaceStoragePreference.value;
+    workspaceStoragePreference.value = storage;
+
+    try {
+        const response = await fetch('/api/preferences/workspace-storage', {
+            method: 'PUT',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ workspace_storage: storage }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not save the workspace storage preference.');
+        }
+
+        const payload = (await response.json()) as PreferenceResponse;
+        preferenceRootId.value = payload.root_id;
+        workspaceStoragePreference.value = payload.workspace_storage;
+        loaded = true;
+        void requestCloudExchange();
+    } catch (error) {
+        workspaceStoragePreference.value = previousStorage;
+
+        throw error;
+    }
+}
+
+/**
+ * Whether a change could affect this store. Every user's entries live under
+ * the same hidden system root, which is its own document.
+ */
+export function preferencesChanged(documentIds: string[] | null): boolean {
+    return anyChanged(documentIds, SystemNodes.PREFERENCES_ROOT_ID);
+}
