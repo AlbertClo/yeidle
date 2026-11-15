@@ -1,9 +1,8 @@
 # Yeidle (Electron)
 
-The new desktop app: Electron with the shared TypeScript core in
-[`packages/core`](../../packages/core). It replaces the NativePHP app in
-[`apps/desktop`](../desktop), which stays in the repository, unchanged, as a
-reference. Architecture: [docs/loro-architecture.md](../../docs/loro-architecture.md).
+The desktop app: Electron with the shared TypeScript core in
+[`packages/core`](../../packages/core). Architecture:
+[docs/loro-architecture.md](../../docs/loro-architecture.md).
 
 ## Running
 
