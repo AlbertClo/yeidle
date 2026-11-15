@@ -71,7 +71,7 @@ test('shared workspaces appear in the account catalog and use membership access'
         ->assertJsonPath('workspaces.0.role', 'editor')
         ->assertJsonPath('workspaces.0.owned', false);
 
-    $this->getJson("/api/workspaces/{$workspace->id}/sync/status")
+    $this->getJson("/api/workspaces/{$workspace->id}/documents/status")
         ->assertSuccessful()
         ->assertJsonPath('workspace_id', $workspace->id);
 

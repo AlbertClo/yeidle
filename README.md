@@ -17,13 +17,12 @@ The design is in [docs/loro-architecture.md](docs/loro-architecture.md).
 | [`apps/electron`](apps/electron) | **The desktop app.** Electron shell and the Vue/TipTap UI. Start here. |
 | [`packages/core`](packages/core) | `@yeidle/core`: the app's backend in TypeScript (workspaces, Loro documents, SQLite read model, search, cloud sync, Roam import). Platform-neutral, so a future Android app can share it. |
 | [`apps/web`](apps/web) | **Yeidle Cloud.** Laravel app: accounts, device sign-in, workspaces, the Loro update relay, file storage, and Reverb for realtime. |
-| [`apps/desktop`](apps/desktop) | The previous desktop app (NativePHP + Laravel), kept as a reference until it's removed ([#3](https://github.com/AlbertClo/yeidle/issues/3)). Its workspaces are imported by the Electron app on first launch. |
 | [`docs`](docs) | Design notes. |
 | [`flake.nix`](flake.nix) | Nix flake; the desktop app's package is [`apps/electron/package.nix`](apps/electron/package.nix). |
 
 `apps/electron` and `packages/core` form an npm workspace (the root
-`package.json`) with one lock file. `apps/web` and `apps/desktop` are separate
-projects with their own dependencies.
+`package.json`) with one lock file. `apps/web` is a separate project with its
+own dependencies.
 
 ## Running the desktop app
 
@@ -86,7 +85,3 @@ browser.
   export.
 - [docs/editor-performance.md](docs/editor-performance.md): editor
   performance measurements on large pages.
-- [docs/sync-design.md](docs/sync-design.md) and
-  [docs/todo-live-structural-sync.md](docs/todo-live-structural-sync.md):
-  notes from the NativePHP app's operation-log sync, kept for history; the
-  Loro design replaces them.

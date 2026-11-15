@@ -1,9 +1,8 @@
 # Yeidle (Electron)
 
-The new desktop app: Electron with the shared TypeScript core in
-[`packages/core`](../../packages/core). It replaces the NativePHP app in
-[`apps/desktop`](../desktop), which stays in the repository, unchanged, as a
-reference. Architecture: [docs/loro-architecture.md](../../docs/loro-architecture.md).
+The desktop app: Electron with the shared TypeScript core in
+[`packages/core`](../../packages/core). Architecture:
+[docs/loro-architecture.md](../../docs/loro-architecture.md).
 
 ## Running
 
@@ -14,6 +13,7 @@ npm install
 npm start      # build and run
 npm run dev    # run with hot reload
 npm test       # core and renderer tests
+npm run test:e2e   # end-to-end tests: builds, then drives the real app
 ```
 
 ## Installing on NixOS
@@ -43,6 +43,32 @@ Update with `nix flake update yeidle` and a rebuild. After changing
 The installed app keeps its data in `~/.config/yeidle` and signs in to
 `YEIDLE_CLOUD_URL` (default `http://localhost:8200`).
 
+## End-to-end tests
+
+`e2e/` holds Playwright tests that drive the built app through Playwright's
+Electron support. Each test starts the app on a fresh data folder, past
+first-launch setup (theme, local storage, continue offline), and works the
+way a user does: keyboard, visible text and roles, not implementation
+details. That's what makes them useful when refactoring.
+
+- `e2e/fixtures.ts`: the app fixture (`page`, `restart()` to relaunch on the
+  same data) and helpers such as `createPage`, `openPage`, `outline` (the
+  page's blocks as an indented list) and `waitForSaved`.
+- Specs: `editing`, `keyboard` (moving blocks, arrows, files, the link
+  popover), `links`, `navigation` (All Pages, search, back/forward, daily
+  notes, pins), `pages` (collapsing, daily-note stepping, renaming),
+  `roam-import`, and `cloud-sync`.
+- `cloud-sync.spec.ts` runs two app instances against a real cloud and is
+  skipped unless `YEIDLE_E2E_CLOUD_URL` and `YEIDLE_E2E_CLOUD_TOKEN` are set
+  (see the file for the command).
+- Known issues are kept as `test.fixme` tests: they're skipped until fixed,
+  then flipped to `test`.
+- Test windows emulate focus, so tests behave the same while you use other
+  apps or run several at once.
+- Run one file or test: `npx playwright test e2e/links.spec.ts -g backlink`.
+- Failures keep a trace and a screenshot in `test-results/`; open a trace
+  with `npx playwright show-trace <path>/trace.zip`.
+
 ## How it fits together
 
 - **Main process** (`src/main`): serves the app on `yeidle://app`. Requests
@@ -50,13 +76,12 @@ The installed app keeps its data in `~/.config/yeidle` and signs in to
   (`packages/core/src/app/server.ts`), which answers with JSON or the
   Inertia page protocol, the same contract the Laravel app had. Everything
   else is renderer assets (built files, or the Vite dev server).
-- **Renderer** (`src/renderer`): the Vue/Inertia frontend from the NativePHP
-  app. Each open page edits a live Loro document
+- **Renderer** (`src/renderer`): the Vue/Inertia frontend. Each open page edits a live Loro document
   (`src/renderer/src/sync/documentSession.ts`) and sends updates to the main
   process, which stores them, refreshes the SQLite read model, and tells
   every window which documents changed.
-- **Preload** (`src/preload`): `window.Native`, the same window-control API
-  the NativePHP build exposed, plus document change events.
+- **Preload** (`src/preload`): `window.Native`, the window-control API, plus
+  document change events.
 
 ## Data
 
@@ -68,17 +93,11 @@ detects the checkout by `electron.vite.config.ts` next to the app.) To test
 against a fresh copy of your notes, refill `yeidle-dev` from `yeidle` with
 `sqlite3 <db> ".backup <copy>"` for each workspace database.
 
-On first launch the app
-copies the NativePHP app's workspaces from `~/.config/yeidle-app` (the
-NativePHP app's `APP_NAME` is "Yeidle App"; originals are never opened for
-writing) and converts them to Loro documents.
-
 Environment overrides, mostly for testing:
 
 | Variable | Purpose |
 | --- | --- |
 | `YEIDLE_DATA_DIR` | Use another data directory |
-| `YEIDLE_LEGACY_DIR` | Import NativePHP workspaces from another directory |
 | `YEIDLE_SELF_CHECK=1` | Print what the window rendered (or the result of `YEIDLE_SELF_CHECK_SCRIPT`) and quit |
 | `YEIDLE_SELF_CHECK_PATH` | Page to open for the self-check, e.g. `pages/<id>` |
 | `YEIDLE_CLOUD_URL` | Yeidle Cloud to sign in to (default `http://localhost:8200`, the Sail app) |
@@ -118,11 +137,9 @@ then run two instances with their own data directories:
 ```bash
 npm run build -w @yeidle/electron
 cd apps/electron
-YEIDLE_DATA_DIR=/tmp/yeidle-a YEIDLE_LEGACY_DIR=/nonexistent npx electron-vite preview
-YEIDLE_DATA_DIR=/tmp/yeidle-b YEIDLE_LEGACY_DIR=/nonexistent npx electron-vite preview
+YEIDLE_DATA_DIR=/tmp/yeidle-a npx electron-vite preview
+YEIDLE_DATA_DIR=/tmp/yeidle-b npx electron-vite preview
 ```
-
-`YEIDLE_LEGACY_DIR=/nonexistent` skips copying the NativePHP workspaces.
 
 ## Not ported yet
 

@@ -115,7 +115,17 @@ function adoptPageFocus(element: HTMLAnchorElement): void {
 
 function focusPageElement(element: HTMLAnchorElement): void {
     adoptPageFocus(element);
-    element.focus();
+    revealPageElement(element);
+}
+
+/**
+ * Focuses a row and scrolls only as far as needed to show it, like any list:
+ * holding an arrow key moves the view one row at a time. (A plain focus()
+ * lets the browser scroll it well into view, a jump of a quarter screen.)
+ */
+function revealPageElement(element: HTMLAnchorElement): void {
+    element.focus({ preventScroll: true });
+    element.scrollIntoView({ block: 'nearest' });
 }
 
 async function focusPageRow(index: number, reveal = true): Promise<void> {
@@ -137,7 +147,7 @@ async function focusPageRow(index: number, reveal = true): Promise<void> {
         adoptPageFocus(element);
 
         if (reveal) {
-            element.focus();
+            revealPageElement(element);
         } else {
             element.focus({ preventScroll: true });
         }

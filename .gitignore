@@ -5,3 +5,5 @@
 /packages/*/node_modules
 *.tsbuildinfo
 /result
+/apps/electron/test-results
+/apps/electron/playwright-report

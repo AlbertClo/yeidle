@@ -182,11 +182,9 @@ export function registerRoamImportRoutes(
                 has_failures: report.hasFailures(),
             } satisfies ImportResult;
         } catch (error) {
-            if (
-                error instanceof RoamImportCancelled &&
-                createdWorkspace &&
-                workspace !== null
-            ) {
+            // A workspace this import created is incomplete whether it was
+            // stopped or failed: remove it rather than leave half a graph
+            if (createdWorkspace && workspace !== null) {
                 target?.close();
                 target = null;
                 ctx.workspaces.delete(workspace.id);

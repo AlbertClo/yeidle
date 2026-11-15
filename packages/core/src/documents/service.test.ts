@@ -6,7 +6,6 @@ import { migrate } from '../db/schema';
 import { applyBlocks, createDoc, readBlocks } from '../loro/pageDoc';
 import { uuidv7 } from '../support/ids';
 
-import { legacyMigrationNeeded, runLegacyMigration } from './legacyMigration';
 import { DocumentService } from './service';
 
 let db: Database;
@@ -204,6 +203,52 @@ describe('document service', () => {
         expect(node(blockId)!.deleted_at).not.toBeNull();
     });
 
+    it('writes a block that references a later block on the same page', () => {
+        // Both new, in one write: the reference comes first (a Roam import
+        // does this). The link must not leave a placeholder row that the
+        // later block then collides with.
+        const pageId = createPage('Notes');
+        const referrer = uuidv7();
+        const target = uuidv7();
+        documents.applyChanges([
+            {
+                type: 'node.set',
+                payload: {
+                    id: referrer,
+                    page_id: pageId,
+                    fields: {
+                        parent_id: pageId,
+                        position: 'a0',
+                        content: 'see below',
+                        tiptap_content: {
+                            type: 'paragraph',
+                            content: [
+                                { type: 'text', text: 'see ' },
+                                {
+                                    type: 'blockReference',
+                                    attrs: { targetId: target },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+            block(pageId, target, 'Learn', 'a1'),
+        ]);
+
+        expect(node(target)).toMatchObject({
+            content: 'Learn',
+            parent_id: pageId,
+            document_id: pageId,
+        });
+        expect(
+            db.get(
+                'SELECT 1 FROM node_links WHERE source_node_id = ? AND target_node_id = ?',
+                [referrer, target],
+            ),
+        ).toBeDefined();
+    });
+
     it('finds the real document when page_id names an intermediate ancestor', () => {
         const rootId = createPage('System root');
         const userRoot = uuidv7();
@@ -242,34 +287,5 @@ describe('document service', () => {
         const id = createPage('Inbox');
 
         expect(seen).toEqual([[id]]);
-    });
-
-    it('converts a workspace from the op-log engine', () => {
-        const pageId = uuidv7();
-        const parentId = uuidv7();
-        const childId = uuidv7();
-        const deletedId = uuidv7();
-
-        for (const [id, parent, position, content, checked, deleted] of [
-            [pageId, null, 'a0', 'Legacy page', null, null],
-            [parentId, pageId, 'a0', 'parent', null, null],
-            [childId, parentId, 'a0', 'child', 1, null],
-            [deletedId, pageId, 'a1', 'gone', null, '2026-01-01 00:00:00'],
-        ] as const) {
-            db.run(
-                `INSERT INTO nodes (id, parent_id, position, content, is_checked, deleted_at, modified_at, purged)
-                 VALUES (?, ?, ?, ?, ?, ?, '', 0)`,
-                [id, parent, position, content, checked, deleted],
-            );
-        }
-
-        expect(legacyMigrationNeeded(db)).toBe(true);
-        expect(runLegacyMigration(db, documents)).toBe(1);
-        expect(legacyMigrationNeeded(db)).toBe(false);
-        expect(node(childId)).toMatchObject({
-            document_id: pageId,
-            is_checked: 1,
-        });
-        expect(node(deletedId)!.deleted_at).not.toBeNull();
     });
 });
