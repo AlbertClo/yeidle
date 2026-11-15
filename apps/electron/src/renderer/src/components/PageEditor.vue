@@ -45,7 +45,7 @@ import {
     RotateCcw,
     Trash2,
 } from 'lucide-vue-next';
-import { GapCursor } from 'prosemirror-gapcursor';
+import { GapCursor } from '@tiptap/pm/gapcursor';
 import { uuidv7 } from 'uuidv7';
 import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { onBeforeUnmount } from 'vue';
