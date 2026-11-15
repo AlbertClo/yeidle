@@ -72,8 +72,7 @@ export async function launchApp(
         env: {
             ...process.env,
             YEIDLE_DATA_DIR: dataDirectory,
-            // No NativePHP workspaces to import, and no cloud to reach
-            YEIDLE_LEGACY_DIR: path.join(dataDirectory, 'no-legacy'),
+            // No cloud to reach
             YEIDLE_CLOUD_URL: 'http://127.0.0.1:9',
             ELECTRON_RENDERER_URL: '',
             ...env,

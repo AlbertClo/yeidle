@@ -1,9 +1,5 @@
 import type { Database } from '../db/database';
 import { migrate } from '../db/schema';
-import {
-    legacyMigrationNeeded,
-    runLegacyMigration,
-} from '../documents/legacyMigration';
 import { DocumentService } from '../documents/service';
 import { isUuid, uuidv7 } from '../support/ids';
 
@@ -357,11 +353,6 @@ export class Workspaces {
         const db = this.openDatabase(databasePath);
         migrate(db);
         const documents = new DocumentService(db);
-
-        // Workspaces written by the NativePHP app become Loro documents
-        if (legacyMigrationNeeded(db)) {
-            runLegacyMigration(db, documents);
-        }
 
         return {
             id: record.id,

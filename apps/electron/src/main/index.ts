@@ -4,7 +4,6 @@ import path from 'node:path';
 
 import { cloudFor } from '@yeidle/core/app/cloud/index';
 import { createContext, fileSettings } from '@yeidle/core/app/context';
-import { importLegacyWorkspaces } from '@yeidle/core/app/legacyImport';
 import type { Host } from '@yeidle/core/app/host';
 import { createAppServer } from '@yeidle/core/app/server';
 import { Workspaces } from '@yeidle/core/app/workspaces';
@@ -53,8 +52,6 @@ protocol.registerSchemesAsPrivileged([
 //   yeidle-dev  runs from the source checkout (npm run dev / npm start), so
 //               development never shares databases with the installed app
 //               and new migrations never reach it before an upgrade
-//   yeidle-app  the NativePHP app (APP_NAME "Yeidle App"); its workspaces are
-//               imported by copying, never opened in place
 // Only the checkout has the build config next to the app; packages ship
 // just the build output.
 const runningFromSource = fs.existsSync(
@@ -294,17 +291,7 @@ void app.whenReady().then(async () => {
     await loadHtmlTemplate();
     protocol.handle(SCHEME, handleRequest);
 
-    // First launch: copy the NativePHP app's workspaces (never in place)
-    if (!fs.existsSync(path.join(host.dataDirectory, 'workspaces.json'))) {
-        importLegacyWorkspaces(
-            host,
-            process.env.YEIDLE_LEGACY_DIR ??
-                path.join(app.getPath('appData'), 'yeidle-app'),
-            (file) => openNodeDatabase(file),
-        );
-    }
-
-    // Open (and convert) the active workspace before the first page
+    // Open the active workspace before the first page
     workspaces.active();
     cloudFor(context).scheduler.start();
     createWindow();
