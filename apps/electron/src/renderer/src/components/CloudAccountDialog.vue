@@ -46,6 +46,11 @@ const error = ref<string | null>(null);
 const verificationUrl = ref<string | null>(null);
 const justSignedIn = ref(false);
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+let approvalPoll: ReturnType<typeof setInterval> | null = null;
+
+// The realtime message finishes sign-in at once; this catches an approval
+// whose message never arrives (a blocked or dropped websocket)
+const APPROVAL_POLL_MS = 3000;
 let completionInFlight = false;
 let completionQueued = false;
 
@@ -71,9 +76,15 @@ function stopAuthorizationListener(): void {
         clearTimeout(expiryTimer);
         expiryTimer = null;
     }
+
+    if (approvalPoll !== null) {
+        clearInterval(approvalPoll);
+        approvalPoll = null;
+    }
 }
 
-async function completeSignIn(): Promise<void> {
+/** `background`: a periodic check, which leaves the dialog's buttons alone. */
+async function completeSignIn(background = false): Promise<void> {
     if (!pending.value) {
         return;
     }
@@ -86,7 +97,7 @@ async function completeSignIn(): Promise<void> {
 
     completionInFlight = true;
     completionQueued = false;
-    busy.value = true;
+    busy.value = !background;
 
     try {
         const result = await completeCloudSignIn();
@@ -136,23 +147,20 @@ function startAuthorizationListener(
     expiresAt: string,
     realtime: NonNullable<typeof cloudAccount.value>['authorization_realtime'],
 ): void {
-    if (!realtime) {
-        error.value = 'Realtime sign in is unavailable.';
-
-        return;
-    }
-
     stopAuthorizationListener();
-    startDeviceAuthorizationRealtime(authorizationId, realtime, {
-        approved: () => void completeSignIn(),
-        subscribed: () => {
-            error.value = null;
-            void completeSignIn();
-        },
-        error: (message) => {
-            error.value = message;
-        },
-    });
+
+    if (realtime) {
+        startDeviceAuthorizationRealtime(authorizationId, realtime, {
+            approved: () => void completeSignIn(),
+            subscribed: () => {
+                error.value = null;
+                void completeSignIn();
+            },
+            error: (message) => {
+                error.value = message;
+            },
+        });
+    }
 
     const remaining = new Date(expiresAt).getTime() - Date.now();
 
@@ -163,6 +171,10 @@ function startAuthorizationListener(
     }
 
     expiryTimer = setTimeout(() => void expireAuthorization(), remaining);
+    approvalPoll = setInterval(
+        () => void completeSignIn(true),
+        APPROVAL_POLL_MS,
+    );
 }
 
 function resumePendingAuthorization(): void {
