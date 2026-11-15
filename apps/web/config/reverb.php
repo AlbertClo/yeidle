@@ -8,15 +8,17 @@ return [
     |--------------------------------------------------------------------------
     |
     | Laravel may publish to an internal Reverb hostname while desktop clients
-    | connect through a public hostname and port.
+    | connect through a public hostname and port (Sail). Where both use the
+    | same address (Laravel Cloud), the REVERB_PUBLIC_* variables can be left
+    | out and the injected REVERB_HOST, REVERB_PORT and REVERB_SCHEME apply.
     |
     */
 
     'public' => [
         'app_key' => env('REVERB_APP_KEY'),
-        'host' => env('REVERB_PUBLIC_HOST', 'localhost'),
-        'port' => (int) env('REVERB_PUBLIC_PORT', 8080),
-        'scheme' => env('REVERB_PUBLIC_SCHEME', 'http'),
+        'host' => env('REVERB_PUBLIC_HOST', env('REVERB_HOST', 'localhost')),
+        'port' => (int) env('REVERB_PUBLIC_PORT', env('REVERB_PORT', 8080)),
+        'scheme' => env('REVERB_PUBLIC_SCHEME', env('REVERB_SCHEME', 'http')),
     ],
 
     'broadcast_max_payload_size' => (int) env('REVERB_BROADCAST_MAX_PAYLOAD_SIZE', 8_000),
