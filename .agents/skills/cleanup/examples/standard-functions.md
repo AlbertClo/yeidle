@@ -1,41 +1,24 @@
 # Use standard functions
 
-## PHP: a backed enum already turns a string into its case
+## Loro: a cursor already follows its character through edits
 
-```php
+A remote caret stored as an offset has to be shifted by hand for every insert and
+delete before it. A Loro cursor points at a character, and Loro works out its current
+offset.
+
+```ts
 // Instead of
-public static function fromUploadedMediaType(string $mediaType): self
-{
-    return match ($mediaType) {
-        'image' => self::IMAGE,
-        'video' => self::VIDEO,
-        'audio' => self::AUDIO,
-    };
+let caretOffset = 6;
+
+function shiftCaret(insertedAt: number, length: number) {
+    if (insertedAt <= caretOffset) {
+        caretOffset += length;
+    }
 }
 
-$kind = MediaKindEnum::fromUploadedMediaType($upload->mediaType->name);
-
 // Use
-$kind = MediaKindEnum::from($upload->mediaType->name);
-```
-
-## Laravel: a relation already adds and removes its own pivot rows
-
-```php
-// Instead of
-public function removeFromProject(string $projectId): int
-{
-    return ProjectItem::query()
-        ->where('item_type', $this->getMorphClass())
-        ->where('item_id', $this->id)
-        ->where('project_id', $projectId)
-        ->delete();
-}
-
-$upload->removeFromProject($projectId);
-
-// Use
-$upload->projects()->detach($projectId);
+const cursor = text.getCursor(6);
+const caretOffset = doc.getCursorPos(cursor)?.offset;
 ```
 
 ## Vue: VueUse is installed and already used across the frontend
@@ -52,4 +35,24 @@ async function copyToClipboard(text: string) {
 
 // Use
 const { copy, copied } = useClipboard();
+```
+
+## Laravel: validation already rejects duplicates in a list
+
+```php
+// Instead of
+$validated = $request->validate([
+    'updates.*.update_id' => ['required', 'string', 'max:64'],
+]);
+
+$ids = array_column($validated['updates'], 'update_id');
+
+if (count($ids) !== count(array_unique($ids))) {
+    abort(422, 'Update ids must be unique.');
+}
+
+// Use
+$validated = $request->validate([
+    'updates.*.update_id' => ['required', 'string', 'max:64', 'distinct'],
+]);
 ```

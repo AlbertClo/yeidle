@@ -24,25 +24,29 @@ When asked for something else, such as one folder or the whole codebase, clean u
 instead.
 
 ## Remove unnecessary functions
-Every function a change adds is one more thing to review and maintain, so each one has to 
-earn its place. This applies to PHP, Laravel, TypeScript, Vue, etc.
+Every function a change adds is one more thing to review and maintain, so each one has to
+earn its place.
 
 ### Use standard functions
-Use what language standard libraries and frameworks already provide. Don't add functions
-if the code could be easily adapted to use standard functions instead.
+Use what language standard libraries, frameworks and the libraries already installed
+(Loro, VueUse, Laravel, Electron, Capacitor) provide. Don't add functions if the code could 
+be easily adapted to use standard functions instead.
 
 Examples: [examples/standard-functions.md](examples/standard-functions.md)
 
-### Re-use existing code 
+### Re-use existing code
 Before adding a helper, see if the code could easily be adapted to use an existing function
-instead.
+instead. `packages/core` is shared by every app: look there before adding something to an
+app.
 
 ### No function that only forwards
 No function that only forwards to another call with the same arguments. A small helper
   stays when its name says something the code inside it doesn't.
 
-## Clean up as you go 
+## Clean up as you go
 When the design changes part-way through a task, delete what the old design needed.
+
+Examples: [examples/clean-up-as-you-go.md](examples/clean-up-as-you-go.md)
 
 ## Expressive code
 
