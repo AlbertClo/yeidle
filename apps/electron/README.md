@@ -40,9 +40,8 @@ Update with `nix flake update yeidle` and a rebuild. After changing
 `package-lock.json`, refresh `npmDepsHash` in `apps/electron/package.nix` with
 `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
 
-The installed app uses the same data directory as `npm start`
-(`~/.config/yeidle`) and signs in to `YEIDLE_CLOUD_URL`
-(default `http://localhost:8200`).
+The installed app keeps its data in `~/.config/yeidle` and signs in to
+`YEIDLE_CLOUD_URL` (default `http://localhost:8200`).
 
 ## How it fits together
 
@@ -61,7 +60,15 @@ The installed app uses the same data directory as `npm start`
 
 ## Data
 
-Workspaces live in `~/.config/yeidle` (Linux). On first launch the app
+Workspaces live in `~/.config/yeidle` (Linux) for the installed app, and in
+`~/.config/yeidle-dev` when it runs from this checkout (`npm run dev`,
+`npm start`), so development never shares databases with your notes and new
+migrations don't reach them before you upgrade the installed app. (It
+detects the checkout by `electron.vite.config.ts` next to the app.) To test
+against a fresh copy of your notes, refill `yeidle-dev` from `yeidle` with
+`sqlite3 <db> ".backup <copy>"` for each workspace database.
+
+On first launch the app
 copies the NativePHP app's workspaces from `~/.config/yeidle-app` (the
 NativePHP app's `APP_NAME` is "Yeidle App"; originals are never opened for
 writing) and converts them to Loro documents.

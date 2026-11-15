@@ -48,14 +48,27 @@ protocol.registerSchemesAsPrivileged([
     },
 ]);
 
-// Never share a data folder with the NativePHP app ("yeidle-app", from its
-// APP_NAME "Yeidle App"): its workspaces are imported by copying, not
-// opened in place
+// Data folders:
+//   yeidle      the installed app (your notes)
+//   yeidle-dev  runs from the source checkout (npm run dev / npm start), so
+//               development never shares databases with the installed app
+//               and new migrations never reach it before an upgrade
+//   yeidle-app  the NativePHP app (APP_NAME "Yeidle App"); its workspaces are
+//               imported by copying, never opened in place
+// Only the checkout has the build config next to the app; packages ship
+// just the build output.
+const runningFromSource = fs.existsSync(
+    path.join(app.getAppPath(), 'electron.vite.config.ts'),
+);
+
 app.setName('Yeidle');
 app.setPath(
     'userData',
     process.env.YEIDLE_DATA_DIR ??
-        path.join(app.getPath('appData'), 'yeidle'),
+        path.join(
+            app.getPath('appData'),
+            runningFromSource ? 'yeidle-dev' : 'yeidle',
+        ),
 );
 
 const host: Host = {

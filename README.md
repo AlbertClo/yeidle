@@ -36,7 +36,8 @@ npm start       # build, then run the built app
 npm test        # core and renderer tests
 ```
 
-Data lives in `~/.config/yeidle` (Linux). See the
+Running from the checkout keeps its data in `~/.config/yeidle-dev`; the
+installed app uses `~/.config/yeidle`. See the
 [desktop app's README](apps/electron/README.md) for how it fits together,
 environment overrides (separate data folders, which cloud to use), and how to
 run two instances to try sync.
