@@ -85,7 +85,3 @@ browser.
   export.
 - [docs/editor-performance.md](docs/editor-performance.md): editor
   performance measurements on large pages.
-- [docs/sync-design.md](docs/sync-design.md) and
-  [docs/todo-live-structural-sync.md](docs/todo-live-structural-sync.md):
-  notes from the NativePHP app's operation-log sync, kept for history; the
-  Loro design replaces them.

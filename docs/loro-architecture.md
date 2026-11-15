@@ -1,9 +1,9 @@
 # Yeidle on Loro: architecture
 
 Status: desktop implemented in `apps/electron` + `packages/core` (phases 1–3
-below); cloud, history and mobile not started. Supersedes the op-log engine described in
-[sync-design.md](sync-design.md) and the unmerged `feat/crdt-sync-history`
-branch (Yjs). Work happens on `explore/loro`.
+below), and cloud sync with media files and live cursors (phase 4); history
+and mobile not started. Supersedes the earlier op-log engine and the unmerged
+`feat/crdt-sync-history` branch (Yjs).
 
 ## Decisions
 
@@ -107,7 +107,6 @@ two adapters: `Database` (async SQLite) and `Transport` (HTTP to the cloud).
 | `workspace` | Pins, collapsed blocks, preferences, daily notes, page creation | Port from `app/Support/*`, `app/DailyNotes/*` |
 | `sync` | Cloud push, pull, bootstrap, realtime, blob transfer | New; replaces `CloudSyncService.php` |
 | `import/roam` | Roam JSON → page documents | Port from `app/Import/Roam/*` |
-| `migrate` | NativePHP workspace → new workspace | New; based on `LegacyMigration.php` |
 
 ### Where the core runs (as built)
 
@@ -224,20 +223,10 @@ Loro documents carry their full history.
 - **Server log:** the cloud keeps every update, so history survives even if
   local documents are compacted with shallow snapshots.
 
-## Migration from the current app
+## The NativePHP app
 
-1. **Bring workspaces over.** The new app opens a NativePHP workspace SQLite
-   file read-only and converts it: every top-level node becomes a page
-   document holding its live subtree, and media metadata moves into the
-   `media` document. This is the logic of `LegacyMigration.php`, which is
-   already tested. Media blobs are copied as they are (content-addressed).
-2. **Re-pair with the cloud.** Old cloud workspaces hold ops, not document
-   updates, so the converted workspace seeds a fresh cloud workspace. The
-   NativePHP app is retired at that point; there is no period where both
-   engines run against the same workspace.
-3. **Interim PHP code goes.** `app/Documents/*`, the Node worker, and the
-   `documents` endpoints on `explore/loro` existed to prove the model. They
-   are removed along with the rest of the desktop PHP.
+The NativePHP app and its operation-log sync are retired and deleted. Its
+workspaces aren't carried forward; data comes in through the Roam import.
 
 ## Phases
 
@@ -246,7 +235,7 @@ Loro documents carry their full history.
 | 0. Spike (1–2 days) | Electron + Vite + Vue + TipTap + Loro + `better-sqlite3`. A Capacitor shell with the same editor on the iOS and Android simulators | Typing, selection, IME, and paste feel right in iOS WebKit; FTS5 works in the Capacitor SQLite plugin |
 | 1. Core | `store`, `readModel`, `queries`, `workspace`; vitest against in-memory SQLite | Parity tests with the current PHP feature tests |
 | 2. Desktop | Electron shell, IPC, and routing (Inertia replaced with vue-router); `PageEditor` wired to live documents; multi-window | Daily-driver parity with the NativePHP app, locally |
-| 3. Import and migration | Roam importer port; NativePHP workspace conversion | The real Roam graph imports; the existing workspace converts |
+| 3. Import | Roam importer port | The real Roam graph imports |
 | 4. Cloud | `apps/web` relay rewrite; sync client; Reverb; blobs | Two desktops converge live; offline edits merge |
 | 5. History | Page history panel: list, preview, restore | Recover a block deleted by a concurrent edit |
 | 6. Mobile | Capacitor app on the core: SQLite, share sheet, foreground sync | Daily use on a phone |
