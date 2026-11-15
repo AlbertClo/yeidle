@@ -22,7 +22,7 @@ The repository is a flake (`flake.nix`, with the package in `apps/electron/packa
 app and runs it with nixpkgs' Electron, with a desktop entry and icon.
 
 ```bash
-nix run github:AlbertClo/yeidle?ref=explore/loro   # try it
+nix run github:AlbertClo/yeidle   # try it
 nix build .#yeidle                                 # build from a checkout
 ```
 
@@ -30,13 +30,28 @@ In a NixOS configuration:
 
 ```nix
 # flake.nix inputs
-yeidle.url = "github:AlbertClo/yeidle?ref=explore/loro";
+yeidle.url = "github:AlbertClo/yeidle";
 
 # configuration
 environment.systemPackages = [ inputs.yeidle.packages.${pkgs.system}.default ];
 ```
 
-Update with `nix flake update yeidle` and a rebuild. After changing
+Update with `nix flake update yeidle` and a rebuild.
+
+To install from a checkout into your user profile, or update that install,
+run from the repository root:
+
+```bash
+npm run install:desktop
+```
+
+It builds the app (fixing `npmDepsHash` when `package-lock.json` changed),
+installs it with `nix profile`, or upgrades the copy installed from this
+checkout, and links the desktop entry into `~/.local/share/applications` so
+the app shows in the menu. Files git doesn't track yet aren't part of the
+build. Restart the app afterwards.
+
+After changing
 `package-lock.json`, refresh `npmDepsHash` in `apps/electron/package.nix` with
 `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
 
@@ -87,11 +102,16 @@ details. That's what makes them useful when refactoring.
 
 Workspaces live in `~/.config/yeidle` (Linux) for the installed app, and in
 `~/.config/yeidle-dev` when it runs from this checkout (`npm run dev`,
-`npm start`), so development never shares databases with your notes and new
-migrations don't reach them before you upgrade the installed app. (It
+`npm start`), so development never shares databases with your notes and a
+schema change doesn't reach them before you upgrade the installed app. (It
 detects the checkout by `electron.vite.config.ts` next to the app.) To test
 against a fresh copy of your notes, refill `yeidle-dev` from `yeidle` with
 `sqlite3 <db> ".backup <copy>"` for each workspace database.
+
+The workspace database's layout is in
+[docs/database-design.md](../../docs/database-design.md). Until launch there
+are no migrations: a workspace database from an older schema is renamed to
+`<name>.sqlite.old` and replaced with an empty one; re-import your notes.
 
 Environment overrides, mostly for testing:
 
@@ -109,7 +129,7 @@ approve the device, and the app stores the token in `cloud-account.json` in
 its data directory. A synced workspace exchanges Loro updates with the cloud
 relay (`packages/core/src/app/cloud/sync.ts`): local updates whose
 `cloud_seq` is empty are pushed, other devices' updates are pulled after the
-`sync_state.last_server_seq` cursor. Exchanges run shortly after local
+cloud cursor kept in the workspace's `meta` table. Exchanges run shortly after local
 changes, on a 15-second interval, and immediately when Reverb reports new
 updates.
 

@@ -29,14 +29,14 @@ import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
 import { bindingLabel } from '@/stores/keyBindings';
 import { saveWorkspaceStoragePreference } from '@/stores/preferences';
 import { workspaceState } from '@/stores/workspaces';
-import { SystemNodes } from '@yeidle/core/app/nodes';
 import {
     changedDocuments,
+    isUserDocument,
     DOCUMENTS_CHANGED_EVENT,
 } from '@/sync/documentChanges';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import type { BreadcrumbItem } from '@/types';
-import type { PageListItem } from '@/types/node';
+import type { Page } from '@/types/node';
 import { hasOpenModal } from '@/ui/modal';
 import { openThemeSelector, THEME_SELECTED_EVENT } from '@/ui/themeSelector';
 import {
@@ -45,7 +45,7 @@ import {
 } from '@/ui/workspaceSync';
 
 const props = defineProps<{
-    pages: PageListItem[];
+    pages: Page[];
     themeSetupRequired: boolean;
     storageSetupRequired: boolean;
     workspaceCloudStatus: 'local' | 'available' | 'syncing' | 'ready' | 'error';
@@ -275,11 +275,11 @@ const reloadScheduler = createMaxWaitScheduler(
     500,
 );
 
-// Every document is a page except the hidden system roots
+// User documents hold personal state, not pages
 function handleDocumentsChanged(event: Event): void {
     const changed = changedDocuments(event);
 
-    if (changed === null || changed.some((id) => !SystemNodes.isRoot(id))) {
+    if (changed === null || changed.some((id) => !isUserDocument(id))) {
         reloadScheduler.schedule();
     }
 }
@@ -428,20 +428,16 @@ onBeforeUnmount(() => {
     }
 });
 
-function createdDate(page: PageListItem): string {
-    if (page.page_type === 'daily_note' && page.daily_note_date) {
-        const [year, month, day] = page.daily_note_date
+function createdDate(page: Page): string {
+    if (page.daily_date) {
+        const [year, month, day] = page.daily_date
             .split('-')
             .map((part) => Number.parseInt(part, 10));
 
         return new Date(year, month - 1, day).toLocaleDateString();
     }
 
-    const timestamp = page.created_at.includes('T')
-        ? page.created_at
-        : `${page.created_at.replace(' ', 'T')}Z`;
-
-    return new Date(timestamp).toLocaleDateString();
+    return new Date(page.created_at).toLocaleDateString();
 }
 </script>
 
@@ -601,7 +597,7 @@ function createdDate(page: PageListItem): string {
                             class="h-4 w-4 shrink-0 text-muted-foreground"
                         />
                         <span class="flex-1 truncate">
-                            {{ page.content || '[untitled]' }}
+                            {{ page.title || '[untitled]' }}
                         </span>
                         <span class="text-xs text-muted-foreground">
                             {{ createdDate(page) }}

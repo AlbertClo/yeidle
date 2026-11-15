@@ -41,9 +41,11 @@ still be swapped later.
 
 ## Documents
 
-Every top-level node gets its own Loro document, with the node's id as the
-document id. Top-level nodes are pages and the hidden system roots (pins,
-preferences, collapsed blocks). Media metadata lives in one `media` document.
+Every page gets its own Loro document, with the page's id as the document
+id. Media metadata lives in one `media` document, and each user's personal
+state (preferences, pins, collapsed blocks) in a `user:<id>` document. See
+[database-design.md](database-design.md) for the documents and the SQLite
+tables around them.
 
 A page document contains:
 
@@ -56,8 +58,7 @@ A page document contains:
   - `checked`: absent, `false`, or `true`.
   - `created_at`.
 
-Tree order is authoritative. The `position` strings in the read model are
-regenerated from it and are never written back.
+Tree order is authoritative; the read model stores no block structure.
 
 ### Block content encoding
 
@@ -99,10 +100,10 @@ two adapters: `Database` (async SQLite) and `Transport` (HTTP to the cloud).
 | --- | --- | --- |
 | `loro/richText` | TipTap content ↔ Loro rich text, with minimal-diff edits | Done, tested |
 | `loro/pageDoc` | Block tree ↔ Loro tree, with the fewest moves | Done, tested |
-| `loro/pageMeta`, `loro/nodeOps` | Page fields; node changes in the op shape (`node.set` and `node.delete`) | Done |
+| `loro/pageMeta`, `loro/mergeBlocks` | Page fields; merging imported blocks into a page | Done |
 | `loro/projection` | Document → rows for the read model | Done |
 | `store` | Snapshot plus append-only update log per document; compaction | Port from `app/Documents/DocumentStore.php` |
-| `readModel` | Writes the `nodes`, `node_links`, `media`, and FTS5 `node_search` tables from rows | Port from `app/Documents/Projector.php` |
+| `readModel` | Writes the `pages`, `blocks`, `links`, `media`, and FTS5 `block_search` tables from rows | Done |
 | `queries` | Page list, page tree, backlinks, references, search, recent pages | Port from `app/Services/*`, `app/Search/NodeSearch.php` |
 | `workspace` | Pins, collapsed blocks, preferences, daily notes, page creation | Port from `app/Support/*`, `app/DailyNotes/*` |
 | `sync` | Cloud push, pull, bootstrap, realtime, blob transfer | New; replaces `CloudSyncService.php` |
@@ -153,9 +154,8 @@ which documents changed.
    The editor and the document stay equal, so the next local diff can never
    undo a remote change.
 
-**Page open:** render immediately from the read model, and load the document
-(snapshot plus newer updates) at the same time. The document replaces the
-initial tree only if it is newer.
+**Page open:** the page route sends the page's fields and its document
+(snapshot plus newer updates); the editor renders from the document.
 
 ## Cloud (Laravel)
 

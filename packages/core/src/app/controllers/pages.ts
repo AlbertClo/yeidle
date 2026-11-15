@@ -1,65 +1,95 @@
-import { placeholders } from '../../db/database';
-import type { Database } from '../../db/database';
-import { abort, abortIf, invalid, json } from '../../http/http';
+import { abort, invalid, json } from '../../http/http';
 import type { Input } from '../../http/http';
 import type { Router } from '../../http/router';
-import { isUuid, uuidv7 } from '../../support/ids';
-import { sqlTimestamp } from '../../support/time';
+import { readBlocks } from '../../loro/pageDoc';
+import type { Block } from '../../loro/pageDoc';
+import { updatePageMeta } from '../../loro/pageMeta';
+import { uuidv7 } from '../../support/ids';
 import type { AppContext } from '../context';
-import {
-    childrenOf,
-    findNode,
-    isReachable,
-    isSystemNode,
-    LIVE_PAGES_SQL,
-    serializeNode,
-} from '../nodes';
-import type { NodeJson, NodeRow } from '../nodes';
+import { allPages, findBlock, findPage, findPageByTitle } from '../pages';
+import type { Page } from '../pages';
 import { loadBacklinks } from '../services/backlinks';
-import { loadNodeTree } from '../services/nodeTree';
-import { searchNodes } from '../services/search';
+import { NavigationHistoryStore } from '../services/navigationHistory';
+import { search } from '../services/search';
 
-/** Pages, the node façade, search, recent pages and page visits. */
+type BlockTree = { id: string; text: string; children: BlockTree[] };
+
+/** Pages, blocks, search and recent pages. */
 export function registerPageRoutes(router: Router, ctx: AppContext): void {
-    router.get('/api/pages', () =>
-        json(
-            ctx
-                .db()
-                .all<NodeRow>(
-                    `SELECT * FROM nodes WHERE ${LIVE_PAGES_SQL} ORDER BY modified_at DESC, id DESC`,
-                )
-                .map(serializeNode),
-        ),
-    );
+    const boundPage = (id: string): Page =>
+        findPage(ctx.db(), id) ?? abort(404);
+
+    router.get('/api/pages', () => json(allPages(ctx.db())));
+
+    // Asks for a page with this title: the existing one (any letter case),
+    // or a new one. Create-page flows rely on not getting duplicates.
+    router.post('/api/pages', ({ input }) => {
+        const title = requiredString(input, 'title');
+        const existing = findPageByTitle(ctx.db(), title);
+
+        if (existing) {
+            return json(existing, 200);
+        }
+
+        const id = uuidv7();
+        ctx.documents().edit(
+            id,
+            (doc) =>
+                updatePageMeta(doc, {
+                    title,
+                    created_at: new Date().toISOString(),
+                    deleted: false,
+                }),
+            'Create page',
+        );
+
+        return json(boundPage(id), 201);
+    });
 
     // Advisory duplicate-title check for the rename UI: sync can always merge
     // in same-titled pages from other devices, so the client only warns.
-    // Before pages/{node} so "title-exists" isn't captured as a node id.
+    // Before pages/{page} so "title-exists" isn't captured as a page id.
     router.get('/api/pages/title-exists', ({ input }) => {
         const title = requiredString(input, 'title');
         const except = nullableString(input, 'except');
-        const row = ctx
-            .db()
-            .get(
-                `SELECT 1 FROM nodes WHERE ${LIVE_PAGES_SQL}${except ? ' AND id != ?' : ''} AND LOWER(content) = ? LIMIT 1`,
-                except ? [except, asciiLower(title)] : [asciiLower(title)],
-            );
 
-        return json({ exists: row !== undefined });
+        return json({
+            exists: findPageByTitle(ctx.db(), title, except) !== null,
+        });
     });
 
-    router.get('/api/pages/{node}', ({ params }) => {
-        const node = boundNode(ctx.db(), params.node);
-        abortIf(isSystemNode(ctx.db(), node), 404);
+    router.get('/api/pages/{page}', ({ params }) =>
+        json(boundPage(params.page)),
+    );
 
-        return json(loadNodeTree(ctx.db(), node.id));
-    });
+    router.get('/api/pages/{page}/backlinks', ({ params }) =>
+        json(loadBacklinks(ctx.db(), boundPage(params.page).id)),
+    );
 
-    router.get('/api/pages/{node}/backlinks', ({ params }) => {
-        const node = boundNode(ctx.db(), params.node);
-        abortIf(isSystemNode(ctx.db(), node), 404);
+    // A block with its children, for block references and embeds. A page
+    // stands in with its title and top-level blocks.
+    router.get('/api/blocks/{block}', ({ params }) => {
+        const db = ctx.db();
+        const block = findBlock(db, params.block);
+        const page = block === null ? findPage(db, params.block) : null;
 
-        return json(loadBacklinks(ctx.db(), node.id));
+        if (block === null && page === null) {
+            abort(404);
+        }
+
+        const pageId = block?.page_id ?? page!.id;
+        const blocks = readBlocks(ctx.documents().read(pageId), pageId);
+        const children =
+            block === null
+                ? blocks
+                : (findSubtree(blocks, block.id)?.children ?? []);
+
+        return json({
+            id: block?.id ?? page!.id,
+            page_id: pageId,
+            text: block?.text ?? page!.title,
+            children: children.map(toTree),
+        });
     });
 
     router.get('/api/search', ({ input }) => {
@@ -72,49 +102,12 @@ export function registerPageRoutes(router: Router, ctx: AppContext): void {
             );
         }
 
-        return json(searchNodes(ctx.db(), q));
+        return json(search(ctx.db(), q));
     });
 
-    router.get('/api/recent-pages', () => {
-        const db = ctx.db();
-        const recentIds = db
-            .all<{ node_id: string }>(
-                `SELECT node_id, MAX(visited_at) AS last_visit
-                FROM page_visits
-                GROUP BY node_id
-                ORDER BY last_visit DESC
-                LIMIT 10`,
-            )
-            .map((row) => row.node_id);
-
-        if (recentIds.length === 0) {
-            return json([]);
-        }
-
-        const pages = db
-            .all<NodeRow>(
-                `SELECT * FROM nodes WHERE id IN (${placeholders(recentIds.length)}) AND deleted_at IS NULL`,
-                recentIds,
-            )
-            .sort((a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id));
-
-        return json(pages.map(serializeNode));
-    });
-
-    router.post('/api/page-visits', ({ input }) => {
-        const nodeId = requiredString(input, 'node_id', 'node id');
-
-        if (findNode(ctx.db(), nodeId, { withTrashed: true }) === null) {
-            invalid('node_id', 'The selected node id is invalid.');
-        }
-
-        ctx.db().run(
-            'INSERT INTO page_visits (id, node_id, visited_at) VALUES (?, ?, ?)',
-            [uuidv7(), nodeId, sqlTimestamp()],
-        );
-
-        return json({}, 201);
-    });
+    router.get('/api/recent-pages', () =>
+        json(new NavigationHistoryStore(ctx).recentPages(10)),
+    );
 
     router.post('/api/open-external', ({ input }) => {
         const url = requiredString(input, 'url');
@@ -127,216 +120,30 @@ export function registerPageRoutes(router: Router, ctx: AppContext): void {
 
         return json({}, 200);
     });
-
-    // Intent-level façade: callers (PageSearch, the wikilink popup, the
-    // extension) ask for a node to exist; the change goes through the
-    // document service like every other write.
-    router.post('/api/nodes', ({ input }) => {
-        const db = ctx.db();
-        const fields = validateStore(db, input);
-        const content = fields.content ?? '';
-        const parentId = fields.parent_id ?? null;
-
-        // For top-level pages, return the existing page with the same title
-        // instead of creating a duplicate (create-page flows rely on this)
-        if (parentId === null && content !== '') {
-            const existing = db.get<NodeRow>(
-                `SELECT * FROM nodes WHERE ${LIVE_PAGES_SQL} AND LOWER(content) = ? LIMIT 1`,
-                [asciiLower(content)],
-            );
-
-            if (existing) {
-                return json(withChildren(db, existing), 200);
-            }
-        }
-
-        const id = fields.id ?? uuidv7();
-        const wasKnown = findNode(db, id, { withTrashed: true }) !== null;
-
-        ctx.documents().applyChanges([
-            {
-                type: 'node.set',
-                payload: {
-                    id,
-                    page_id: rootPageId(db, id, parentId),
-                    fields: {
-                        parent_id: parentId,
-                        position: fields.position ?? 'a0',
-                        content,
-                        tiptap_content: fields.tiptap_content ?? null,
-                        is_checked: fields.is_checked ?? null,
-                        page_type: fields.page_type ?? null,
-                        daily_note_date: fields.daily_note_date ?? null,
-                    },
-                },
-            },
-        ]);
-
-        const node = findNode(db, id);
-
-        if (node === null) {
-            abort(404);
-        }
-
-        return json(withChildren(db, node), wasKnown ? 200 : 201);
-    });
-
-    router.get('/api/nodes/{node}/reference', ({ params }) => {
-        const db = ctx.db();
-        const node = boundNode(db, params.node);
-        abortIf(!isReachable(db, node) || isSystemNode(db, node), 404);
-
-        let page = node;
-
-        while (page.parent_id !== null) {
-            const parent = findNode(db, page.parent_id);
-
-            if (!parent) {
-                break;
-            }
-
-            page = parent;
-        }
-
-        return json({
-            id: node.id,
-            content: node.content,
-            tiptap_content: serializeNode(node).tiptap_content,
-            page_id: page.id,
-            children: childrenRecursive(db, node.id, new Set([node.id])),
-        });
-    });
 }
 
-/** Laravel route-model binding: live nodes only. */
-function boundNode(db: Database, id: string): NodeRow {
-    return findNode(db, id) ?? abort(404);
+function findSubtree(blocks: Block[], id: string): Block | null {
+    for (const block of blocks) {
+        if (block.id === id) {
+            return block;
+        }
+
+        const found = findSubtree(block.children ?? [], id);
+
+        if (found) {
+            return found;
+        }
+    }
+
+    return null;
 }
 
-function withChildren(db: Database, node: NodeRow): NodeJson {
+function toTree(block: Block): BlockTree {
     return {
-        ...serializeNode(node),
-        children: childrenOf(db, node.id).map(serializeNode),
+        id: block.id,
+        text: block.content,
+        children: (block.children ?? []).map(toTree),
     };
-}
-
-// Ancestors guard against parent cycles
-function childrenRecursive(
-    db: Database,
-    parentId: string,
-    ancestors: Set<string>,
-): NodeJson[] {
-    return childrenOf(db, parentId).map((child) => ({
-        ...serializeNode(child),
-        children: ancestors.has(child.id)
-            ? []
-            : childrenRecursive(db, child.id, new Set(ancestors).add(child.id)),
-    }));
-}
-
-/** The top-level page a node belongs to: itself for pages, else the root of the parent chain. */
-function rootPageId(db: Database, id: string, parentId: string | null): string {
-    if (parentId === null) {
-        return id;
-    }
-
-    const visited = new Set<string>();
-    let node = findNode(db, parentId, { withTrashed: true });
-
-    while (node && node.parent_id !== null && !visited.has(node.id)) {
-        visited.add(node.id);
-        node = findNode(db, node.parent_id, { withTrashed: true });
-    }
-
-    return node?.id ?? id;
-}
-
-type StoreFields = {
-    id?: string;
-    parent_id?: string;
-    position?: string;
-    content?: string;
-    tiptap_content?: unknown;
-    is_checked?: boolean;
-    page_type?: string;
-    daily_note_date?: string;
-};
-
-function validateStore(db: Database, input: Input): StoreFields {
-    const fields: StoreFields = {};
-    const id = nullableString(input, 'id');
-
-    if (id !== null) {
-        if (!isUuid(id)) {
-            invalid('id', 'The id field must be a valid UUID.');
-        }
-
-        fields.id = id;
-    }
-
-    const parentId = input.raw('parent_id');
-
-    if (!isBlank(parentId)) {
-        if (
-            typeof parentId !== 'string' ||
-            findNode(db, parentId, { withTrashed: true }) === null
-        ) {
-            invalid('parent_id', 'The selected parent id is invalid.');
-        }
-
-        fields.parent_id = parentId;
-    }
-
-    for (const key of ['position', 'content'] as const) {
-        const value = nullableString(input, key);
-
-        if (value !== null) {
-            fields[key] = value;
-        }
-    }
-
-    if (!isBlank(input.raw('tiptap_content'))) {
-        fields.tiptap_content = input.raw('tiptap_content');
-    }
-
-    const checked = input.raw('is_checked');
-
-    if (!isBlank(checked)) {
-        if (![true, false, 0, 1, '0', '1'].includes(checked as never)) {
-            invalid(
-                'is_checked',
-                'The is checked field must be true or false.',
-            );
-        }
-
-        fields.is_checked =
-            checked === true || checked === 1 || checked === '1';
-    }
-
-    const pageType = nullableString(input, 'page_type', 'page type');
-
-    if (pageType !== null) {
-        if (pageType !== 'daily_note') {
-            invalid('page_type', 'The selected page type is invalid.');
-        }
-
-        fields.page_type = pageType;
-    }
-
-    const date = nullableString(input, 'daily_note_date', 'daily note date');
-
-    if (date !== null) {
-        if (!isDate(date)) {
-            invalid(
-                'daily_note_date',
-                'The daily note date field must match the format Y-m-d.',
-            );
-        }
-
-        fields.daily_note_date = date;
-    }
-
-    return fields;
 }
 
 // Laravel converts empty strings to null before validation
@@ -376,23 +183,6 @@ function nullableString(
     return value;
 }
 
-function isDate(value: string): boolean {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-
-    if (!match) {
-        return false;
-    }
-
-    const [year, month, day] = match.slice(1).map(Number);
-    const date = new Date(Date.UTC(year, month - 1, day));
-
-    return (
-        date.getUTCFullYear() === year &&
-        date.getUTCMonth() === month - 1 &&
-        date.getUTCDate() === day
-    );
-}
-
 function isUrl(value: string): boolean {
     if (!/^[a-z][a-z0-9+.-]*:\/\/[^\s]+$/i.test(value)) {
         return false;
@@ -405,9 +195,4 @@ function isUrl(value: string): boolean {
     } catch {
         return false;
     }
-}
-
-// PHP's strtolower and SQLite's LOWER() only fold ASCII
-function asciiLower(value: string): string {
-    return value.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }

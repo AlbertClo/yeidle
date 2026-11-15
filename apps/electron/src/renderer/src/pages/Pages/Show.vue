@@ -87,22 +87,21 @@ import type { Block } from '@yeidle/core/loro/pageDoc';
 import { readPageMeta, updatePageMeta } from '@yeidle/core/loro/pageMeta';
 import { canonicalJson } from '@yeidle/core/loro/richText';
 import type { BreadcrumbItem } from '@/types';
-import type { Node } from '@/types/node';
+import type { Node, Page } from '@/types/node';
 import { hasOpenModal } from '@/ui/modal';
 
 const props = defineProps<{
-    page: Node;
+    page: Page;
     pinned: boolean;
     backlinks: { id: string; page_id: string; page_title: string }[];
     document: DocumentState;
-    collapsedNodeIds: string[];
-    collapsedNodesRootId: string;
+    collapsedBlockIds: string[];
 }>();
 
-initializeCollapsedNodes(props.collapsedNodesRootId, props.collapsedNodeIds);
+initializeCollapsedNodes(props.collapsedBlockIds);
 
 markCachedPageActive(props.page.id);
-rememberPinState({ ...props.page, children: undefined }, props.pinned);
+rememberPinState(props.page, props.pinned);
 
 const isEditingTitle = ref(false);
 // The page's Loro document is the source of truth for the editor; the
@@ -128,15 +127,13 @@ function documentNodes(): Node[] {
     return blocksToNodes(readBlocks(session.doc, props.page.id));
 }
 
-const titleContent = ref(readPageMeta(session.doc).title || props.page.content);
+const titleContent = ref(readPageMeta(session.doc).title || props.page.title);
 const pageNodes = ref<Node[]>(documentNodes());
 const pageBacklinks = ref(props.backlinks);
 const editorKey = ref(0);
 const pagePinned = computed(() => isNodePinned(props.page.id));
 const isDailyNote = computed(
-    () =>
-        props.page.page_type === 'daily_note' &&
-        props.page.daily_note_date !== null,
+    () => props.page.kind === 'daily' && props.page.daily_date !== null,
 );
 const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: 'All Pages', href: '/pages' },
@@ -230,7 +227,7 @@ function handleTitleKeydown(e: KeyboardEvent) {
 // editor tree against the document; remote updates are imported only right
 // after a flush, and then applied to the editor in the same tick.
 
-let lastSavedTitle = props.page.content;
+let lastSavedTitle = props.page.title;
 const titleError = ref(false);
 const titleSyncScheduler = createMaxWaitScheduler(
     () => void saveTitle(),
@@ -578,12 +575,12 @@ async function toggleCurrentPagePin() {
 }
 
 function openAdjacentDailyNote(offset: -1 | 1): void {
-    if (!props.page.daily_note_date) {
+    if (!props.page.daily_date) {
         return;
     }
 
-    void openDailyNote(adjacentDate(props.page.daily_note_date, offset)).catch(
-        () => showAdjacentDailyNoteError(offset),
+    void openDailyNote(adjacentDate(props.page.daily_date, offset)).catch(() =>
+        showAdjacentDailyNoteError(offset),
     );
 }
 
@@ -591,17 +588,14 @@ async function crossDailyNoteBoundary(
     offset: -1 | 1,
     focus: DailyNoteFocus,
 ): Promise<void> {
-    if (!props.page.daily_note_date || navigatingDailyNoteBoundary) {
+    if (!props.page.daily_date || navigatingDailyNoteBoundary) {
         return;
     }
 
     navigatingDailyNoteBoundary = true;
 
     try {
-        await openDailyNote(
-            adjacentDate(props.page.daily_note_date, offset),
-            focus,
-        );
+        await openDailyNote(adjacentDate(props.page.daily_date, offset), focus);
     } catch {
         navigatingDailyNoteBoundary = false;
         showAdjacentDailyNoteError(offset);
@@ -640,11 +634,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
     if (
         isDailyNote.value &&
-        props.page.daily_note_date &&
+        props.page.daily_date &&
         eventMatchesCommand(e, 'previous-daily-note')
     ) {
         e.preventDefault();
-        startDailyNoteTraversal(props.page.daily_note_date, -1, () =>
+        startDailyNoteTraversal(props.page.daily_date, -1, () =>
             showAdjacentDailyNoteError(-1),
         );
 
@@ -653,11 +647,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
     if (
         isDailyNote.value &&
-        props.page.daily_note_date &&
+        props.page.daily_date &&
         eventMatchesCommand(e, 'next-daily-note')
     ) {
         e.preventDefault();
-        startDailyNoteTraversal(props.page.daily_note_date, 1, () =>
+        startDailyNoteTraversal(props.page.daily_date, 1, () =>
             showAdjacentDailyNoteError(1),
         );
 
@@ -792,12 +786,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head :title="page.content || '[untitled]'" />
+    <Head :title="page.title || '[untitled]'" />
 
     <AppLayout
         :breadcrumbs="breadcrumbs"
         :current-page-id="page.id"
-        :current-page-type="page.page_type"
+        :current-page-type="page.kind"
     >
         <div class="relative">
             <div class="sticky top-4 z-30 flex h-0 justify-end pr-4">
@@ -839,7 +833,7 @@ onBeforeUnmount(() => {
             <div class="mx-auto w-full max-w-2xl p-6">
                 <div class="mb-6">
                     <div
-                        v-if="isDailyNote && page.daily_note_date"
+                        v-if="isDailyNote && page.daily_date"
                         class="mb-3 flex items-center gap-1"
                     >
                         <Button

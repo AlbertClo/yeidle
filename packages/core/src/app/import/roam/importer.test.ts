@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { outline, paragraph } from '../../../documents/testing';
+import { applyBlocks, flattenBlocks, readBlocks } from '../../../loro/pageDoc';
+import type { Block } from '../../../loro/pageDoc';
 import { uuidv7 } from '../../../support/ids';
+import { findPage } from '../../pages';
+import type { Page } from '../../pages';
 import { dailyNotePageId } from '../../services/dailyNotes';
 import { testContext } from '../../testing';
 
@@ -41,18 +46,6 @@ class FakeFetcher extends RoamAttachmentFetcher {
     }
 }
 
-type NodeRow = {
-    id: string;
-    parent_id: string | null;
-    position: string;
-    content: string;
-    tiptap_content: string | null;
-    is_checked: number | null;
-    created_at: string | null;
-    page_type: string | null;
-    daily_note_date: string | null;
-};
-
 let ctx: ReturnType<typeof testContext>;
 let fetcher: FakeFetcher;
 let workspaceId: string;
@@ -72,27 +65,37 @@ function count(table: string): number {
         .count;
 }
 
+/** Pages and blocks in the read model. */
 function nodeCount(): number {
-    return ctx
-        .db()
-        .get<{ count: number }>(
-            'SELECT COUNT(*) AS count FROM nodes WHERE deleted_at IS NULL',
-        )!.count;
+    return count('pages') + count('blocks');
 }
 
-function node(uid: string, workspace = workspaceId): NodeRow {
-    const row = ctx
-        .db()
-        .get<NodeRow>('SELECT * FROM nodes WHERE id = ?', [
-            RoamExport.nodeId(uid, workspace),
-        ]);
-    expect(row, `node ${uid}`).toBeDefined();
+function page(uid: string, workspace = workspaceId): Page {
+    const row = findPage(ctx.db(), RoamExport.nodeId(uid, workspace));
+    expect(row, `page ${uid}`).not.toBeNull();
 
     return row!;
 }
 
-function tiptap(row: NodeRow): any {
-    return JSON.parse(row.tiptap_content!);
+/** A block as its page document holds it. */
+function block(uid: string, workspace = workspaceId): Block {
+    const id = RoamExport.nodeId(uid, workspace);
+    const row = ctx
+        .db()
+        .get<{ page_id: string }>('SELECT page_id FROM blocks WHERE id = ?', [
+            id,
+        ]);
+    expect(row, `block ${uid}`).toBeDefined();
+    const found = flattenBlocks(
+        readBlocks(ctx.documents().read(row!.page_id), row!.page_id),
+    ).find((candidate) => candidate.id === id);
+    expect(found, `block ${uid} in its page document`).toBeDefined();
+
+    return found!;
+}
+
+function tiptap(row: Block): any {
+    return row.tiptap_content;
 }
 
 describe('Roam importer', () => {
@@ -116,25 +119,32 @@ describe('Roam importer', () => {
         expect(result.success).toBe(true);
         expect(result.report.nodesWritten).toBe(7);
 
-        const page = node('page-project');
+        const project = page('page-project');
         const referencePageId = RoamExport.nodeId(
             'page-reference',
             workspaceId,
         );
-        const source = node('block-source');
-        const target = node('block-target');
+        const source = block('block-source');
+        const target = block('block-target');
 
         expect(nodeCount()).toBe(7);
-        expect(page.content).toBe('Project Notes');
-        expect(page.created_at).toBe('2021-01-01 00:00:00');
-        expect(source.parent_id).toBe(page.id);
-        expect(source.created_at).toBe('2021-01-02 00:00:00');
-        expect(source.position).toBe('a0');
-        expect(node('block-embed').position).toBe('a1');
-        expect(node('block-file').position).toBe('a2');
+        expect(project.title).toBe('Project Notes');
+        expect(project.kind).toBe('page');
+        expect(project.created_at).toBe(Date.parse('2021-01-01T00:00:00.123Z'));
+        expect(source.parent_id).toBe(project.id);
+        expect(source.created_at).toBe('2021-01-02T00:00:00.456Z');
+        expect(
+            readBlocks(ctx.documents().read(project.id), project.id).map(
+                (child) => child.id,
+            ),
+        ).toEqual(
+            ['block-source', 'block-embed', 'block-file'].map((uid) =>
+                RoamExport.nodeId(uid, workspaceId),
+            ),
+        );
         expect(target.parent_id).toBe(referencePageId);
-        expect(node('block-nested').parent_id).toBe(target.id);
-        expect(source.is_checked).toBe(0);
+        expect(block('block-nested').parent_id).toBe(target.id);
+        expect(source.is_checked).toBe(false);
 
         const sourceContent = tiptap(source);
         expect(sourceContent.type).toBe('paragraph');
@@ -143,7 +153,7 @@ describe('Roam importer', () => {
         expect(sourceContent.content[3].type).toBe('blockReference');
         expect(sourceContent.content[3].attrs.targetId).toBe(target.id);
 
-        const embedContent = tiptap(node('block-embed'));
+        const embedContent = tiptap(block('block-embed'));
         expect(embedContent.type).toBe('blockEmbed');
         expect(embedContent.attrs.targetId).toBe(target.id);
 
@@ -151,31 +161,32 @@ describe('Roam importer', () => {
         expect(targetContent.type).toBe('heading');
         expect(targetContent.attrs.level).toBe(2);
 
-        const media = ctx
-            .db()
-            .all<{
-                id: string;
-                filename: string;
-                original_name: string;
-                mime_type: string;
-            }>('SELECT * FROM media');
+        const media = ctx.db().all<{
+            id: string;
+            hash: string;
+            original_name: string;
+            mime_type: string;
+        }>('SELECT * FROM media');
         expect(media).toHaveLength(1);
-        const fileContent = tiptap(node('block-file'));
+        const fileContent = tiptap(block('block-file'));
         expect(fileContent.type).toBe('fileNode');
         expect(fileContent.attrs.mediaId).toBe(media[0].id);
         expect(media[0].original_name).toBe('diagram.png');
         expect(media[0].mime_type).toBe('image/png');
         expect(
             fs.existsSync(
-                path.join(
-                    ctx.workspace().storagePath,
-                    'media',
-                    media[0].filename,
-                ),
+                path.join(ctx.workspace().storagePath, 'media', media[0].hash),
             ),
         ).toBe(true);
 
-        expect(count('node_links')).toBe(3);
+        expect(
+            ctx
+                .db()
+                .all<{ target_id: string }>(
+                    'SELECT target_id FROM links ORDER BY target_id',
+                )
+                .map((link) => link.target_id),
+        ).toEqual([referencePageId, target.id, target.id].sort());
         // One document per page plus the media document
         expect(count('documents')).toBe(3);
     });
@@ -193,6 +204,34 @@ describe('Roam importer', () => {
         expect(second.report.nodesWritten).toBe(0);
         expect(second.report.nodesAlreadyImported).toBe(7);
         expect(second.report.attachmentsReused).toBe(1);
+    });
+
+    it('keeps blocks added since the last import when importing again', async () => {
+        await importRoamFile(ctx, fixture, { fetcher });
+        const projectId = RoamExport.nodeId('page-project', workspaceId);
+        const before = outline(ctx.documents(), projectId);
+        const blocks = readBlocks(ctx.documents().read(projectId), projectId);
+        ctx.documents().edit(projectId, (doc) =>
+            applyBlocks(doc, [
+                ...blocks,
+                {
+                    id: uuidv7(),
+                    parent_id: projectId,
+                    position: '',
+                    content: 'Written after the import',
+                    tiptap_content: paragraph('Written after the import'),
+                    is_checked: null,
+                },
+            ]),
+        );
+
+        const second = await importRoamFile(ctx, fixture, { fetcher });
+
+        expect(second.report.nodesAlreadyImported).toBe(7);
+        expect(outline(ctx.documents(), projectId)).toEqual([
+            ...before,
+            'Written after the import',
+        ]);
     });
 
     it('can be stopped by the progress callback before nodes are written', async () => {
@@ -287,26 +326,29 @@ describe('Roam importer', () => {
         }
 
         const dailyId = dailyNotePageId(otherWorkspace, '2026-08-30');
-        const daily = ctx
-            .db()
-            .get<NodeRow>('SELECT * FROM nodes WHERE id = ?', [dailyId])!;
-        const ordinary = node('ordinary-page', otherWorkspace);
-        const link = node('daily-link', otherWorkspace);
+        const daily = findPage(ctx.db(), dailyId)!;
+        const ordinary = page('ordinary-page', otherWorkspace);
+        const link = block('daily-link', otherWorkspace);
 
-        expect(daily.page_type).toBe('daily_note');
-        expect(daily.daily_note_date).toBe('2026-08-30');
-        expect(daily.created_at?.slice(0, 10)).toBe('2026-08-30');
-        expect(daily.content).toBe('August 30, 2026');
-        expect(ordinary.created_at).toBe('2021-01-02 00:00:00');
-        expect(link.created_at).toBe('2021-01-03 00:00:00');
+        expect(daily).toMatchObject({
+            title: 'August 30, 2026',
+            kind: 'daily',
+            daily_date: '2026-08-30',
+            created_at: Date.parse('2026-08-30T00:00:00Z'),
+        });
+        expect(ordinary.created_at).toBe(
+            Date.parse('2021-01-02T00:00:00.456Z'),
+        );
+        expect(link.created_at).toBe('2021-01-03T00:00:00.789Z');
         expect(tiptap(link).content[1].attrs.id).toBe(dailyId);
+        expect(outline(ctx.documents(), dailyId)).toEqual(['Plan the day']);
     });
 
     it('preserves the upload as a web link without files', async () => {
         await importRoamFile(ctx, fixture, { withoutFiles: true, fetcher });
 
         expect(count('media')).toBe(0);
-        const content = tiptap(node('block-file'));
+        const content = tiptap(block('block-file'));
         expect(content.type).toBe('paragraph');
         expect(content.content[0].type).toBe('webLink');
     });
@@ -322,7 +364,7 @@ describe('Roam importer', () => {
             'Expired source URL.',
         );
         expect(count('media')).toBe(0);
-        expect(tiptap(node('block-file')).content[0].type).toBe('webLink');
+        expect(tiptap(block('block-file')).content[0].type).toBe('webLink');
     });
 
     it('downloads attachments through the host', async () => {

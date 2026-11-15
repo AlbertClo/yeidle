@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import {
+    createPage,
+    deletePage,
+    inline,
+    mention,
+    setBlocks,
+} from '../../documents/testing';
 import { uuidv7 } from '../../support/ids';
-import { SystemNodes } from '../nodes';
+import { NavigationHistoryStore } from '../services/navigationHistory';
 import { call, Router, testContext } from '../testing';
 
 import { registerPageRoutes } from './pages';
@@ -17,33 +24,12 @@ beforeEach(() => {
 
 afterEach(() => ctx.cleanup());
 
-function node(
-    content: string,
-    parentId: string | null = null,
-    options: { id?: string; position?: string; tiptap_content?: unknown } = {},
-): string {
-    const id = options.id ?? uuidv7();
-    ctx.documents().applyChanges([
-        {
-            type: 'node.set',
-            payload: {
-                id,
-                page_id: parentId ?? id,
-                fields: {
-                    parent_id: parentId,
-                    position: options.position ?? 'a0',
-                    content,
-                    tiptap_content: options.tiptap_content ?? null,
-                },
-            },
-        },
-    ]);
-
-    return id;
+function page(title: string, options: Parameters<typeof createPage>[2] = {}) {
+    return createPage(ctx.documents(), title, options);
 }
 
-function setModified(id: string, hlc: string): void {
-    ctx.db().run('UPDATE nodes SET modified_at = ? WHERE id = ?', [hlc, id]);
+function setUpdated(id: string, ms: number): void {
+    ctx.db().run('UPDATE pages SET updated_at = ? WHERE id = ?', [ms, id]);
 }
 
 function count(table: string): number {
@@ -51,118 +37,144 @@ function count(table: string): number {
 }
 
 describe('pages', () => {
-    it('orders pages by modified_at with a deterministic id tie-breaker', async () => {
-        const oldest = node('Oldest', null, {
+    it('lists pages most recently changed first with a deterministic id tie-breaker', async () => {
+        const oldest = page('Oldest', {
             id: '00000000-0000-7000-8000-000000000001',
         });
-        const tieLow = node('Tie low', null, {
+        const tieLow = page('Tie low', {
             id: '00000000-0000-7000-8000-000000000002',
         });
-        const tieHigh = node('Tie high', null, {
+        const tieHigh = page('Tie high', {
             id: '00000000-0000-7000-8000-000000000003',
         });
-        const newest = node('Newest', null, {
+        const newest = page('Newest', {
             id: '00000000-0000-7000-8000-000000000004',
         });
-        setModified(oldest, '000000000000100-0000-a');
-        setModified(tieLow, '000000000000200-0000-a');
-        setModified(tieHigh, '000000000000200-0000-a');
-        setModified(newest, '000000000000300-0000-a');
+        setUpdated(oldest, 100);
+        setUpdated(tieLow, 200);
+        setUpdated(tieHigh, 200);
+        setUpdated(newest, 300);
 
         const response = await call(router, 'GET', '/api/pages');
 
         expect(response.status).toBe(200);
-        expect(response.json.map((page: { id: string }) => page.id)).toEqual([
+        expect(response.json.map((p: { id: string }) => p.id)).toEqual([
             newest,
             tieHigh,
             tieLow,
             oldest,
         ]);
-        expect(response.json[0]).toMatchObject({
-            content: 'Newest',
-            parent_id: null,
+        expect(response.json[0]).toEqual({
+            id: newest,
+            title: 'Newest',
+            kind: 'page',
+            daily_date: null,
+            created_at: expect.any(Number),
+            updated_at: 300,
         });
     });
 
-    it('excludes deleted pages and system roots', async () => {
-        const page = node('Kept');
-        const deleted = node('Deleted');
-        ctx.documents().applyChanges([
-            { type: 'node.delete', payload: { id: deleted, page_id: deleted } },
-        ]);
-        node('Pins', null, { id: SystemNodes.PINS_ROOT_ID });
+    it('lists daily notes with their date', async () => {
+        const daily = page('November 9th, 2026', {
+            meta: { page_type: 'daily_note', daily_note_date: '2026-11-09' },
+        });
+
+        const response = await call(router, 'GET', `/api/pages/${daily}`);
+
+        expect(response.json).toMatchObject({
+            kind: 'daily',
+            daily_date: '2026-11-09',
+        });
+    });
+
+    it('takes created_at from the page document as unix ms', async () => {
+        const id = page('Dated', {
+            meta: { created_at: '2026-01-02T03:04:05.000Z' },
+        });
+
+        expect(
+            (await call(router, 'GET', `/api/pages/${id}`)).json.created_at,
+        ).toBe(Date.UTC(2026, 0, 2, 3, 4, 5));
+    });
+
+    it('leaves deleted pages out', async () => {
+        const kept = page('Kept');
+        const deleted = page('Deleted', { blocks: [{ text: 'gone' }] });
+        deletePage(ctx.documents(), deleted);
 
         const response = await call(router, 'GET', '/api/pages');
 
-        expect(response.json.map((p: { id: string }) => p.id)).toEqual([page]);
+        expect(response.json.map((p: { id: string }) => p.id)).toEqual([kept]);
+        expect(count('blocks')).toBe(0);
     });
 
-    it('orders siblings by position with a deterministic id tie-breaker', async () => {
-        const page = node('Page', null, {
-            id: '00000000-0000-7000-8000-000000000010',
+    it('returns a page by id and 404s for missing, deleted and block ids', async () => {
+        const id = page('Shown');
+        const deleted = page('Deleted');
+        deletePage(ctx.documents(), deleted);
+        const [block] = setBlocks(ctx.documents(), id, [{ text: 'A block' }]);
+
+        const shown = await call(router, 'GET', `/api/pages/${id}`);
+        expect(shown.status).toBe(200);
+        expect(shown.json).toMatchObject({ id, title: 'Shown', kind: 'page' });
+
+        for (const missing of [uuidv7(), deleted, block]) {
+            expect(
+                (await call(router, 'GET', `/api/pages/${missing}`)).status,
+            ).toBe(404);
+            expect(
+                (await call(router, 'GET', `/api/pages/${missing}/backlinks`))
+                    .status,
+            ).toBe(404);
+        }
+    });
+
+    it('creates a page by title', async () => {
+        const response = await call(router, 'POST', '/api/pages', {
+            title: 'My New Page',
         });
-        const high = '00000000-0000-7000-8000-000000000013';
-        const low = '00000000-0000-7000-8000-000000000012';
-        ctx.documents().applyChanges(
-            [high, low].map((id) => ({
-                type: 'node.set' as const,
-                payload: {
-                    id,
-                    page_id: page,
-                    fields: { parent_id: page, position: 'a0', content: id },
-                },
-            })),
-        );
 
-        const response = await call(router, 'GET', `/api/pages/${page}`);
-
-        expect(response.status).toBe(200);
-        expect(response.json.children.map((c: { id: string }) => c.id)).toEqual(
-            [low, high],
-        );
+        expect(response.status).toBe(201);
+        expect(response.json).toMatchObject({
+            title: 'My New Page',
+            kind: 'page',
+            daily_date: null,
+        });
+        expect(
+            ctx.db().all('SELECT document_id FROM document_updates'),
+        ).toEqual([{ document_id: response.json.id }]);
+        expect(
+            (await call(router, 'GET', '/api/pages')).json.map(
+                (p: { id: string }) => p.id,
+            ),
+        ).toEqual([response.json.id]);
     });
 
-    it('404s for missing, deleted and system pages', async () => {
-        const deleted = node('Deleted');
-        ctx.documents().applyChanges([
-            { type: 'node.delete', payload: { id: deleted, page_id: deleted } },
-        ]);
-        node('Pins', null, { id: SystemNodes.PINS_ROOT_ID });
+    it('returns the existing page for a duplicate title without writing', async () => {
+        const first = await call(router, 'POST', '/api/pages', {
+            title: 'Unique Title',
+        });
+        const second = await call(router, 'POST', '/api/pages', {
+            title: 'unique title',
+        });
 
-        expect(
-            (
-                await call(
-                    router,
-                    'GET',
-                    '/api/pages/00000000-0000-7000-8000-000000000404',
-                )
-            ).status,
-        ).toBe(404);
-        expect(
-            (await call(router, 'GET', `/api/pages/${deleted}`)).status,
-        ).toBe(404);
-        expect(
-            (
-                await call(
-                    router,
-                    'GET',
-                    `/api/pages/${SystemNodes.PINS_ROOT_ID}`,
-                )
-            ).status,
-        ).toBe(404);
-        expect(
-            (
-                await call(
-                    router,
-                    'GET',
-                    `/api/pages/${SystemNodes.PINS_ROOT_ID}/backlinks`,
-                )
-            ).status,
-        ).toBe(404);
+        expect(second.status).toBe(200);
+        expect(second.json).toEqual(first.json);
+        expect(count('document_updates')).toBe(1);
+    });
+
+    it('validates the title when creating a page', async () => {
+        for (const body of [{}, { title: '' }, { title: 42 }]) {
+            const response = await call(router, 'POST', '/api/pages', body);
+            expect(response.status).toBe(422);
+            expect(Object.keys(response.json.errors)).toEqual(['title']);
+        }
+
+        expect(count('pages')).toBe(0);
     });
 
     it('checks for duplicate titles case-insensitively', async () => {
-        const page = node('Project Notes');
+        const id = page('Project Notes');
 
         expect(
             (
@@ -180,7 +192,7 @@ describe('pages', () => {
                 await call(
                     router,
                     'GET',
-                    `/api/pages/title-exists?title=Project%20Notes&except=${page}`,
+                    `/api/pages/title-exists?title=Project%20Notes&except=${id}`,
                 )
             ).json,
         ).toEqual({ exists: false });
@@ -195,27 +207,28 @@ describe('pages', () => {
         ).toBe(422);
     });
 
-    it('lists the pages linking to a page', async () => {
-        const target = node('Target page');
-        const sourcePage = node('Source page');
-        const sourceParent = node('Parent block', sourcePage);
-        const sourceBlock = node('Linked block', sourceParent, {
-            tiptap_content: {
-                type: 'paragraph',
-                content: [
+    it('lists each page linking to a page once, with its first linking block', async () => {
+        const target = page('Target page');
+        const source = page('Source page');
+        const [first, second] = setBlocks(ctx.documents(), source, [
+            {
+                text: 'Parent block',
+                content: inline(mention(target, 'Target page')),
+                children: [
                     {
-                        type: 'mention',
-                        attrs: { id: target, label: 'Target page' },
+                        text: 'Nested link',
+                        content: inline('see ', mention(target, 'Target page')),
                     },
                 ],
             },
-        });
-        const link = ctx
-            .db()
-            .get<{ id: string }>(
-                'SELECT id FROM node_links WHERE source_node_id = ?',
-                [sourceBlock],
-            )!;
+        ]);
+        const untitled = uuidv7();
+        // Blocks that arrive before their page's fields: listed untitled
+        setBlocks(ctx.documents(), untitled, [
+            { content: inline(mention(target, 'Target page')) },
+        ]);
+        setUpdated(source, 200);
+        setUpdated(untitled, 100);
 
         const response = await call(
             router,
@@ -225,24 +238,147 @@ describe('pages', () => {
 
         expect(response.status).toBe(200);
         expect(response.json).toEqual([
-            { id: link.id, page_id: sourcePage, page_title: 'Source page' },
+            {
+                id: [first, second].sort()[0],
+                page_id: source,
+                page_title: 'Source page',
+            },
+            {
+                id: expect.any(String),
+                page_id: untitled,
+                page_title: '[untitled]',
+            },
         ]);
+    });
+
+    it('drops backlinks when the linking page is deleted', async () => {
+        const target = page('Target');
+        const source = page('Source', {
+            blocks: [{ content: inline(mention(target, 'Target')) }],
+        });
+        deletePage(ctx.documents(), source);
+
+        expect(
+            (await call(router, 'GET', `/api/pages/${target}/backlinks`)).json,
+        ).toEqual([]);
+        expect(count('links')).toBe(0);
+    });
+});
+
+describe('blocks route', () => {
+    it('returns a block with its page and nested children', async () => {
+        const id = page('Reference root');
+        const [target, child, grandchild] = setBlocks(ctx.documents(), id, [
+            {
+                text: 'Referenced block',
+                children: [
+                    {
+                        text: 'Nested block',
+                        children: [{ text: 'Deeper' }],
+                    },
+                ],
+            },
+            { text: 'Sibling' },
+        ]);
+
+        const response = await call(router, 'GET', `/api/blocks/${target}`);
+
+        expect(response.status).toBe(200);
+        expect(response.json).toEqual({
+            id: target,
+            page_id: id,
+            text: 'Referenced block',
+            children: [
+                {
+                    id: child,
+                    text: 'Nested block',
+                    children: [
+                        { id: grandchild, text: 'Deeper', children: [] },
+                    ],
+                },
+            ],
+        });
+    });
+
+    it('stands a page in with its title and top-level blocks', async () => {
+        const id = page('Embedded page');
+        const [first, nested, second] = setBlocks(ctx.documents(), id, [
+            { text: 'First', children: [{ text: 'Nested' }] },
+            { text: 'Second' },
+        ]);
+
+        const response = await call(router, 'GET', `/api/blocks/${id}`);
+
+        expect(response.status).toBe(200);
+        expect(response.json).toEqual({
+            id,
+            page_id: id,
+            text: 'Embedded page',
+            children: [
+                {
+                    id: first,
+                    text: 'First',
+                    children: [{ id: nested, text: 'Nested', children: [] }],
+                },
+                { id: second, text: 'Second', children: [] },
+            ],
+        });
+    });
+
+    it('404s for unknown ids, deleted pages and blocks of deleted pages', async () => {
+        const id = page('Page');
+        const [block] = setBlocks(ctx.documents(), id, [{ text: 'Block' }]);
+
+        expect(
+            (await call(router, 'GET', `/api/blocks/${uuidv7()}`)).status,
+        ).toBe(404);
+
+        deletePage(ctx.documents(), id);
+        expect((await call(router, 'GET', `/api/blocks/${id}`)).status).toBe(
+            404,
+        );
+        expect((await call(router, 'GET', `/api/blocks/${block}`)).status).toBe(
+            404,
+        );
     });
 });
 
 describe('search route', () => {
-    it('returns ranked nodes with their page id', async () => {
-        const page = node('Page');
-        const match = node('Deep searchable result', node('Parent', page));
+    it('returns matching pages and blocks with their page id', async () => {
+        const id = page('Searchable page');
+        const [, match] = setBlocks(ctx.documents(), id, [
+            {
+                text: 'Parent',
+                children: [{ text: 'Deep searchable result' }],
+            },
+        ]);
 
         const response = await call(router, 'GET', '/api/search?q=searchable');
 
         expect(response.status).toBe(200);
-        expect(response.json[0]).toMatchObject({
-            id: match,
-            page_id: page,
-            content: 'Deep searchable result',
-        });
+        expect(response.json).toEqual([
+            {
+                kind: 'page',
+                id,
+                page_id: id,
+                text: 'Searchable page',
+            },
+            {
+                kind: 'block',
+                id: match,
+                page_id: id,
+                text: 'Deep searchable result',
+            },
+        ]);
+    });
+
+    it('leaves out blocks of deleted pages', async () => {
+        const id = page('Doomed', { blocks: [{ text: 'findable words' }] });
+        deletePage(ctx.documents(), id);
+
+        expect(
+            (await call(router, 'GET', '/api/search?q=findable')).json,
+        ).toEqual([]);
     });
 
     it('validates the query', async () => {
@@ -257,39 +393,71 @@ describe('search route', () => {
     });
 });
 
-describe('recent pages and visits', () => {
-    it('records visits and lists the most recently visited pages first', async () => {
-        const first = node('First');
-        const second = node('Second');
+describe('recent pages', () => {
+    let next = 1;
 
-        expect(
-            (await call(router, 'POST', '/api/page-visits', { node_id: first }))
-                .status,
-        ).toBe(201);
-        await call(router, 'POST', '/api/page-visits', { node_id: second });
-        ctx.db().run(
-            "UPDATE page_visits SET visited_at = '2026-01-01 00:00:00' WHERE node_id = ?",
-            [first],
+    function visit(
+        pageId: string | null,
+        at: number,
+        url = pageId ? `/pages/${pageId}` : '/pages',
+    ) {
+        new NavigationHistoryStore(ctx).save(
+            `00000000-0000-7000-8000-${String(next++).padStart(12, '0')}`,
+            {
+                url,
+                page_id: pageId,
+                scroll_top: 0,
+                visited_at: new Date(at).toISOString(),
+                last_visited_at: new Date(at).toISOString(),
+            },
+            true,
         );
+    }
+
+    it('lists the most recently visited pages first, once each', async () => {
+        const first = page('First');
+        const second = page('Second');
+        const unvisited = page('Unvisited');
+        visit(first, 1000);
+        visit(second, 2000);
+        visit(null, 3000);
+        visit(first, 4000);
 
         const response = await call(router, 'GET', '/api/recent-pages');
 
+        expect(response.status).toBe(200);
         expect(response.json.map((p: { id: string }) => p.id)).toEqual([
-            second,
             first,
+            second,
         ]);
-        expect(count('page_visits')).toBe(2);
+        expect(response.json[0]).toMatchObject({ title: 'First' });
+        expect(response.json.map((p: { id: string }) => p.id)).not.toContain(
+            unvisited,
+        );
     });
 
-    it('rejects visits to unknown nodes', async () => {
-        const response = await call(router, 'POST', '/api/page-visits', {
-            node_id: uuidv7(),
-        });
+    it('skips deleted pages and keeps at most ten', async () => {
+        const pages = Array.from({ length: 12 }, (_, i) => page(`Page ${i}`));
+        pages.forEach((id, i) => visit(id, 1000 + i));
+        deletePage(ctx.documents(), pages[11]);
 
-        expect(response.status).toBe(422);
-        expect(response.json.errors.node_id).toEqual([
-            'The selected node id is invalid.',
-        ]);
+        const response = await call(router, 'GET', '/api/recent-pages');
+
+        expect(response.json.map((p: { id: string }) => p.id)).toEqual(
+            pages.slice(1, 11).reverse(),
+        );
+    });
+
+    it('shows only the current user history', async () => {
+        const local = page('Local');
+        visit(local, 1000);
+        ctx.db().run(
+            "UPDATE navigation_locations SET user_key = 'cloud:someone-else'",
+        );
+
+        expect((await call(router, 'GET', '/api/recent-pages')).json).toEqual(
+            [],
+        );
     });
 });
 
@@ -318,182 +486,14 @@ describe('open external', () => {
     });
 });
 
-describe('node façade', () => {
-    it('creating a page writes its document', async () => {
-        const response = await call(router, 'POST', '/api/nodes', {
-            content: 'My New Page',
-        });
-
-        expect(response.status).toBe(201);
-        const id = response.json.id;
-        expect(response.json).toMatchObject({
-            content: 'My New Page',
-            parent_id: null,
-            children: [],
-        });
-        const row = ctx
-            .db()
-            .get<{ content: string; document_id: string }>(
-                'SELECT content, document_id FROM nodes WHERE id = ?',
-                [id],
-            )!;
-        expect(row).toEqual({ content: 'My New Page', document_id: id });
-        expect(
-            ctx.db().all('SELECT document_id FROM document_updates'),
-        ).toEqual([{ document_id: id }]);
-    });
-
-    it('returns the existing page for a duplicate title without writing', async () => {
-        const first = await call(router, 'POST', '/api/nodes', {
-            content: 'Unique Title',
-        });
-        const second = await call(router, 'POST', '/api/nodes', {
-            content: 'unique title',
-        });
-
-        expect(second.status).toBe(200);
-        expect(second.json.id).toBe(first.json.id);
-        expect(count('document_updates')).toBe(1);
-    });
-
-    it('creates children in the root page document', async () => {
-        const page = (
-            await call(router, 'POST', '/api/nodes', { content: 'Parent Page' })
-        ).json.id;
-        const child = await call(router, 'POST', '/api/nodes', {
-            parent_id: page,
-            content: 'child node',
-            position: 'a0',
-        });
-
-        expect(child.status).toBe(201);
-        expect(
-            ctx
-                .db()
-                .get<{ document_id: string }>(
-                    'SELECT document_id FROM nodes WHERE id = ?',
-                    [child.json.id],
-                ),
-        ).toEqual({ document_id: page });
-
-        const parent = await call(router, 'POST', '/api/nodes', {
-            content: 'parent page',
-        });
-        expect(parent.json.children.map((c: { id: string }) => c.id)).toEqual([
-            child.json.id,
-        ]);
-    });
-
-    it('treats a known id as an upsert', async () => {
-        const id = uuidv7();
-
-        expect(
-            (await call(router, 'POST', '/api/nodes', { id, content: 'v1' }))
-                .status,
-        ).toBe(201);
-        const again = await call(router, 'POST', '/api/nodes', {
-            id,
-            content: 'v2',
-            parent_id: null,
-        });
-
-        expect(again.status).toBe(200);
-        expect(
-            ctx.db().get('SELECT content FROM nodes WHERE id = ?', [id]),
-        ).toEqual({ content: 'v2' });
-    });
-
-    it('validates input', async () => {
-        const cases: [Record<string, unknown>, string][] = [
-            [{ id: 'nope' }, 'id'],
-            [{ parent_id: uuidv7() }, 'parent_id'],
-            [{ is_checked: 'yes' }, 'is_checked'],
-            [{ page_type: 'journal' }, 'page_type'],
-            [{ daily_note_date: '2026-02-30' }, 'daily_note_date'],
-            [{ content: 42 }, 'content'],
-        ];
-
-        for (const [body, field] of cases) {
-            const response = await call(router, 'POST', '/api/nodes', body);
-            expect(response.status).toBe(422);
-            expect(Object.keys(response.json.errors)).toEqual([field]);
+describe('removed routes', () => {
+    it('no longer serves page visits or the node façade', async () => {
+        for (const [method, url] of [
+            ['POST', '/api/page-visits'],
+            ['POST', '/api/nodes'],
+            ['GET', `/api/nodes/${uuidv7()}/reference`],
+        ]) {
+            expect((await call(router, method, url)).status).toBe(404);
         }
-    });
-
-    it('creates daily notes with their page fields', async () => {
-        const response = await call(router, 'POST', '/api/nodes', {
-            content: 'November 9th, 2026',
-            page_type: 'daily_note',
-            daily_note_date: '2026-11-09',
-        });
-
-        expect(response.status).toBe(201);
-        expect(response.json).toMatchObject({
-            page_type: 'daily_note',
-            daily_note_date: '2026-11-09',
-        });
-    });
-
-    it('returns the referenced subtree and its root page', async () => {
-        const page = (
-            await call(router, 'POST', '/api/nodes', {
-                content: 'Reference root',
-            })
-        ).json.id;
-        const target = (
-            await call(router, 'POST', '/api/nodes', {
-                parent_id: page,
-                content: 'Referenced block',
-            })
-        ).json.id;
-        const child = (
-            await call(router, 'POST', '/api/nodes', {
-                parent_id: target,
-                content: 'Nested block',
-            })
-        ).json.id;
-
-        const response = await call(
-            router,
-            'GET',
-            `/api/nodes/${target}/reference`,
-        );
-
-        expect(response.status).toBe(200);
-        expect(response.json).toMatchObject({
-            id: target,
-            page_id: page,
-            content: 'Referenced block',
-        });
-        expect(response.json.children[0]).toMatchObject({
-            id: child,
-            children: [],
-        });
-    });
-
-    it('404s references to missing, unreachable or system nodes', async () => {
-        const page = node('Page');
-        const block = node('Block', page);
-        ctx.documents().applyChanges([
-            { type: 'node.delete', payload: { id: page, page_id: page } },
-        ]);
-        node('Pins', null, { id: SystemNodes.PINS_ROOT_ID });
-
-        expect(
-            (await call(router, 'GET', `/api/nodes/${uuidv7()}/reference`))
-                .status,
-        ).toBe(404);
-        expect(
-            (await call(router, 'GET', `/api/nodes/${block}/reference`)).status,
-        ).toBe(404);
-        expect(
-            (
-                await call(
-                    router,
-                    'GET',
-                    `/api/nodes/${SystemNodes.PINS_ROOT_ID}/reference`,
-                )
-            ).status,
-        ).toBe(404);
     });
 });

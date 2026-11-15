@@ -1,26 +1,19 @@
 import { ref } from 'vue';
 import { requestCloudExchange } from '@/sync/cloud';
-import { SystemNodes } from '@yeidle/core/app/nodes';
 
-import { anyChanged } from '@/sync/documentChanges';
+import { userDocumentChanged } from '@/sync/documentChanges';
 
 export const collapsedNodeIds = ref<Set<string>>(new Set());
-export const collapsedNodesRootId = ref<string | null>(null);
 
 let loaded = false;
 let loadRequest: Promise<void> | null = null;
 let mutationVersion = 0;
 
 interface CollapseStatePayload {
-    root_id: string;
-    node_ids: string[];
+    block_ids: string[];
 }
 
-export function initializeCollapsedNodes(
-    rootId: string,
-    nodeIds: string[],
-): void {
-    collapsedNodesRootId.value = rootId;
+export function initializeCollapsedNodes(nodeIds: string[]): void {
     collapsedNodeIds.value = new Set(nodeIds);
     loaded = true;
 }
@@ -40,7 +33,7 @@ export async function loadCollapsedNodes(force = false): Promise<void> {
         return;
     }
 
-    loadRequest = fetch('/api/collapsed-nodes', {
+    loadRequest = fetch('/api/collapsed-blocks', {
         headers: { Accept: 'application/json' },
     })
         .then(async (response) => {
@@ -49,7 +42,7 @@ export async function loadCollapsedNodes(force = false): Promise<void> {
             }
 
             const payload = (await response.json()) as CollapseStatePayload;
-            initializeCollapsedNodes(payload.root_id, payload.node_ids);
+            initializeCollapsedNodes(payload.block_ids);
         })
         .finally(() => {
             loadRequest = null;
@@ -104,13 +97,13 @@ async function persistCollapseState(
     collapsedNodeIds.value = optimisticState;
 
     try {
-        const response = await fetch('/api/collapsed-nodes', {
+        const response = await fetch('/api/collapsed-blocks', {
             method: 'PUT',
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ node_ids: nodeIds, collapsed }),
+            body: JSON.stringify({ block_ids: nodeIds, collapsed }),
         });
 
         if (!response.ok) {
@@ -120,7 +113,7 @@ async function persistCollapseState(
         const payload = (await response.json()) as CollapseStatePayload;
 
         if (version === mutationVersion) {
-            initializeCollapsedNodes(payload.root_id, payload.node_ids);
+            initializeCollapsedNodes(payload.block_ids);
         }
 
         void requestCloudExchange();
@@ -133,10 +126,7 @@ async function persistCollapseState(
     }
 }
 
-/**
- * Whether a change could affect this store. Every user's entries live under
- * the same hidden system root, which is its own document.
- */
+/** Whether a change could affect this store: collapsed blocks live in the user document. */
 export function collapsedNodesChanged(documentIds: string[] | null): boolean {
-    return anyChanged(documentIds, SystemNodes.COLLAPSED_NODES_ROOT_ID);
+    return userDocumentChanged(documentIds);
 }

@@ -1,8 +1,8 @@
 import type { Database } from '../../db/database';
+import { Meta } from '../../db/meta';
 import type { DocumentService } from '../../documents/service';
 import { fromBase64, toBase64 } from '../../support/base64';
-import { sqlTimestamp } from '../../support/time';
-import { syncIdentity } from '../services/accountRoots';
+import { LOCAL_USER_DOCUMENT_ID } from '../services/userDocument';
 
 import { CloudError, cloudMessage, cloudRequest } from './http';
 import type { CloudFetch } from './http';
@@ -14,8 +14,12 @@ import type { CloudFetch } from './http';
  *
  *   push: local updates with cloud_seq NULL (the outbox), in size-capped
  *         batches; the cloud acknowledges each with its server_seq
- *   pull: updates after sync_state.last_server_seq from other devices,
+ *   pull: updates after the cloud cursor (meta) from other devices,
  *         imported through DocumentService (store, project, notify windows)
+ *
+ * The account file holds the cloud URL and token; this workspace's meta
+ * holds whether it's paired and how far it has pulled. `user:local` never
+ * leaves the device.
  *
  * Pairing rules: an empty cloud workspace is seeded from this device, an
  * empty local workspace is filled from the cloud, and two non-empty sides
@@ -23,19 +27,7 @@ import type { CloudFetch } from './http';
  * different Loro histories and would merge into duplicates.
  */
 
-type SyncStateRow = {
-    id: number;
-    client_id: string;
-    last_server_seq: number;
-    cloud_url: string | null;
-    cloud_token: string | null;
-    workspace_id: string | null;
-    cloud_seed_pending: number;
-    last_sync_attempt_at: string | null;
-    last_sync_success_at: string | null;
-    last_sync_error: string | null;
-    cloud_user_id: string | null;
-};
+export type CloudCredentials = { url: string; token: string };
 
 type PulledUpdate = {
     server_seq: number;
@@ -82,48 +74,45 @@ const MAX_ROUNDS = 1000;
 export class CloudSync {
     private running: Promise<ExchangeResult> | null = null;
     private again = false;
+    private meta: Meta;
 
     constructor(
         private db: Database,
         private documents: DocumentService,
         private fetchImpl: CloudFetch,
-    ) {}
-
-    configured(): boolean {
-        const state = this.state();
-
-        return (
-            state.cloud_url !== null &&
-            state.cloud_token !== null &&
-            state.workspace_id !== null
-        );
+        /** The signed-in account's cloud, or null when signed out. */
+        private credentials: () => CloudCredentials | null,
+    ) {
+        this.meta = new Meta(db);
     }
 
-    /** Where and as whom to reach the cloud, or null when not paired. */
-    connection(): { url: string; token: string; workspaceId: string } | null {
-        const state = this.state();
+    configured(): boolean {
+        return this.connection() !== null;
+    }
 
-        return this.configured()
-            ? {
-                  url: state.cloud_url!,
-                  token: state.cloud_token!,
-                  workspaceId: state.workspace_id!,
-              }
+    /** Where and as whom to reach the cloud, or null when not paired or signed out. */
+    connection(): { url: string; token: string; workspaceId: string } | null {
+        const credentials = this.credentials();
+        const workspaceId = this.meta.get('cloud_workspace_id');
+
+        return credentials !== null && workspaceId !== null
+            ? { ...credentials, workspaceId }
             : null;
     }
 
     /** Pairs this workspace with a cloud workspace, then syncs once. */
-    async connect(
-        url: string,
-        token: string,
-        workspaceId: string,
-    ): Promise<ConnectResult> {
-        url = url.replace(/\/+$/, '');
+    async connect(workspaceId: string): Promise<ConnectResult> {
+        const credentials = this.credentials();
+
+        if (credentials === null) {
+            throw new CloudError('Sign in to Yeidle Cloud first.');
+        }
+
         const status = await cloudRequest(
             this.fetchImpl,
             'GET',
-            `${url}/api/workspaces/${workspaceId}/documents/status`,
-            { token },
+            `${credentials.url}/api/workspaces/${workspaceId}/documents/status`,
+            { token: credentials.token },
         );
 
         if (!status.ok) {
@@ -146,49 +135,47 @@ export class CloudSync {
             );
         }
 
-        const state = this.state();
-        const sameWorkspace = state.workspace_id === workspaceId;
+        const pairedWith = this.meta.get('cloud_workspace_id');
+        const sameWorkspace = pairedWith === workspaceId;
 
-        if (state.workspace_id !== null && !sameWorkspace) {
+        if (pairedWith !== null && !sameWorkspace) {
             throw new CloudError(
                 'This workspace is already connected to a different cloud workspace.',
             );
         }
 
         const localHasData =
-            this.db.get('SELECT 1 FROM document_updates LIMIT 1') !== undefined;
+            this.db.get(
+                'SELECT 1 FROM document_updates WHERE document_id != ? LIMIT 1',
+                [LOCAL_USER_DOCUMENT_ID],
+            ) !== undefined;
         let seeded = false;
         let bootstrapped = false;
 
-        if (!sameWorkspace) {
-            if (cloudSeq > 0 && localHasData) {
-                throw new CloudError(
-                    'This workspace has notes both on this device and in Yeidle Cloud. ' +
-                        'Open the cloud workspace from an empty workspace instead.',
-                );
+        this.db.transaction(() => {
+            if (!sameWorkspace) {
+                if (cloudSeq > 0 && localHasData) {
+                    throw new CloudError(
+                        'This workspace has notes both on this device and in Yeidle Cloud. ' +
+                            'Open the cloud workspace from an empty workspace instead.',
+                    );
+                }
+
+                seeded = cloudSeq === 0 && localHasData;
+                bootstrapped = cloudSeq > 0;
+                // Everything local goes up; everything in the cloud comes down
+                this.db.run('UPDATE document_updates SET cloud_seq = NULL');
+                this.meta.set('cloud_cursor', 0);
             }
 
-            seeded = cloudSeq === 0 && localHasData;
-            bootstrapped = cloudSeq > 0;
-            // Everything local goes up; everything in the cloud comes down
-            this.db.run('UPDATE document_updates SET cloud_seq = NULL');
-        }
+            this.meta.set('cloud_workspace_id', workspaceId);
 
-        this.db.run(
-            `UPDATE sync_state SET cloud_url = ?, cloud_token = ?, workspace_id = ?,
-                cloud_user_id = COALESCE(?, cloud_user_id),
-                last_server_seq = CASE WHEN ? THEN last_server_seq ELSE 0 END,
-                last_sync_error = NULL
-             WHERE id = ?`,
-            [
-                url,
-                token,
-                workspaceId,
-                typeof userId === 'string' && userId !== '' ? userId : null,
-                sameWorkspace,
-                state.id,
-            ],
-        );
+            if (typeof userId === 'string' && userId !== '') {
+                this.meta.set('cloud_user_id', userId);
+            }
+
+            this.meta.set('cloud_last_error', null);
+        });
 
         const exchange = await this.exchange();
 
@@ -200,11 +187,6 @@ export class CloudSync {
             ok: exchange.ok,
             error: exchange.error,
         };
-    }
-
-    /** Forgets the token (signing out); the pairing itself is kept. */
-    signOut(): void {
-        this.db.run('UPDATE sync_state SET cloud_token = NULL');
     }
 
     /**
@@ -235,49 +217,49 @@ export class CloudSync {
     }
 
     status(): Record<string, unknown> {
-        const state = this.state();
-        const configured = this.configured();
-        const outbox =
-            this.db.get<{ count: number }>(
-                'SELECT COUNT(*) AS count FROM document_updates WHERE cloud_seq IS NULL',
-            )?.count ?? 0;
-        const health = !configured
-            ? 'unconfigured'
-            : state.last_sync_error !== null
-              ? 'error'
-              : state.last_sync_success_at !== null
-                ? 'healthy'
-                : 'never_synced';
+        const connection = this.connection();
+        const error = this.meta.get('cloud_last_error');
+        const lastSuccess = this.meta.number('cloud_last_success_at');
+        const outbox = connection === null ? 0 : this.outboxSize();
+        const health =
+            connection === null
+                ? 'unconfigured'
+                : error !== null
+                  ? 'error'
+                  : lastSuccess !== null
+                    ? 'healthy'
+                    : 'never_synced';
 
         return {
-            configured,
+            configured: connection !== null,
             health,
-            cloud_url: state.cloud_url,
-            workspace_id: state.workspace_id,
-            cloud_seed_pending: false,
-            last_server_seq: state.last_server_seq,
+            cloud_url: connection?.url ?? null,
+            workspace_id: this.meta.get('cloud_workspace_id'),
+            cloud_cursor: this.meta.number('cloud_cursor') ?? 0,
             local_log_seq: this.documents.store.changesSince(0).seq,
-            outbox: configured ? outbox : 0,
+            outbox,
             pending_blob_uploads: 0,
-            last_sync_attempt_at: state.last_sync_attempt_at,
-            last_sync_success_at: state.last_sync_success_at,
-            last_sync_error: state.last_sync_error,
+            last_sync_attempt_at: isoTime(
+                this.meta.number('cloud_last_attempt_at'),
+            ),
+            last_sync_success_at: isoTime(lastSuccess),
+            last_sync_error: error,
         };
     }
 
     /** Public Reverb settings for the renderer (never the token). */
     async realtimeConfig(): Promise<RealtimeConfig> {
-        const state = this.state();
+        const connection = this.connection();
 
-        if (!this.configured()) {
+        if (connection === null) {
             return { enabled: false };
         }
 
         const response = await cloudRequest(
             this.fetchImpl,
             'GET',
-            this.workspaceUrl(state, 'documents/status'),
-            { token: state.cloud_token! },
+            this.workspaceUrl(connection, 'documents/status'),
+            { token: connection.token },
         );
 
         if (!response.ok) {
@@ -288,8 +270,7 @@ export class CloudSync {
         }
 
         const realtime = response.body?.realtime as
-            | Record<string, unknown>
-            | undefined;
+            Record<string, unknown> | undefined;
 
         if (
             realtime?.enabled !== true ||
@@ -303,7 +284,7 @@ export class CloudSync {
 
         return {
             enabled: true,
-            workspace_id: state.workspace_id!,
+            workspace_id: connection.workspaceId,
             app_key: realtime.app_key,
             host: realtime.host,
             port: realtime.port,
@@ -316,13 +297,13 @@ export class CloudSync {
         socketId: string,
         channelName: string,
     ): Promise<Record<string, unknown>> {
-        const state = this.state();
+        const connection = this.connection();
 
-        if (!this.configured()) {
+        if (connection === null) {
             throw new CloudError('Cloud sync is not configured.');
         }
 
-        const workspace = `workspaces.${state.workspace_id}`;
+        const workspace = `workspaces.${connection.workspaceId}`;
         const allowed =
             channelName === `private-${workspace}.sync` ||
             // Who's on a page, and their cursors
@@ -337,9 +318,9 @@ export class CloudSync {
         const response = await cloudRequest(
             this.fetchImpl,
             'POST',
-            `${state.cloud_url}/api/broadcasting/auth`,
+            `${connection.url}/api/broadcasting/auth`,
             {
-                token: state.cloud_token!,
+                token: connection.token,
                 form: { socket_id: socketId, channel_name: channelName },
             },
         );
@@ -355,7 +336,9 @@ export class CloudSync {
     }
 
     private async exchangeOnce(): Promise<ExchangeResult> {
-        if (!this.configured()) {
+        const connection = this.connection();
+
+        if (connection === null) {
             return {
                 configured: false,
                 ok: false,
@@ -365,9 +348,7 @@ export class CloudSync {
             };
         }
 
-        this.db.run('UPDATE sync_state SET last_sync_attempt_at = ?', [
-            sqlTimestamp(),
-        ]);
+        this.meta.set('cloud_last_attempt_at', Date.now());
 
         const errors: string[] = [];
         let pushed = 0;
@@ -376,13 +357,13 @@ export class CloudSync {
         // Push and pull are independent: a stuck outbox never blocks
         // receiving, and the reverse
         try {
-            pushed = await this.push();
+            pushed = await this.push(connection);
         } catch (error) {
             errors.push(`Push failed: ${describe(error)}`);
         }
 
         try {
-            pulled = await this.pull();
+            pulled = await this.pull(connection);
         } catch (error) {
             errors.push(`Pull failed: ${describe(error)}`);
         }
@@ -390,31 +371,28 @@ export class CloudSync {
         const error = errors.length > 0 ? errors.join(' ') : null;
 
         if (error === null) {
-            this.db.run(
-                'UPDATE sync_state SET last_sync_success_at = ?, last_sync_error = NULL',
-                [sqlTimestamp()],
-            );
-        } else {
-            this.db.run('UPDATE sync_state SET last_sync_error = ?', [error]);
+            this.meta.set('cloud_last_success_at', Date.now());
         }
+
+        this.meta.set('cloud_last_error', error);
 
         return { configured: true, ok: error === null, pushed, pulled, error };
     }
 
-    private async push(): Promise<number> {
-        const state = this.state();
+    private async push(connection: Connection): Promise<number> {
+        const deviceId = this.meta.deviceId();
         let pushed = 0;
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
             const rows = this.db.all<{
-                id: number;
+                seq: number;
                 update_id: string;
                 document_id: string;
                 bytes: Uint8Array;
             }>(
-                `SELECT id, update_id, document_id, bytes FROM document_updates
-                 WHERE cloud_seq IS NULL ORDER BY id LIMIT ?`,
-                [PUSH_MAX_UPDATES],
+                `SELECT seq, update_id, document_id, bytes FROM document_updates
+                 WHERE cloud_seq IS NULL AND document_id != ? ORDER BY seq LIMIT ?`,
+                [LOCAL_USER_DOCUMENT_ID, PUSH_MAX_UPDATES],
             );
 
             if (rows.length === 0) {
@@ -439,11 +417,11 @@ export class CloudSync {
             const response = await cloudRequest(
                 this.fetchImpl,
                 'POST',
-                this.workspaceUrl(state, 'documents/updates'),
+                this.workspaceUrl(connection, 'documents/updates'),
                 {
-                    token: state.cloud_token!,
+                    token: connection.token,
                     json: {
-                        device_id: state.client_id,
+                        device_id: deviceId,
                         updates: batch.map((row) => ({
                             update_id: row.update_id,
                             document_id: row.document_id,
@@ -489,8 +467,8 @@ export class CloudSync {
 
                     if (seq !== undefined) {
                         this.db.run(
-                            'UPDATE document_updates SET cloud_seq = ? WHERE id = ?',
-                            [seq, row.id],
+                            'UPDATE document_updates SET cloud_seq = ? WHERE seq = ?',
+                            [seq, row.seq],
                         );
                     }
                 }
@@ -508,20 +486,20 @@ export class CloudSync {
         return pushed;
     }
 
-    private async pull(): Promise<number> {
+    private async pull(connection: Connection): Promise<number> {
         let pulled = 0;
 
         for (let round = 0; round < MAX_ROUNDS; round++) {
-            const state = this.state();
+            const since = this.meta.number('cloud_cursor') ?? 0;
             const query = new URLSearchParams({
-                since: String(state.last_server_seq),
-                exclude_device: state.client_id,
+                since: String(since),
+                exclude_device: this.meta.deviceId(),
             });
             const response = await cloudRequest(
                 this.fetchImpl,
                 'GET',
-                `${this.workspaceUrl(state, 'documents/updates')}?${query}`,
-                { token: state.cloud_token!, timeoutMs: 120_000 },
+                `${this.workspaceUrl(connection, 'documents/updates')}?${query}`,
+                { token: connection.token, timeoutMs: 120_000 },
             );
 
             if (!response.ok) {
@@ -532,8 +510,7 @@ export class CloudSync {
             }
 
             const updates = response.body?.updates as
-                | PulledUpdate[]
-                | undefined;
+                PulledUpdate[] | undefined;
             const cursor = response.body?.cursor;
 
             if (!Array.isArray(updates) || typeof cursor !== 'number') {
@@ -543,10 +520,7 @@ export class CloudSync {
             }
 
             this.apply(updates);
-            this.db.run(
-                'UPDATE sync_state SET last_server_seq = ? WHERE id = ?',
-                [Math.max(cursor, state.last_server_seq), state.id],
-            );
+            this.meta.set('cloud_cursor', Math.max(cursor, since));
             pulled += updates.length;
 
             if (response.body?.has_more !== true) {
@@ -577,7 +551,7 @@ export class CloudSync {
                 documentId,
                 group.map((update) => ({
                     update_id: update.update_id,
-                    client_id: update.device_id,
+                    origin: update.device_id,
                     bytes: fromBase64(update.bytes),
                     cloud_seq: update.server_seq,
                 })),
@@ -585,17 +559,24 @@ export class CloudSync {
         }
     }
 
-    private workspaceUrl(state: SyncStateRow, path: string): string {
-        return `${state.cloud_url}/api/workspaces/${state.workspace_id}/${path}`;
+    private outboxSize(): number {
+        return (
+            this.db.get<{ count: number }>(
+                'SELECT COUNT(*) AS count FROM document_updates WHERE cloud_seq IS NULL AND document_id != ?',
+                [LOCAL_USER_DOCUMENT_ID],
+            )?.count ?? 0
+        );
     }
 
-    private state(): SyncStateRow {
-        syncIdentity(this.db);
-
-        return this.db.get<SyncStateRow>(
-            'SELECT * FROM sync_state ORDER BY id LIMIT 1',
-        )!;
+    private workspaceUrl(connection: Connection, path: string): string {
+        return `${connection.url}/api/workspaces/${connection.workspaceId}/${path}`;
     }
+}
+
+type Connection = { url: string; token: string; workspaceId: string };
+
+function isoTime(ms: number | null): string | null {
+    return ms === null ? null : new Date(ms).toISOString();
 }
 
 function describe(error: unknown): string {

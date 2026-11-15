@@ -1,12 +1,10 @@
 import { ref } from 'vue';
 import { requestCloudExchange } from '../sync/cloud';
-import { SystemNodes } from '@yeidle/core/app/nodes';
 
-import { anyChanged } from '@/sync/documentChanges';
-import type { Node } from '../types/node';
+import { anyChanged, userDocumentChanged } from '@/sync/documentChanges';
+import type { Page } from '../types/node';
 
-export const pinnedItems = ref<Node[]>([]);
-export const pinRootId = ref<string | null>(null);
+export const pinnedItems = ref<Page[]>([]);
 
 let loaded = false;
 let loadRequest: Promise<void> | null = null;
@@ -34,12 +32,8 @@ export async function loadPins(force = false): Promise<void> {
                 throw new Error('Could not load pins.');
             }
 
-            const payload = (await response.json()) as {
-                root_id: string;
-                items: Node[];
-            };
+            const payload = (await response.json()) as { items: Page[] };
 
-            pinRootId.value = payload.root_id;
             pinnedItems.value = payload.items;
             loaded = true;
         })
@@ -54,7 +48,7 @@ export function isNodePinned(nodeId: string): boolean {
     return pinnedItems.value.some((item) => item.id === nodeId);
 }
 
-export function rememberPinState(item: Node, pinned: boolean): void {
+export function rememberPinState(item: Page, pinned: boolean): void {
     const index = pinnedItems.value.findIndex(
         (pinnedItem) => pinnedItem.id === item.id,
     );
@@ -72,7 +66,7 @@ export function updatePinnedItemTitle(nodeId: string, title: string): void {
     );
 
     if (item) {
-        item.content = title;
+        item.title = title;
     }
 }
 
@@ -80,7 +74,7 @@ export async function setNodePinned(
     nodeId: string,
     pinned: boolean,
 ): Promise<void> {
-    const response = await fetch(`/api/nodes/${nodeId}/pin`, {
+    const response = await fetch(`/api/pages/${nodeId}/pin`, {
         method: pinned ? 'PUT' : 'DELETE',
         headers: { Accept: 'application/json' },
     });
@@ -91,7 +85,7 @@ export async function setNodePinned(
 
     const payload = (await response.json()) as {
         pinned: boolean;
-        item?: Node;
+        item?: Page;
     };
 
     if (pinned && payload.item) {
@@ -121,7 +115,7 @@ export async function persistPinOrder(nodeIds: string[]): Promise<void> {
             Accept: 'application/json',
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ node_ids: nodeIds }),
+        body: JSON.stringify({ page_ids: nodeIds }),
     });
 
     if (!response.ok) {
@@ -133,15 +127,11 @@ export async function persistPinOrder(nodeIds: string[]): Promise<void> {
     void requestCloudExchange();
 }
 
-/**
- * Whether a change could affect this store. Every user's entries live under
- * the same hidden system root, which is its own document.
- */
+/** Whether a change could affect this store: pins live in the user document. */
 export function pinsChanged(documentIds: string[] | null): boolean {
-    return anyChanged(
-        documentIds,
-        SystemNodes.PINS_ROOT_ID,
+    return (
+        userDocumentChanged(documentIds) ||
         // A pinned page's title is shown in the sidebar
-        ...pinnedItems.value.map((item) => item.id),
+        anyChanged(documentIds, ...pinnedItems.value.map((item) => item.id))
     );
 }

@@ -57,7 +57,7 @@ const mainNavItems = computed<NavItem[]>(() => [
         href: '#',
         icon: CalendarDays,
         shortcut: bindingLabel('daily-notes'),
-        isActive: props.currentPageType === 'daily_note',
+        isActive: props.currentPageType === 'daily',
         action: () => void openDailyNote().catch(showDailyNoteError),
     },
 ]);

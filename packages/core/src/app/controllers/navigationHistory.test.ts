@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { createPage } from '../../documents/testing';
 import {
     MAX_NAVIGATION_LOCATIONS,
     NavigationHistoryStore,
@@ -53,28 +54,10 @@ const count = (table: string) =>
 
 describe('navigation history routes', () => {
     it('persists a local navigation tree', async () => {
-        ctx.documents().applyChanges([
-            {
-                type: 'node.set',
-                payload: {
-                    id: PAGE_ID,
-                    page_id: PAGE_ID,
-                    fields: { content: 'Page title' },
-                },
-            },
-            {
-                type: 'node.set',
-                payload: {
-                    id: BLOCK_ID,
-                    page_id: PAGE_ID,
-                    fields: {
-                        parent_id: PAGE_ID,
-                        position: 'a0',
-                        content: 'The selected node text',
-                    },
-                },
-            },
-        ]);
+        createPage(ctx.documents(), 'Page title', {
+            id: PAGE_ID,
+            blocks: [{ id: BLOCK_ID, text: 'The selected node text' }],
+        });
         const root = location('00000000-0000-7000-8000-000000000001');
         const child = location(
             '00000000-0000-7000-8000-000000000002',
@@ -106,7 +89,7 @@ describe('navigation history routes', () => {
             block_id: BLOCK_ID,
             cursor_offset: 12,
             selection_type: 'node',
-            visited_at: '2026-08-30T01:00:00+00:00',
+            visited_at: '2026-08-30T01:00:00.000Z',
         });
 
         const listing = await call(router, 'GET', '/api/navigation-history');
@@ -131,7 +114,19 @@ describe('navigation history routes', () => {
         expect(current.json).toEqual({ current_id: root.id });
 
         expect(count('navigation_locations')).toBe(2);
-        expect(count('navigation_history_states')).toBe(1);
+        expect(count('navigation_current')).toBe(1);
+        // Stored as unix ms, served as ISO
+        expect(
+            ctx
+                .db()
+                .get(
+                    'SELECT user_key, visited_at FROM navigation_locations WHERE id = ?',
+                    [root.id],
+                ),
+        ).toEqual({
+            user_key: 'local',
+            visited_at: Date.UTC(2026, 7, 30, 1, 0, 0),
+        });
     });
 
     it('isolates histories by cloud user', async () => {
@@ -231,7 +226,7 @@ describe('navigation history routes', () => {
             current_id: null,
         });
         expect(count('navigation_locations')).toBe(0);
-        expect(count('navigation_history_states')).toBe(0);
+        expect(count('navigation_current')).toBe(0);
     });
 
     it('validates input', async () => {

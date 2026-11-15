@@ -39,6 +39,13 @@ export function cloudFor(ctx: AppContext): Cloud {
                     workspace.db,
                     workspace.documents,
                     fetchImpl,
+                    () => {
+                        const account = cloud!.account.account();
+
+                        return account === null
+                            ? null
+                            : { url: account.cloud_url, token: account.token };
+                    },
                 );
                 const blobs = new CloudBlobs(
                     workspace.db,
@@ -122,7 +129,7 @@ export class SyncScheduler {
             const blobs = this.blobs();
 
             if (sync.configured()) {
-                // Failures are recorded in sync_state for the status endpoint.
+                // Failures are recorded in meta for the status endpoint.
                 // Files move after notes, in their own pass, so a large
                 // upload never holds back text
                 void sync

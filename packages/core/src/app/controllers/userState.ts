@@ -1,34 +1,33 @@
-import { placeholders } from '../../db/database';
 import { abort, HttpError, json } from '../../http/http';
 import type { Router } from '../../http/router';
 import { isUuid } from '../../support/ids';
 import type { AppContext } from '../context';
-import { findNode, serializeNode } from '../nodes';
-import type { NodeRow } from '../nodes';
-import { CollapsedNodes } from '../services/collapsedNodes';
+import { findPage } from '../pages';
+import type { Page } from '../pages';
+import { CollapsedBlocks } from '../services/collapsedBlocks';
 import { DailyNoteService, isDailyNoteDate } from '../services/dailyNotes';
-import { PinNodes } from '../services/pins';
+import { Pins } from '../services/pins';
 import {
     FONT_FAMILIES,
     MAX_FONT_SIZE,
     MIN_FONT_SIZE,
-    PreferenceNodes,
+    Preferences,
     THEMES,
     WORKSPACE_STORAGE_OPTIONS,
 } from '../services/preferences';
+import type {
+    FontFamily,
+    Theme,
+    WorkspaceStorage,
+} from '../services/preferences';
 
-/** Pins, collapsed nodes, preferences and daily notes. */
-export function registerSystemNodeRoutes(
-    router: Router,
-    ctx: AppContext,
-): void {
-    const pins = () => new PinNodes(ctx);
-    const collapsed = () => new CollapsedNodes(ctx);
-    const preferences = () => new PreferenceNodes(ctx);
-
-    // Route model binding: missing and soft-deleted nodes are 404s
-    const boundNode = (id: string): NodeRow =>
-        findNode(ctx.db(), id) ?? abort(404);
+/** Daily notes, and the user document: pins, collapsed blocks, preferences. */
+export function registerUserStateRoutes(router: Router, ctx: AppContext): void {
+    const pins = () => new Pins(ctx);
+    const collapsed = () => new CollapsedBlocks(ctx);
+    const preferences = () => new Preferences(ctx);
+    const boundPage = (id: string): Page =>
+        findPage(ctx.db(), id) ?? abort(404);
 
     router.post('/api/daily-notes', ({ input }) => {
         const v = new Validator(input.all());
@@ -48,103 +47,91 @@ export function registerSystemNodeRoutes(
             date as string,
         );
 
-        return json({ id: page.id, date: page.daily_note_date });
+        return json({ id: page.id, date: page.daily_date });
     });
 
-    router.get('/api/pins', () => {
-        const listing = pins().listing();
-
-        return json({
-            root_id: listing.root_id,
-            items: listing.items.map(serializeNode),
-        });
-    });
+    router.get('/api/pins', () => json({ items: pins().listing() }));
 
     router.put('/api/pins/order', ({ input }) => {
         const v = new Validator(input.all());
-        const nodeIds = input.raw('node_ids');
+        const pageIds = input.raw('page_ids');
 
-        if (!('node_ids' in input.all())) {
+        if (!('page_ids' in input.all())) {
             v.fail(
-                'node_ids',
-                `The ${label('node_ids')} field must be present.`,
+                'page_ids',
+                `The ${label('page_ids')} field must be present.`,
             );
-        } else if (!Array.isArray(nodeIds)) {
+        } else if (!Array.isArray(pageIds)) {
             v.fail(
-                'node_ids',
-                `The ${label('node_ids')} field must be an array.`,
+                'page_ids',
+                `The ${label('page_ids')} field must be an array.`,
             );
         } else {
-            if (nodeIds.length > 1000) {
+            if (pageIds.length > 1000) {
                 v.fail(
-                    'node_ids',
-                    `The ${label('node_ids')} field must not have more than 1000 items.`,
+                    'page_ids',
+                    `The ${label('page_ids')} field must not have more than 1000 items.`,
                 );
             }
 
-            v.uuidItems('node_ids', nodeIds);
+            v.uuidItems('page_ids', pageIds);
         }
 
         v.throwIfFailed();
 
-        if (!pins().reorder(nodeIds as string[])) {
-            throw new HttpError(
-                422,
-                'The pinned list changed. Reload it and try again.',
-                {
-                    node_ids: [
-                        'The pinned list changed. Reload it and try again.',
-                    ],
-                },
-            );
+        if (!pins().reorder(pageIds as string[])) {
+            const message = 'The pinned list changed. Reload it and try again.';
+
+            throw new HttpError(422, message, { page_ids: [message] });
         }
 
         return json({ reordered: true });
     });
 
-    router.put('/api/nodes/{node}/pin', ({ params }) => {
-        const node = boundNode(params.node);
-        pins().add(node);
+    router.put('/api/pages/{page}/pin', ({ params }) => {
+        const page = boundPage(params.page);
+        pins().add(page.id);
 
-        return json({ pinned: true, item: serializeNode(node) });
+        return json({ pinned: true, item: page });
     });
 
-    router.delete('/api/nodes/{node}/pin', ({ params }) => {
-        const node = boundNode(params.node);
-        pins().remove(node.id);
+    router.delete('/api/pages/{page}/pin', ({ params }) => {
+        pins().remove(params.page);
 
         return json({ pinned: false });
     });
 
-    router.get('/api/collapsed-nodes', () => json(collapsed().listing()));
+    router.get('/api/collapsed-blocks', () =>
+        json({ block_ids: collapsed().ids() }),
+    );
 
-    router.put('/api/collapsed-nodes', ({ input }) => {
+    router.put('/api/collapsed-blocks', ({ input }) => {
         const v = new Validator(input.all());
-        const nodeIds = input.raw('node_ids');
+        const blockIds = input.raw('block_ids');
 
-        if (v.required('node_ids')) {
-            if (!Array.isArray(nodeIds)) {
+        if (v.required('block_ids')) {
+            if (!Array.isArray(blockIds)) {
                 v.fail(
-                    'node_ids',
-                    `The ${label('node_ids')} field must be an array.`,
+                    'block_ids',
+                    `The ${label('block_ids')} field must be an array.`,
                 );
             } else {
-                if (nodeIds.length > 25000) {
+                if (blockIds.length > 25000) {
                     v.fail(
-                        'node_ids',
-                        `The ${label('node_ids')} field must not have more than 25000 items.`,
+                        'block_ids',
+                        `The ${label('block_ids')} field must not have more than 25000 items.`,
                     );
                 }
 
-                v.uuidItems('node_ids', nodeIds);
+                v.uuidItems('block_ids', blockIds);
             }
         }
 
+        const value = input.raw('collapsed');
+
         if (
             v.required('collapsed') &&
-            ![true, false, 0, 1, '0', '1'].includes(
-                input.raw('collapsed') as never,
-            )
+            ![true, false, 0, 1, '0', '1'].includes(value as never)
         ) {
             v.fail(
                 'collapsed',
@@ -154,34 +141,13 @@ export function registerSystemNodeRoutes(
 
         v.throwIfFailed();
 
-        const ids = nodeIds as string[];
-        const nodes: NodeRow[] = [];
-
-        for (let i = 0; i < ids.length; i += 500) {
-            const chunk = ids.slice(i, i + 500);
-            nodes.push(
-                ...ctx
-                    .db()
-                    .all<NodeRow>(
-                        `SELECT * FROM nodes WHERE id IN (${placeholders(chunk.length)}) AND deleted_at IS NULL`,
-                        chunk,
-                    ),
-            );
-        }
-
-        if (nodes.length !== ids.length) {
-            abort(404);
-        }
-
-        const value = input.raw('collapsed');
-
         if (value === true || value === 1 || value === '1') {
-            collapsed().collapse(nodes);
+            collapsed().collapse(blockIds as string[]);
         } else {
-            collapsed().expand(nodes);
+            collapsed().expand(blockIds as string[]);
         }
 
-        return json(collapsed().listing());
+        return json({ block_ids: collapsed().ids() });
     });
 
     router.get('/api/preferences', () => json(preferences().listing()));
@@ -192,7 +158,7 @@ export function registerSystemNodeRoutes(
         v.throwIfFailed();
 
         const service = preferences();
-        service.setTheme(input.raw('theme') as string);
+        service.setTheme(input.raw('theme') as Theme);
 
         return json(service.listing());
     });
@@ -222,7 +188,10 @@ export function registerSystemNodeRoutes(
         v.throwIfFailed();
 
         const service = preferences();
-        service.setTypography(input.raw('font_family') as string, fontSize!);
+        service.setTypography(
+            input.raw('font_family') as FontFamily,
+            fontSize!,
+        );
 
         return json(service.listing());
     });
@@ -233,7 +202,9 @@ export function registerSystemNodeRoutes(
         v.throwIfFailed();
 
         const service = preferences();
-        service.setWorkspaceStorage(input.raw('workspace_storage') as string);
+        service.setWorkspaceStorage(
+            input.raw('workspace_storage') as WorkspaceStorage,
+        );
 
         return json(service.listing());
     });

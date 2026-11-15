@@ -3,8 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { abort, file, invalid, json } from '../../http/http';
 import type { Input } from '../../http/http';
 import type { Router } from '../../http/router';
+import { addMedia, MEDIA_DOCUMENT_ID } from '../../loro/projection';
 import { isUuid, uuidv7 } from '../../support/ids';
-import { jsonTimestamp } from '../../support/time';
 import { cloudFor, CloudError } from '../cloud';
 import type { AppContext } from '../context';
 
@@ -22,15 +22,14 @@ type UploadMeta = {
     received_chunks: number;
 };
 
+/** A media row: `hash` names the file on disk and in the cloud. */
 type MediaRecord = {
     id: string;
-    filename: string;
+    hash: string;
     original_name: string;
     mime_type: string;
     size: number;
-    created_at: string | null;
-    updated_at: string | null;
-    cloud_uploaded_at: string | null;
+    created_at: number;
 };
 
 export function registerMediaRoutes(router: Router, ctx: AppContext): void {
@@ -64,9 +63,9 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
      * device doesn't have it yet.
      */
     const localBlob = async (media: MediaRecord): Promise<string> => {
-        const path = storage('media', media.filename);
+        const path = storage('media', media.hash);
 
-        if (!/^[0-9a-f]{64}$/.test(media.filename)) {
+        if (!/^[0-9a-f]{64}$/.test(media.hash)) {
             abort(503, 'Media is not currently available on this device.');
         }
 
@@ -81,7 +80,7 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
         }
 
         try {
-            return await cloud.blobs().ensureLocal(media.filename);
+            return await cloud.blobs().ensureLocal(media.hash);
         } catch (error) {
             abort(
                 503,
@@ -175,22 +174,20 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
         }
 
         const mediaId = uuidv7();
-        ctx.documents().applyChanges([
-            {
-                type: 'media.create',
-                payload: {
-                    id: mediaId,
-                    hash: digest,
-                    original_name: meta.filename,
-                    mime_type: meta.mime_type,
-                    size: meta.size,
-                },
-            },
-        ]);
+        ctx.documents().edit(MEDIA_DOCUMENT_ID, (doc) =>
+            addMedia(doc, {
+                id: mediaId,
+                hash: digest,
+                original_name: meta.filename,
+                mime_type: meta.mime_type,
+                size: meta.size,
+                created_at: new Date().toISOString(),
+            }),
+        );
 
         files.removeDirectory(directory);
 
-        return json(serializeMedia(findMedia(mediaId)), 201);
+        return json(findMedia(mediaId), 201);
     });
 
     router.get('/api/media/{media}', async ({ params }) => {
@@ -225,9 +222,9 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
 
     router.post('/api/media/{media}/open-folder', ({ params }) => {
         const media = findMedia(params.media);
-        const blob = storage('media', media.filename);
+        const blob = storage('media', media.hash);
 
-        if (/^[0-9a-f]{64}$/.test(media.filename) && files.isFile(blob)) {
+        if (/^[0-9a-f]{64}$/.test(media.hash) && files.isFile(blob)) {
             ctx.host.showItemInFolder(blob);
         } else {
             files.mkdir(storage('media'));
@@ -240,20 +237,6 @@ export function registerMediaRoutes(router: Router, ctx: AppContext): void {
     function writeMeta(uploadId: string, meta: UploadMeta): void {
         files.writeFile(metaPath(uploadId), JSON.stringify(meta));
     }
-}
-
-/** Eloquent's JSON for a Media row. */
-export function serializeMedia(media: MediaRecord): Record<string, unknown> {
-    return {
-        id: media.id,
-        filename: media.filename,
-        original_name: media.original_name,
-        mime_type: media.mime_type,
-        size: Number(media.size),
-        created_at: jsonTimestamp(media.created_at),
-        updated_at: jsonTimestamp(media.updated_at),
-        cloud_uploaded_at: jsonTimestamp(media.cloud_uploaded_at),
-    };
 }
 
 /**

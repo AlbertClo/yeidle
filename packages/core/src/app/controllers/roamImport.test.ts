@@ -89,7 +89,9 @@ function countIn(workspaceId: string, sql: string): number {
     }
 }
 
-const NODES = 'SELECT COUNT(*) AS count FROM nodes WHERE deleted_at IS NULL';
+/** Imported pages and blocks. */
+const NODES =
+    'SELECT (SELECT COUNT(*) FROM pages) + (SELECT COUNT(*) FROM blocks) AS count';
 
 describe('Roam import API', () => {
     it('imports into a new workspace without activating it', async () => {

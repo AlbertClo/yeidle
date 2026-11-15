@@ -85,7 +85,7 @@ import {
     isNodeCollapsed,
 } from '@/stores/collapsedNodes';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
-import type { Node } from '@/types/node';
+import type { Node, Page, SearchResult } from '@/types/node';
 import { hasOpenModal } from '@/ui/modal';
 import { NODE_COMMAND_EVENT } from '@/ui/nodeCommands';
 import type { NodeCommand } from '@/ui/nodeCommands';
@@ -1422,9 +1422,7 @@ const RawNodeEditor = Extension.create({
                     init: () => null,
                     apply: (transaction, previous) => {
                         const meta = transaction.getMeta(rawNodeEditorKey) as
-                            | RawNodeEditorState
-                            | null
-                            | undefined;
+                            RawNodeEditorState | null | undefined;
 
                         if (meta !== undefined) {
                             return meta;
@@ -2292,9 +2290,7 @@ function listItemToNode(
 
     // Store tiptap_content: single block as object, multiple as array
     let tiptapContent:
-        | Record<string, unknown>
-        | Record<string, unknown>[]
-        | null = null;
+        Record<string, unknown> | Record<string, unknown>[] | null = null;
 
     if (contentBlocks.length === 1) {
         tiptapContent = sanitizeTiptapContent(
@@ -2634,7 +2630,7 @@ const updateLinkModal = ref({
     selectedPageId: '',
     selectedPageTitle: '',
     pos: 0,
-    searchResults: [] as { id: string; content: string }[],
+    searchResults: [] as SearchResult[],
     searchSelectedIndex: 0,
 });
 
@@ -2658,9 +2654,9 @@ function updateLink() {
     // Load initial page title
     fetch(`/api/pages/${pageId}`, { headers: { Accept: 'application/json' } })
         .then((res) => res.json())
-        .then((page) => {
-            updateLinkModal.value.pageQuery = page.content || '';
-            updateLinkModal.value.selectedPageTitle = page.content || '';
+        .then((page: Page) => {
+            updateLinkModal.value.pageQuery = page.title || '';
+            updateLinkModal.value.selectedPageTitle = page.title || '';
         });
 }
 
@@ -2679,9 +2675,9 @@ function searchPagesForUpdate(query: string) {
         headers: { Accept: 'application/json' },
     })
         .then((res) => res.json())
-        .then((data) => {
+        .then((data: SearchResult[]) => {
             updateLinkModal.value.searchResults = data
-                .filter((n: { parent_id: string | null }) => !n.parent_id)
+                .filter((result) => result.kind === 'page')
                 .slice(0, 10);
         });
 }
@@ -2724,10 +2720,10 @@ function handleLabelInputKeydown(e: KeyboardEvent) {
     }
 }
 
-function selectPageForUpdate(page: { id: string; content: string }) {
+function selectPageForUpdate(page: SearchResult) {
     updateLinkModal.value.selectedPageId = page.id;
-    updateLinkModal.value.selectedPageTitle = page.content;
-    updateLinkModal.value.pageQuery = page.content;
+    updateLinkModal.value.selectedPageTitle = page.text;
+    updateLinkModal.value.pageQuery = page.text;
     updateLinkModal.value.searchResults = [];
 }
 
@@ -4938,7 +4934,7 @@ onBeforeUnmount(() => {
                                     updateLinkModal.searchSelectedIndex = index
                                 "
                             >
-                                {{ page.content || '[untitled]' }}
+                                {{ page.text || '[untitled]' }}
                             </button>
                         </div>
                     </div>

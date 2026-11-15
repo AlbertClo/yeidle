@@ -11,9 +11,8 @@ import {
     updateTypography,
 } from '../composables/useTypography';
 import { requestCloudExchange } from '../sync/cloud';
-import { SystemNodes } from '@yeidle/core/app/nodes';
 
-import { anyChanged } from '@/sync/documentChanges';
+import { userDocumentChanged } from '@/sync/documentChanges';
 import { DEFAULT_APPEARANCE, isTheme } from '../types/theme';
 import {
     DEFAULT_FONT_FAMILY,
@@ -33,7 +32,6 @@ export const themePreference = ref<Theme>(
 );
 export const fontFamilyPreference = activeFontFamily;
 export const fontSizePreference = activeFontSize;
-export const preferenceRootId = ref<string | null>(null);
 export const hasSavedThemePreference = ref(false);
 export type WorkspaceStoragePreference = 'local' | 'cloud';
 export const workspaceStoragePreference =
@@ -43,7 +41,6 @@ let loaded = false;
 let loadRequest: Promise<void> | null = null;
 
 type PreferenceResponse = {
-    root_id: string;
     theme: Theme | null;
     font_family: FontFamily | null;
     font_size: number | null;
@@ -74,7 +71,6 @@ export async function loadPreferences(force = false): Promise<void> {
             }
 
             const payload = (await response.json()) as PreferenceResponse;
-            preferenceRootId.value = payload.root_id;
             hasSavedThemePreference.value = isTheme(payload.theme);
             workspaceStoragePreference.value =
                 payload.workspace_storage === 'local' ||
@@ -134,8 +130,6 @@ export async function saveTypographyPreference(
             throw new Error('Could not save the typography preference.');
         }
 
-        const payload = (await response.json()) as PreferenceResponse;
-        preferenceRootId.value = payload.root_id;
         loaded = true;
         void requestCloudExchange();
     } catch (error) {
@@ -167,8 +161,6 @@ export async function saveThemePreference(theme: Theme): Promise<void> {
             throw new Error('Could not save the theme preference.');
         }
 
-        const payload = (await response.json()) as PreferenceResponse;
-        preferenceRootId.value = payload.root_id;
         hasSavedThemePreference.value = true;
         loaded = true;
         void requestCloudExchange();
@@ -202,7 +194,6 @@ export async function saveWorkspaceStoragePreference(
         }
 
         const payload = (await response.json()) as PreferenceResponse;
-        preferenceRootId.value = payload.root_id;
         workspaceStoragePreference.value = payload.workspace_storage;
         loaded = true;
         void requestCloudExchange();
@@ -213,10 +204,7 @@ export async function saveWorkspaceStoragePreference(
     }
 }
 
-/**
- * Whether a change could affect this store. Every user's entries live under
- * the same hidden system root, which is its own document.
- */
+/** Whether a change could affect this store: preferences live in the user document. */
 export function preferencesChanged(documentIds: string[] | null): boolean {
-    return anyChanged(documentIds, SystemNodes.PREFERENCES_ROOT_ID);
+    return userDocumentChanged(documentIds);
 }

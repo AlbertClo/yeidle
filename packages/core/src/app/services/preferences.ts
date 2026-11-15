@@ -1,28 +1,11 @@
-import type { NodeChange } from '../../loro/nodeOps';
 import type { AppContext } from '../context';
-import { findNode, SystemNodes } from '../nodes';
 
-import {
-    activeAccountRoot,
-    containerChanges,
-    deleteChange,
-    entryFields,
-    entryId,
-    setChange,
-} from './accountRoots';
-import { positionAt } from './positions';
+import { preferencesMap, UserDocument } from './userDocument';
 
 /**
- * Preferences live in the normal synced node graph: hidden workspace root ->
- * hidden account root -> preference entries. Entry ids are UUIDv5-derived
- * from the preference key and their content is the value, so new preferences
- * need no schema change.
+ * Preferences live in the user document's `preferences` map, so new
+ * preferences need no schema change.
  */
-
-export const THEME_KEY = 'theme';
-export const FONT_FAMILY_KEY = 'font-family';
-export const FONT_SIZE_KEY = 'font-size';
-export const WORKSPACE_STORAGE_KEY = 'workspace-storage';
 
 export const DEFAULT_THEME = 'system';
 export const DEFAULT_FONT_FAMILY = 'instrument-sans';
@@ -74,7 +57,6 @@ export type FontFamily = (typeof FONT_FAMILIES)[number];
 export type WorkspaceStorage = (typeof WORKSPACE_STORAGE_OPTIONS)[number];
 
 export type PreferenceListing = {
-    root_id: string;
     theme: Theme | null;
     font_family: FontFamily | null;
     font_size: number | null;
@@ -83,139 +65,61 @@ export type PreferenceListing = {
 
 function oneOf<T extends string>(
     values: readonly T[],
-    value: string | undefined,
+    value: unknown,
 ): T | null {
-    return value !== undefined && (values as readonly string[]).includes(value)
+    return typeof value === 'string' &&
+        (values as readonly string[]).includes(value)
         ? (value as T)
         : null;
 }
 
-/** PHP's FILTER_VALIDATE_INT with a range. */
-function validInt(
-    value: string | undefined,
-    min: number,
-    max: number,
-): number | null {
-    const trimmed = value?.trim() ?? '';
-
-    if (!/^[+-]?(0|[1-9]\d*)$/.test(trimmed)) {
-        return null;
-    }
-
-    const number = Number(trimmed);
-
-    return number >= min && number <= max ? number : null;
+function fontSize(value: unknown): number | null {
+    return typeof value === 'number' &&
+        Number.isInteger(value) &&
+        value >= MIN_FONT_SIZE &&
+        value <= MAX_FONT_SIZE
+        ? value
+        : null;
 }
 
-export class PreferenceNodes {
-    static readonly ROOT_ID = SystemNodes.PREFERENCES_ROOT_ID;
-
+export class Preferences {
     constructor(private ctx: AppContext) {}
 
     listing(): PreferenceListing {
-        const db = this.ctx.db();
-        const rootId = this.activeRootId();
-        const value = (key: string) =>
-            findNode(db, entryId(rootId, key))?.content;
+        const map = preferencesMap(new UserDocument(this.ctx).read());
 
         return {
-            root_id: rootId,
-            theme: oneOf(THEMES, value(THEME_KEY)),
-            font_family: oneOf(FONT_FAMILIES, value(FONT_FAMILY_KEY)),
-            font_size: validInt(
-                value(FONT_SIZE_KEY),
-                MIN_FONT_SIZE,
-                MAX_FONT_SIZE,
-            ),
+            theme: oneOf(THEMES, map.get('theme')),
+            font_family: oneOf(FONT_FAMILIES, map.get('font_family')),
+            font_size: fontSize(map.get('font_size')),
             workspace_storage: oneOf(
                 WORKSPACE_STORAGE_OPTIONS,
-                value(WORKSPACE_STORAGE_KEY),
+                map.get('workspace_storage'),
             ),
         };
     }
 
-    setTheme(theme: string): void {
-        this.set([[THEME_KEY, theme, 0]]);
+    setTheme(theme: Theme): void {
+        this.set({ theme });
     }
 
-    setTypography(fontFamily: string, fontSize: number): void {
-        this.set([
-            [FONT_FAMILY_KEY, fontFamily, 1],
-            [FONT_SIZE_KEY, String(fontSize), 2],
-        ]);
+    setTypography(fontFamily: FontFamily, size: number): void {
+        this.set({ font_family: fontFamily, font_size: size });
     }
 
-    setWorkspaceStorage(storage: string): void {
-        this.set([[WORKSPACE_STORAGE_KEY, storage, 3]]);
+    setWorkspaceStorage(storage: WorkspaceStorage): void {
+        this.set({ workspace_storage: storage });
     }
 
-    activeRootId(): string {
-        return activeAccountRoot(
-            this.ctx.db(),
-            PreferenceNodes.ROOT_ID,
-            (localRootId, cloudRootId) =>
-                this.adoptAccountRoot(localRootId, cloudRootId),
-        );
-    }
+    private set(values: Record<string, string | number>): void {
+        new UserDocument(this.ctx).edit((doc) => {
+            const map = preferencesMap(doc);
 
-    private set(
-        entries: [key: string, value: string, position: number][],
-    ): void {
-        this.ctx.db().transaction(() => {
-            const rootId = this.activeRootId();
-            const changes: NodeChange[] = containerChanges(
-                PreferenceNodes.ROOT_ID,
-                rootId,
-            );
-
-            for (const [key, value, position] of entries) {
-                changes.push(
-                    setChange(
-                        entryId(rootId, key),
-                        rootId,
-                        entryFields(rootId, positionAt(position), value),
-                    ),
-                );
+            for (const [key, value] of Object.entries(values)) {
+                if (map.get(key) !== value) {
+                    map.set(key, value);
+                }
             }
-
-            this.ctx.documents().applyChanges(changes, 'Update preferences');
-        });
-    }
-
-    private adoptAccountRoot(localRootId: string, cloudRootId: string): void {
-        const db = this.ctx.db();
-
-        if (findNode(db, localRootId) === null) {
-            return;
-        }
-
-        const changes = containerChanges(PreferenceNodes.ROOT_ID, cloudRootId);
-
-        // Same keys as the PHP app: the workspace-storage choice is not carried over
-        [THEME_KEY, FONT_FAMILY_KEY, FONT_SIZE_KEY].forEach((key, position) => {
-            const localEntry = findNode(db, entryId(localRootId, key));
-            const cloudEntry = findNode(db, entryId(cloudRootId, key));
-
-            if (localEntry !== null && cloudEntry === null) {
-                changes.push(
-                    setChange(
-                        entryId(cloudRootId, key),
-                        cloudRootId,
-                        entryFields(
-                            cloudRootId,
-                            positionAt(position),
-                            localEntry.content,
-                        ),
-                    ),
-                );
-            }
-
-            if (localEntry !== null) {
-                changes.push(deleteChange(localEntry.id, localRootId));
-            }
-        });
-
-        changes.push(deleteChange(localRootId, PreferenceNodes.ROOT_ID));
-        this.ctx.documents().applyChanges(changes, 'Adopt preferences');
+        }, 'Update preferences');
     }
 }

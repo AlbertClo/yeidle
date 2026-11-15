@@ -9,6 +9,7 @@
         "dev": "npm run dev -w @yeidle/electron",
         "start": "npm run build -w @yeidle/electron && npm run start -w @yeidle/electron",
         "test": "npm test --workspaces --if-present",
-        "test:e2e": "npm run test:e2e -w @yeidle/electron"
+        "test:e2e": "npm run test:e2e -w @yeidle/electron",
+        "install:desktop": "scripts/install-desktop.sh"
     }
 }

@@ -1,3 +1,4 @@
+import { addMedia, MEDIA_DOCUMENT_ID } from '../../../loro/projection';
 import { uuidv7 } from '../../../support/ids';
 import type { AppContext } from '../../context';
 import type { Host } from '../../host';
@@ -81,7 +82,7 @@ export class RoamAttachmentFetcher {
 
 type MediaRow = {
     id: string;
-    filename: string;
+    hash: string;
     original_name: string;
     mime_type: string;
     size: number;
@@ -137,7 +138,7 @@ export class RoamAttachmentImporter {
                         maximumBytes,
                     );
                     const hash = await sha256(download.bytes);
-                    const sameBlob = this.findMedia('filename', hash);
+                    const sameBlob = this.findMedia('hash', hash);
                     const finalPath = files.join(mediaDirectory, hash);
 
                     if (!files.exists(finalPath)) {
@@ -151,22 +152,20 @@ export class RoamAttachmentImporter {
                         mediaByUrl.set(url, descriptor(sameBlob));
                         report.attachmentsReused++;
                     } else {
-                        this.ctx.documents().applyChanges(
-                            [
-                                {
-                                    type: 'media.create',
-                                    payload: {
-                                        id: mediaId,
-                                        hash,
-                                        original_name: originalName(url),
-                                        mime_type: mimeType(
-                                            download.bytes,
-                                            download.mime_type,
-                                        ),
-                                        size: download.size,
-                                    },
-                                },
-                            ],
+                        this.ctx.documents().edit(
+                            MEDIA_DOCUMENT_ID,
+                            (doc) =>
+                                addMedia(doc, {
+                                    id: mediaId,
+                                    hash,
+                                    original_name: originalName(url),
+                                    mime_type: mimeType(
+                                        download.bytes,
+                                        download.mime_type,
+                                    ),
+                                    size: download.size,
+                                    created_at: new Date().toISOString(),
+                                }),
                             'Imported from Roam Research',
                         );
 
@@ -206,13 +205,13 @@ export class RoamAttachmentImporter {
     }
 
     private findMedia(
-        column: 'id' | 'filename',
+        column: 'id' | 'hash',
         value: string,
     ): MediaRow | undefined {
         return this.ctx
             .db()
             .get<MediaRow>(
-                `SELECT id, filename, original_name, mime_type, size FROM media WHERE ${column} = ? LIMIT 1`,
+                `SELECT id, hash, original_name, mime_type, size FROM media WHERE ${column} = ? LIMIT 1`,
                 [value],
             );
     }

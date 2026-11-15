@@ -44,10 +44,12 @@ run two instances to try sync.
 ### Installing on NixOS
 
 ```bash
-nix run github:AlbertClo/yeidle?ref=explore/loro
+nix run github:AlbertClo/yeidle
 ```
 
-Or add the flake to your system configuration; see
+To install from your checkout, or update that install (with a desktop
+entry): `npm run install:desktop`. Or add the flake to your system
+configuration; see
 [Installing on NixOS](apps/electron/README.md#installing-on-nixos).
 Installers for other platforms (AppImage, Windows, macOS, AUR) and
 auto-update aren't built yet.

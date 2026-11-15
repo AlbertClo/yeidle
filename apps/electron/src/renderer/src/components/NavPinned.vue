@@ -141,12 +141,12 @@ onBeforeUnmount(() => {
                 <SidebarMenuButton
                     as-child
                     :is-active="isCurrentUrl(`/pages/${item.id}`)"
-                    :tooltip="item.content || '[untitled]'"
+                    :tooltip="item.title || '[untitled]'"
                     :class="index < 10 ? 'pr-16' : undefined"
                 >
                     <Link :href="`/pages/${item.id}`">
                         <FileText />
-                        <span>{{ item.content || '[untitled]' }}</span>
+                        <span>{{ item.title || '[untitled]' }}</span>
                     </Link>
                 </SidebarMenuButton>
                 <SidebarMenuBadge

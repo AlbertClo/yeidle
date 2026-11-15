@@ -1,12 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { migrate } from '../../db/schema';
-import { uuidv7 } from '../../support/ids';
+import { Meta } from '../../db/meta';
+import {
+    createPage,
+    deletePage,
+    inline,
+    mention,
+    setBlocks,
+} from '../../documents/testing';
+import { updatePageMeta } from '../../loro/pageMeta';
 import { testContext } from '../testing';
 
 import { loadBacklinks } from './backlinks';
-import { loadNodeTree } from './nodeTree';
-import { searchNodes } from './search';
+import { CollapsedBlocks } from './collapsedBlocks';
+import { Pins } from './pins';
+import { Preferences } from './preferences';
+import { search } from './search';
+import {
+    collapsedMap,
+    LOCAL_USER_DOCUMENT_ID,
+    pinsList,
+    preferencesMap,
+    UserDocument,
+} from './userDocument';
 
 let ctx: ReturnType<typeof testContext>;
 
@@ -16,231 +32,318 @@ beforeEach(() => {
 
 afterEach(() => ctx.cleanup());
 
-function node(
-    content: string,
-    parentId: string | null = null,
-    options: { id?: string; position?: string; tiptap_content?: unknown } = {},
-): string {
-    const id = options.id ?? uuidv7();
-    ctx.documents().applyChanges([
-        {
-            type: 'node.set',
-            payload: {
-                id,
-                page_id: parentId ?? id,
-                fields: {
-                    parent_id: parentId,
-                    position: options.position ?? 'a0',
-                    content,
-                    tiptap_content: options.tiptap_content ?? null,
-                },
-            },
-        },
-    ]);
-
-    return id;
+function page(title: string, blocks: string[] = []): string {
+    return createPage(ctx.documents(), title, {
+        blocks: blocks.map((text) => ({ text })),
+    });
 }
 
-function setContent(id: string, content: string): void {
-    ctx.documents().applyChanges([
-        { type: 'node.set', payload: { id, page_id: id, fields: { content } } },
-    ]);
+function rename(id: string, title: string): void {
+    ctx.documents().edit(id, (doc) => updatePageMeta(doc, { title }));
 }
 
-function remove(id: string): void {
-    ctx.documents().applyChanges([
-        { type: 'node.delete', payload: { id, page_id: id } },
+function setUpdatedAt(id: string, updatedAt: number): void {
+    ctx.db().run('UPDATE pages SET updated_at = ? WHERE id = ?', [
+        updatedAt,
+        id,
     ]);
-}
-
-function setModified(id: string, hlc: string): void {
-    ctx.db().run('UPDATE nodes SET modified_at = ? WHERE id = ?', [hlc, id]);
 }
 
 const ids = (results: { id: string }[]) => results.map((result) => result.id);
 
-describe('node tree loader', () => {
-    it('loads an ordered nested tree', () => {
-        const page = node('Page', null, {
-            id: '00000000-0000-7000-8000-000000000001',
-        });
-        const second = '00000000-0000-7000-8000-000000000002';
-        const first = '00000000-0000-7000-8000-000000000003';
-        // One batch: the engine regenerates stored positions, so later writes
-        // would be placed relative to a0, a1, ...
-        ctx.documents().applyChanges(
-            [
-                [second, 'b0'],
-                [first, 'a0'],
-            ].map(([id, position]) => ({
-                type: 'node.set' as const,
-                payload: {
-                    id,
-                    page_id: page,
-                    fields: { parent_id: page, position, content: id },
-                },
-            })),
-        );
-        const nested = node('nested', first, {
-            id: '00000000-0000-7000-8000-000000000004',
-        });
-
-        const tree = loadNodeTree(ctx.db(), page);
-
-        expect(tree.children.map((child) => child.id)).toEqual([first, second]);
-        expect(tree.children[0].children[0].id).toBe(nested);
-        expect(tree.children[0].children[0].children).toHaveLength(0);
-        expect(tree.children[0]).not.toHaveProperty('created_at');
-        expect(tree.children[0]).not.toHaveProperty('modified_at');
-    });
-
-    it('omits soft-deleted descendants', () => {
-        const page = node('Page');
-        const deleted = node('deleted', page);
-        node('nested', deleted);
-        ctx.documents().applyChanges([
-            { type: 'node.delete', payload: { id: deleted, page_id: page } },
-        ]);
-
-        expect(loadNodeTree(ctx.db(), page).children).toHaveLength(0);
-    });
-
-    it('throws for a missing node', () => {
-        expect(() => loadNodeTree(ctx.db(), uuidv7())).toThrow(/was not found/);
-    });
-});
-
 describe('backlink loader', () => {
     it('returns the source page of a linking block once, with its title', () => {
-        const target = node('Target page');
-        const sourcePage = node('Source page');
-        const sourceParent = node('Parent block', sourcePage);
-        const mention = {
-            type: 'paragraph',
-            content: [
-                {
-                    type: 'mention',
-                    attrs: { id: target, label: 'Target page' },
-                },
-            ],
-        };
-        const sourceBlock = node('Linked block', sourceParent, {
-            tiptap_content: mention,
-        });
-        node('Second link', sourceParent, {
-            tiptap_content: mention,
-            position: 'b0',
-        });
+        const target = page('Target page');
+        const sourcePage = page('Source page');
+        const [, first, second] = setBlocks(ctx.documents(), sourcePage, [
+            {
+                text: 'Parent block',
+                children: [
+                    {
+                        text: 'Target page',
+                        content: inline(mention(target, 'Target page')),
+                    },
+                    {
+                        text: 'Target page',
+                        content: inline(mention(target, 'Target page')),
+                    },
+                ],
+            },
+        ]);
 
         const links = ctx
             .db()
-            .all<{ id: string; source_node_id: string }>(
-                'SELECT id, source_node_id FROM node_links WHERE target_node_id = ? ORDER BY id',
+            .all<{ source_block_id: string }>(
+                'SELECT source_block_id FROM links WHERE target_id = ? ORDER BY source_block_id',
                 [target],
             );
-        expect(links).toHaveLength(2);
-        expect(links.map((link) => link.source_node_id)).toContain(sourceBlock);
+        expect(links.map((link) => link.source_block_id)).toEqual(
+            [first, second].sort(),
+        );
 
-        // One entry per page, carrying the lowest link id
+        // One entry per page, carrying the lowest linking block id
         expect(loadBacklinks(ctx.db(), target)).toEqual([
-            { id: links[0].id, page_id: sourcePage, page_title: 'Source page' },
+            {
+                id: [first, second].sort()[0],
+                page_id: sourcePage,
+                page_title: 'Source page',
+            },
         ]);
+    });
+
+    it('orders pages by their latest change and labels untitled ones', () => {
+        const target = page('Target');
+        const older = page('Older');
+        const untitled = page('');
+
+        for (const source of [older, untitled]) {
+            setBlocks(ctx.documents(), source, [
+                { text: 'Target', content: inline(mention(target, 'Target')) },
+            ]);
+        }
+
+        setUpdatedAt(older, 1);
+        setUpdatedAt(untitled, 2);
+
+        expect(
+            loadBacklinks(ctx.db(), target).map((link) => link.page_title),
+        ).toEqual(['[untitled]', 'Older']);
+    });
+
+    it('drops links when the source block or page goes away', () => {
+        const target = page('Target');
+        const source = page('Source');
+        setBlocks(ctx.documents(), source, [
+            { text: 'Target', content: inline(mention(target, 'Target')) },
+        ]);
+        expect(loadBacklinks(ctx.db(), target)).toHaveLength(1);
+
+        setBlocks(ctx.documents(), source, [{ text: 'No link' }]);
+        expect(loadBacklinks(ctx.db(), target)).toEqual([]);
+
+        setBlocks(ctx.documents(), source, [
+            { text: 'Target', content: inline(mention(target, 'Target')) },
+        ]);
+        deletePage(ctx.documents(), source);
+        expect(loadBacklinks(ctx.db(), target)).toEqual([]);
+        expect(
+            ctx.db().get<{ n: number }>('SELECT COUNT(*) AS n FROM links')!.n,
+        ).toBe(0);
     });
 });
 
-describe('node search', () => {
+describe('search', () => {
     it('ranks exact pages before blocks and prefix matches', () => {
-        const container = node('Container');
-        const prefixPage = node('Research Notes');
-        const exactBlock = node('Research', container);
-        const exactPage = node('Research');
-        setModified(prefixPage, '000000000000300-0000-a');
-        setModified(exactBlock, '000000000000200-0000-a');
-        setModified(exactPage, '000000000000100-0000-a');
+        const container = page('Container', ['Research']);
+        const prefixPage = page('Research Notes');
+        const exactPage = page('Research');
+        setUpdatedAt(prefixPage, 300);
+        setUpdatedAt(container, 200);
+        setUpdatedAt(exactPage, 100);
 
-        const results = searchNodes(ctx.db(), 'Research');
+        const results = search(ctx.db(), 'Research');
 
-        expect(results[0].id).toBe(exactPage);
-        expect(results[0].page_id).toBe(exactPage);
-        expect(results[1].id).toBe(exactBlock);
-        expect(results[1].page_id).toBe(container);
+        expect(results[0]).toEqual({
+            kind: 'page',
+            id: exactPage,
+            page_id: exactPage,
+            text: 'Research',
+        });
+        expect(results[1]).toMatchObject({
+            kind: 'block',
+            page_id: container,
+            text: 'Research',
+        });
         expect(results[2].id).toBe(prefixPage);
     });
 
-    it('includes the root page id of block results', () => {
-        const page = node('Page');
-        const parent = node('Parent', page);
-        const match = node('Deep searchable result', parent);
+    it('includes the page id of nested block results', () => {
+        const pageId = page('Page');
+        const [, match] = setBlocks(ctx.documents(), pageId, [
+            {
+                text: 'Parent',
+                children: [{ text: 'Deep searchable result' }],
+            },
+        ]);
 
-        const results = searchNodes(ctx.db(), 'searchable');
+        const results = search(ctx.db(), 'searchable');
 
-        expect(results[0].id).toBe(match);
-        expect(results[0].page_id).toBe(page);
+        expect(results[0]).toEqual({
+            kind: 'block',
+            id: match,
+            page_id: pageId,
+            text: 'Deep searchable result',
+        });
     });
 
     it('finds long and short typographical errors', () => {
-        const research = node('Research Projects');
-        const cat = node('Cat');
-        const the = node('The');
+        const research = page('Research Projects');
+        const cat = page('Cat');
+        const the = page('The');
+        const holder = page('Holder', ['Dog', 'Teh']);
 
-        expect(searchNodes(ctx.db(), 'Reserch')[0].id).toBe(research);
-        expect(searchNodes(ctx.db(), 'Cet')[0].id).toBe(cat);
-        expect(searchNodes(ctx.db(), 'Teh')[0].id).toBe(the);
+        expect(search(ctx.db(), 'Reserch')[0].id).toBe(research);
+        expect(search(ctx.db(), 'Cet')[0].id).toBe(cat);
+        expect(search(ctx.db(), 'Teh')[0].page_id).toBe(holder);
+        expect(ids(search(ctx.db(), 'Teh'))).toContain(the);
+        expect(search(ctx.db(), 'Dgo')[0]).toMatchObject({
+            kind: 'block',
+            page_id: holder,
+            text: 'Dog',
+        });
     });
 
     it('matches sequential word prefixes', () => {
-        const currentPriority = node('Current Priority');
+        const currentPriority = page('Current Priority');
 
-        expect(searchNodes(ctx.db(), 'cur prio')[0].id).toBe(currentPriority);
+        expect(search(ctx.db(), 'cur prio')[0].id).toBe(currentPriority);
     });
 
-    it('tracks content updates, deletes and restores', () => {
-        const page = node('Original title');
-        expect(ids(searchNodes(ctx.db(), 'Original'))).toEqual([page]);
+    it('tracks title and block changes and deleted pages', () => {
+        const pageId = page('Original title', ['Original block']);
+        expect(
+            search(ctx.db(), 'Original')
+                .map((r) => r.kind)
+                .sort(),
+        ).toEqual(['block', 'page']);
 
-        setContent(page, 'Replacement title');
-        expect(searchNodes(ctx.db(), 'Original')).toEqual([]);
-        expect(ids(searchNodes(ctx.db(), 'Replacement'))).toEqual([page]);
+        rename(pageId, 'Replacement title');
+        setBlocks(ctx.documents(), pageId, [{ text: 'Replacement block' }]);
+        expect(search(ctx.db(), 'Original')).toEqual([]);
+        expect(search(ctx.db(), 'Replacement')).toHaveLength(2);
 
-        remove(page);
-        expect(searchNodes(ctx.db(), 'Replacement')).toEqual([]);
-
-        setContent(page, 'Replacement title');
-        expect(ids(searchNodes(ctx.db(), 'Replacement'))).toEqual([page]);
+        deletePage(ctx.documents(), pageId);
+        expect(search(ctx.db(), 'Replacement')).toEqual([]);
     });
 
-    it('backfills the index when migrating a database without one', () => {
-        const db = ctx.db();
-        db.exec(`
-            DROP TRIGGER nodes_search_after_insert;
-            DROP TRIGGER nodes_search_after_update;
-            DROP TRIGGER nodes_search_after_delete;
-            DROP TABLE node_search;
-            PRAGMA user_version = 0;
-        `);
-        // A row written by the NativePHP app before the index existed
-        const page = uuidv7();
-        db.run(
-            "INSERT INTO nodes (id, parent_id, position, content, modified_at) VALUES (?, NULL, 'a0', ?, '000000000000100-0000-a')",
-            [page, 'Pre-existing searchable page'],
-        );
+    it('finds the same blocks after rebuilding the read model', () => {
+        const pageId = page('Page', ['Rebuilt searchable block']);
+        const before = search(ctx.db(), 'searchable');
 
-        migrate(db);
+        ctx.documents().rebuildReadModel();
 
-        expect(searchNodes(db, 'existing')[0].id).toBe(page);
-    });
-
-    it('excludes matches inside deleted subtrees', () => {
-        const page = node('Deleted page');
-        node('Hidden searchable phrase', page);
-        remove(page);
-
-        expect(searchNodes(ctx.db(), 'searchable')).toEqual([]);
+        expect(search(ctx.db(), 'searchable')).toEqual(before);
+        expect(before[0].page_id).toBe(pageId);
     });
 
     it('returns nothing for punctuation-only queries', () => {
-        node('Any page');
+        page('Any page', ['Any block']);
 
-        expect(searchNodes(ctx.db(), '---')).toEqual([]);
+        expect(search(ctx.db(), '---')).toEqual([]);
+    });
+});
+
+describe('user document', () => {
+    const signIn = (userId: string) =>
+        new Meta(ctx.db()).set('cloud_user_id', userId);
+
+    it('keeps pins, collapsed blocks and preferences in user:local before sign-in', () => {
+        const pinned = page('Pinned');
+        new Pins(ctx).add(pinned);
+        new CollapsedBlocks(ctx).collapse(['block-a']);
+        new Preferences(ctx).setTheme('nord');
+
+        expect(new UserDocument(ctx).id()).toBe(LOCAL_USER_DOCUMENT_ID);
+        const doc = ctx.documents().read(LOCAL_USER_DOCUMENT_ID);
+        expect(pinsList(doc).toArray()).toEqual([pinned]);
+        expect(collapsedMap(doc).toJSON()).toEqual({ 'block-a': true });
+        expect(preferencesMap(doc).get('theme')).toBe('nord');
+        // User documents have no read-model rows
+        expect(
+            ctx.db().get<{ n: number }>('SELECT COUNT(*) AS n FROM pages')!.n,
+        ).toBe(1);
+    });
+
+    it('merges user:local into the signed-in user document once', () => {
+        const first = page('First');
+        const second = page('Second');
+        const pins = new Pins(ctx);
+        pins.add(first);
+        new CollapsedBlocks(ctx).collapse(['local-block']);
+        const preferences = new Preferences(ctx);
+        preferences.setTheme('nord');
+        preferences.setTypography('jetbrains-mono', 14);
+        preferences.setWorkspaceStorage('cloud');
+
+        // The cloud user already chose a theme and pinned a page on another device
+        ctx.documents().edit('user:42', (doc) => {
+            preferencesMap(doc).set('theme', 'dark');
+            pinsList(doc).push(second);
+        });
+
+        signIn('42');
+
+        expect(new UserDocument(ctx).id()).toBe('user:42');
+        expect(pins.listing().map((p) => p.id)).toEqual([second, first]);
+        expect(new CollapsedBlocks(ctx).ids()).toEqual(['local-block']);
+        expect(preferences.listing()).toEqual({
+            theme: 'dark',
+            font_family: 'jetbrains-mono',
+            font_size: 14,
+            // Stays with the device
+            workspace_storage: null,
+        });
+
+        // user:local is emptied, apart from device-only preferences
+        const local = ctx.documents().read(LOCAL_USER_DOCUMENT_ID);
+        expect(pinsList(local).toArray()).toEqual([]);
+        expect(collapsedMap(local).keys()).toEqual([]);
+        expect(preferencesMap(local).toJSON()).toEqual({
+            workspace_storage: 'cloud',
+        });
+
+        // Merging again changes nothing
+        const updates = () =>
+            ctx
+                .db()
+                .get<{ n: number }>(
+                    'SELECT COUNT(*) AS n FROM document_updates',
+                )!.n;
+        const before = updates();
+        new UserDocument(ctx).id();
+        expect(updates()).toBe(before);
+    });
+
+    it('switches to another user document per signed-in user', () => {
+        const pinned = page('Pinned');
+        signIn('1');
+        new Pins(ctx).add(pinned);
+
+        signIn('2');
+        expect(new Pins(ctx).listing()).toEqual([]);
+
+        signIn('1');
+        expect(new Pins(ctx).listing().map((p) => p.id)).toEqual([pinned]);
+    });
+
+    it('lists pins in order, skipping deleted pages, and reorders them', () => {
+        const a = page('A');
+        const b = page('B');
+        const c = page('C');
+        const pins = new Pins(ctx);
+        pins.add(a);
+        pins.add(b);
+        pins.add(c);
+        pins.add(a);
+
+        expect(pins.listing().map((p) => p.id)).toEqual([a, b, c]);
+        expect(pins.reorder([c, a, b])).toBe(true);
+        expect(pins.listing().map((p) => p.id)).toEqual([c, a, b]);
+        expect(pins.reorder([a, b])).toBe(false);
+
+        deletePage(ctx.documents(), b);
+        expect(pins.listing().map((p) => p.id)).toEqual([c, a]);
+        expect(pins.isPinned(b)).toBe(true);
+
+        pins.remove(a);
+        expect(pins.listing().map((p) => p.id)).toEqual([c]);
+    });
+
+    it('expands collapsed blocks independently', () => {
+        const collapsed = new CollapsedBlocks(ctx);
+        collapsed.collapse(['b', 'a', 'c']);
+        collapsed.expand(['b', 'missing']);
+
+        expect(collapsed.ids()).toEqual(['a', 'c']);
     });
 });

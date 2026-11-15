@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { Meta } from '../../db/meta';
+import { createPage } from '../../documents/testing';
 import { registerKeyBindingRoutes } from '../controllers/keyBindings';
 import { NavigationHistoryStore } from '../services/navigationHistory';
+import { Pins } from '../services/pins';
+import { LOCAL_USER_DOCUMENT_ID, UserDocument } from '../services/userDocument';
 import { call, Router, testContext } from '../testing';
 
+import { signInDevice } from './fakeCloud';
 import { cloudFor } from './index';
 import { cloudProfileKey } from './profile';
 
@@ -60,20 +65,7 @@ function signedIn(cloud: ReturnType<typeof fakeAccountCloud>, userId = '7') {
     const ctx = testContext();
     devices.push(ctx);
     ctx.host.cloudFetch = cloud.fetch;
-    ctx.host.files.writeFile(
-        ctx.host.files.join(ctx.host.dataDirectory, 'cloud-account.json'),
-        JSON.stringify({
-            version: 1,
-            pending: null,
-            account: {
-                cloud_url: CLOUD,
-                token: 'token',
-                user: { id: userId, name: 'Albert' },
-                workspaces: [],
-                preferences: { key_bindings: {} },
-            },
-        }),
-    );
+    signInDevice(ctx, userId, CLOUD);
 
     return ctx;
 }
@@ -102,8 +94,7 @@ describe('cloud profile', () => {
     it('falls back to the user the workspace is paired with', () => {
         const ctx = testContext();
         devices.push(ctx);
-        cloudProfileKey(ctx); // creates the sync_state row
-        ctx.db().run("UPDATE sync_state SET cloud_user_id = '9'");
+        new Meta(ctx.db()).set('cloud_user_id', '9');
 
         expect(cloudProfileKey(ctx)).toBe('cloud:9');
     });
@@ -121,10 +112,30 @@ describe('cloud profile', () => {
             true,
         );
         expect(
+            ctx.db().all('SELECT DISTINCT user_key FROM navigation_locations'),
+        ).toEqual([{ user_key: 'cloud:7' }]);
+    });
+
+    it('moves pins made before sign-in into the user document', () => {
+        const ctx = testContext();
+        devices.push(ctx);
+        const pageId = createPage(ctx.documents(), 'Pinned before sign-in');
+        new Pins(ctx).add(pageId);
+        expect(new UserDocument(ctx).id()).toBe(LOCAL_USER_DOCUMENT_ID);
+
+        signInDevice(ctx, '7', CLOUD);
+
+        expect(new UserDocument(ctx).id()).toBe('user:7');
+        expect(new Pins(ctx).listing().map((page) => page.id)).toEqual([
+            pageId,
+        ]);
+        expect(
             ctx
                 .db()
-                .all('SELECT DISTINCT profile_key FROM navigation_locations'),
-        ).toEqual([{ profile_key: 'cloud:7' }]);
+                .get<{ n: number }>(
+                    "SELECT COUNT(*) AS n FROM document_updates WHERE document_id = 'user:7'",
+                )!.n,
+        ).toBe(1);
     });
 });
 

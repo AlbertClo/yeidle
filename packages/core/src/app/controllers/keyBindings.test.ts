@@ -67,8 +67,9 @@ describe('key binding routes', () => {
         expect(
             ctx
                 .db()
-                .get<{ count: number }>('SELECT COUNT(*) AS count FROM nodes')!
-                .count,
+                .get<{ count: number }>(
+                    'SELECT COUNT(*) AS count FROM document_updates',
+                )!.count,
         ).toBe(0);
     });
 

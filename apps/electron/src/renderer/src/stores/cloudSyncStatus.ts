@@ -1,19 +1,13 @@
 import { ref } from 'vue';
 
-export type SyncHealth =
-    | 'unconfigured'
-    | 'seeding'
-    | 'never_synced'
-    | 'healthy'
-    | 'error';
+export type SyncHealth = 'unconfigured' | 'never_synced' | 'healthy' | 'error';
 
 export interface CloudStatus {
     configured: boolean;
     health: SyncHealth;
     cloud_url: string | null;
     workspace_id: string | null;
-    cloud_seed_pending: boolean;
-    last_server_seq: number;
+    cloud_cursor: number;
     local_log_seq: number;
     outbox: number;
     pending_blob_uploads: number;
