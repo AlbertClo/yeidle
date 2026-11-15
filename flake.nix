@@ -14,12 +14,12 @@
     in
     {
       packages = forAllSystems (pkgs: {
-        yeidle = pkgs.callPackage ./nix/package.nix { };
+        yeidle = pkgs.callPackage ./apps/electron/package.nix { };
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.yeidle;
       });
 
       overlays.default = final: _prev: {
-        yeidle = final.callPackage ./nix/package.nix { };
+        yeidle = final.callPackage ./apps/electron/package.nix { };
       };
     };
 }

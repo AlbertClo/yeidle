@@ -13,24 +13,26 @@
 #   nix run nixpkgs#prefetch-npm-deps -- package-lock.json
 
 let
-  appPackage = lib.importJSON ../apps/electron/package.json;
+  appPackage = lib.importJSON ./package.json;
 in
 buildNpmPackage {
   pname = "yeidle";
   inherit (appPackage) version;
 
   src = lib.fileset.toSource {
-    root = ../.;
+    # The whole npm workspace: the root manifest and lock file, the core,
+    # and this app (without local build output)
+    root = ../..;
     fileset = lib.fileset.unions [
-      ../package.json
-      ../package-lock.json
-      (lib.fileset.difference ../packages (
-        lib.fileset.maybeMissing ../packages/core/node_modules
+      ../../package.json
+      ../../package-lock.json
+      (lib.fileset.difference ../../packages (
+        lib.fileset.maybeMissing ../../packages/core/node_modules
       ))
-      (lib.fileset.difference ../apps/electron (
+      (lib.fileset.difference ./. (
         lib.fileset.unions [
-          (lib.fileset.maybeMissing ../apps/electron/node_modules)
-          (lib.fileset.maybeMissing ../apps/electron/out)
+          (lib.fileset.maybeMissing ./node_modules)
+          (lib.fileset.maybeMissing ./out)
         ]
       ))
     ];

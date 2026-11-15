@@ -18,7 +18,7 @@ npm test       # core and renderer tests
 
 ## Installing on NixOS
 
-The repository is a flake (`flake.nix`, `nix/package.nix`). It builds the
+The repository is a flake (`flake.nix`, with the package in `apps/electron/package.nix`). It builds the
 app and runs it with nixpkgs' Electron, with a desktop entry and icon.
 
 ```bash
@@ -37,7 +37,7 @@ environment.systemPackages = [ inputs.yeidle.packages.${pkgs.system}.default ];
 ```
 
 Update with `nix flake update yeidle` and a rebuild. After changing
-`package-lock.json`, refresh `npmDepsHash` in `nix/package.nix` with
+`package-lock.json`, refresh `npmDepsHash` in `apps/electron/package.nix` with
 `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
 
 The installed app uses the same data directory as `npm start`
