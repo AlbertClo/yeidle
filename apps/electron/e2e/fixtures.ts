@@ -80,6 +80,13 @@ export async function launchApp(
         },
     });
     running.set(dataDirectory, app);
+    // Nothing a test clicks may open outside the app (links in the browser,
+    // files in their apps)
+    await app.evaluate(({ shell }) => {
+        shell.openExternal = async () => undefined;
+        shell.openPath = async () => '';
+        shell.showItemInFolder = () => undefined;
+    });
 
     return app;
 }
@@ -389,4 +396,42 @@ export async function caretToEnd(page: Page, text: string): Promise<void> {
             selection.addRange(range);
         });
     await page.waitForTimeout(80);
+}
+
+type RoamBlock = { string: string; uid: string; children?: RoamBlock[] };
+
+/**
+ * Imports Roam pages into the open workspace through the Import dialog, for
+ * content the editor can't easily produce by typing (e.g. a block holding
+ * only a link, with no trailing space).
+ */
+export async function importRoam(
+    page: Page,
+    pages: { title: string; uid: string; children: RoamBlock[] }[],
+): Promise<void> {
+    const file = path.join(
+        os.tmpdir(),
+        `yeidle-e2e-roam-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
+    fs.writeFileSync(file, JSON.stringify(pages));
+
+    try {
+        await page.getByRole('button', { name: 'Personal' }).click();
+        await page.getByRole('menuitem', { name: 'Import' }).click();
+        const dialog = page.getByRole('dialog');
+        await dialog.getByLabel('Roam JSON export').setInputFiles(file);
+        // The open workspace (the first after "Create a new workspace")
+        await dialog.getByLabel('Destination').selectOption({ index: 1 });
+        await dialog.getByLabel('Import file uploads').uncheck();
+        await dialog
+            .getByRole('button', { name: 'Import', exact: true })
+            .click();
+        await expect(dialog.getByText('Import complete')).toBeVisible({
+            timeout: 15_000,
+        });
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+    } finally {
+        fs.rmSync(file, { force: true });
+    }
 }

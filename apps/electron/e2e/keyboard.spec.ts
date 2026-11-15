@@ -1,4 +1,7 @@
 import {
+    clickInto,
+    importRoam,
+    openPage,
     createPage,
     editor,
     expect,
@@ -205,4 +208,38 @@ test.describe('editor keyboard', () => {
         await page.keyboard.press('Control+q');
         await expectOnPage(page, 'Egrets');
     });
+});
+
+test('ArrowDown through a block that holds only a wrapped link reaches the next block', async ({
+    page,
+}) => {
+    const url =
+        'https://console.cloud.google.com/agent-platform/provisioned-throughput/orders?authuser=5&project=gen-lang-client-0859365050&supportedpurview=project&padding=long-enough-to-wrap-over-several-lines';
+    await importRoam(page, [
+        {
+            title: 'Links',
+            uid: 'links',
+            children: [
+                {
+                    string: 'Make sure it is canceled.',
+                    uid: 'canceled',
+                    children: [{ string: url, uid: 'link-only' }],
+                },
+                { string: 'Look at GCP', uid: 'gcp' },
+                ...Array.from({ length: 20 }, (_, i) => ({
+                    string: `Later block ${i}`,
+                    uid: `later-${i}`,
+                })),
+            ],
+        },
+    ]);
+    await openPage(page, 'Links');
+    const caretText = () =>
+        page.evaluate(() => getSelection()?.anchorNode?.textContent ?? '');
+
+    await clickInto(page, 'Make sure it is canceled.');
+    await press(page, 'ArrowDown');
+    await expect.poll(caretText).toContain('provisioned-throughput');
+    await press(page, 'ArrowDown');
+    await expect.poll(caretText).toBe('Look at GCP');
 });

@@ -2898,7 +2898,10 @@ function moveWithinCurrentVisualLine(
         document.querySelector('.tippy-box') ||
         !(view.state.selection instanceof TextSelection) ||
         !view.state.selection.empty ||
-        !view.state.selection.$head.parent.isTextblock
+        !view.state.selection.$head.parent.isTextblock ||
+        // Only inline objects (e.g. one long link): no text lines to move
+        // within; moveAcrossAtomOnlyTextblock takes the caret to the next block
+        isAtomOnlyTextblock(view.state.selection.$head.parent)
     ) {
         return false;
     }
@@ -2915,12 +2918,30 @@ function moveWithinCurrentVisualLine(
         return false;
     }
 
-    event.preventDefault();
+    const textblock = view.domAtPos(view.state.selection.$head.start()).node;
+    const before =
+        selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+
     selection.modify(
         'move',
         direction === 'up' ? 'backward' : 'forward',
         'line',
     );
+
+    // The browser can throw the caret far outside the block (around
+    // non-editable inline nodes); undo that and let the block-to-block
+    // handlers take over
+    if (!selection.anchorNode || !textblock.contains(selection.anchorNode)) {
+        selection.removeAllRanges();
+
+        if (before) {
+            selection.addRange(before);
+        }
+
+        return false;
+    }
+
+    event.preventDefault();
 
     return true;
 }
