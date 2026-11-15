@@ -45,6 +45,7 @@ const Native = {
         minimize: () => void windowAction('minimize'),
         reload: () => void windowAction('reload'),
         close: () => void windowAction('close'),
+        newWindow: () => void windowAction('new-window'),
         toggleMaximize: () => windowAction('toggle-maximize'),
         isMaximized: () => windowAction('state'),
         subscribeNavigationCommand: (

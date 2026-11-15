@@ -8,6 +8,11 @@ export const KEY_BINDING_DEFINITIONS = [
         defaultBinding: 'Ctrl+K',
     },
     {
+        id: 'new-window',
+        label: 'Open New Window',
+        defaultBinding: 'Mod+Shift+N',
+    },
+    {
         id: 'all-pages',
         label: 'Go to All Pages',
         defaultBinding: 'Alt+A',

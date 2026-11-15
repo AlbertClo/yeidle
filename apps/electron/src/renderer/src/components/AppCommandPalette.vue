@@ -15,6 +15,7 @@ import {
     Type,
     ArrowUp,
     ArrowDown,
+    AppWindow,
 } from 'lucide-vue-next';
 import type { LucideIcon } from 'lucide-vue-next';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
@@ -87,6 +88,13 @@ const commands = computed<PaletteCommand[]>(() => [
         icon: History,
         shortcut: bindingLabel('navigation-history'),
         run: () => router.visit('/navigation-history'),
+    },
+    {
+        id: 'new-window',
+        label: 'Open New Window',
+        icon: AppWindow,
+        shortcut: bindingLabel('new-window'),
+        run: openNewWindow,
     },
     {
         id: 'toggle-left-sidebar',
@@ -201,6 +209,10 @@ async function openTodaysDailyNote(): Promise<void> {
     }
 }
 
+function openNewWindow(): void {
+    window.Native?.windowControls?.newWindow();
+}
+
 async function toggleCurrentPagePin(): Promise<void> {
     if (!props.currentPageId) {
         return;
@@ -217,6 +229,13 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     if (props.currentPageId && eventMatchesCommand(event, 'toggle-pin')) {
         event.preventDefault();
         void toggleCurrentPagePin();
+
+        return;
+    }
+
+    if (eventMatchesCommand(event, 'new-window')) {
+        event.preventDefault();
+        openNewWindow();
 
         return;
     }

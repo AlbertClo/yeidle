@@ -23,6 +23,7 @@ const VERSION = 1;
 
 export const DEFAULT_KEY_BINDINGS: Record<string, string> = {
     'command-palette': 'Ctrl+K',
+    'new-window': 'Mod+Shift+N',
     'all-pages': 'Alt+A',
     'daily-notes': 'Alt+D',
     'previous-daily-note': 'Ctrl+Shift+BracketLeft',

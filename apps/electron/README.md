@@ -72,7 +72,8 @@ details. That's what makes them useful when refactoring.
 - Specs: `editing`, `keyboard` (moving blocks, arrows, files, the link
   popover), `links`, `navigation` (All Pages, search, back/forward, daily
   notes, pins), `pages` (collapsing, daily-note stepping, renaming),
-  `roam-import`, and `cloud-sync`.
+  `roam-import`, `single-instance` (one process per data folder, new
+  windows), and `cloud-sync`.
 - `cloud-sync.spec.ts` runs two app instances against a real cloud and is
   skipped unless `YEIDLE_E2E_CLOUD_URL` and `YEIDLE_E2E_CLOUD_TOKEN` are set
   (see the file for the command).

@@ -69,6 +69,21 @@ app.setPath(
         ),
 );
 
+// One process per data folder (the lock is keyed by it). A second process
+// would keep its own copy of the documents, never hear about the first
+// one's edits, and share its cloud device id, so the cloud would never send
+// either of them the other's changes. Launching again opens a window in the
+// running app instead.
+if (!app.requestSingleInstanceLock()) {
+    app.exit(0);
+}
+
+app.on('second-instance', () => {
+    if (app.isReady()) {
+        createWindow();
+    }
+});
+
 const host: Host = {
     platform: process.platform as Host['platform'],
     appVersion: app.getVersion(),
@@ -275,6 +290,9 @@ ipcMain.on('yeidle:window', (event, action: string) => {
             break;
         case 'close':
             window.close();
+            break;
+        case 'new-window':
+            createWindow();
             break;
         case 'toggle-maximize':
             if (window.isMaximized()) {

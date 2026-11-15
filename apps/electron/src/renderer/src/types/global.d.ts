@@ -5,6 +5,8 @@ interface NativeWindowControls {
     reload: () => void;
     toggleMaximize: () => boolean;
     close: () => void;
+    /** Opens another window of the app, on the same workspace. */
+    newWindow: () => void;
     isMaximized: () => boolean;
     subscribeNavigationCommand: (
         callback: (direction: 'back' | 'forward') => void,
