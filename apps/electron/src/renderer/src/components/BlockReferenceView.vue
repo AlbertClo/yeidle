@@ -5,7 +5,11 @@ import { NodeViewWrapper } from '@tiptap/vue-3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { LOCAL_NODES_CHANGED_EVENT } from '@/sync/nodeChanges';
 import type { LocalNodesChangedEvent } from '@/sync/nodeChanges';
-import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
+import {
+    anyChanged,
+    changedDocuments,
+    DOCUMENTS_CHANGED_EVENT,
+} from '@/sync/documentChanges';
 
 type ReferenceTarget = {
     id: string;
@@ -64,18 +68,14 @@ function handleNodeChanges(event: Event) {
     }
 }
 
-function handleCommittedOps(event: Event) {
-    const ops = (
-        event as CustomEvent<{ ops: Record<string, unknown>[] | null }>
-    ).detail.ops;
-
+// The target block lives in its page's document (or is the page itself)
+function handleDocumentsChanged(event: Event) {
     if (
-        ops === null ||
-        ops.some((op) => {
-            const payload = op.payload as Record<string, unknown> | undefined;
-
-            return payload?.id === targetId.value;
-        })
+        anyChanged(
+            changedDocuments(event),
+            targetId.value,
+            target.value?.page_id,
+        )
     ) {
         void loadTarget();
     }
@@ -89,12 +89,12 @@ watch(targetId, () => {
 onMounted(() => {
     void loadTarget();
     window.addEventListener(LOCAL_NODES_CHANGED_EVENT, handleNodeChanges);
-    window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleCommittedOps);
+    window.addEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener(LOCAL_NODES_CHANGED_EVENT, handleNodeChanges);
-    window.removeEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleCommittedOps);
+    window.removeEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
 });
 </script>
 

@@ -29,8 +29,11 @@ import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
 import { bindingLabel } from '@/stores/keyBindings';
 import { saveWorkspaceStoragePreference } from '@/stores/preferences';
 import { workspaceState } from '@/stores/workspaces';
-import { LOCAL_OPS_AVAILABLE_EVENT, opsAffectPageIndex } from '@/sync/localOps';
-import type { LocalOpsAvailableEvent } from '@/sync/localOps';
+import { SystemNodes } from '@yeidle/core/app/nodes';
+import {
+    changedDocuments,
+    DOCUMENTS_CHANGED_EVENT,
+} from '@/sync/documentChanges';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import type { BreadcrumbItem } from '@/types';
 import type { PageListItem } from '@/types/node';
@@ -262,10 +265,11 @@ const reloadScheduler = createMaxWaitScheduler(
     500,
 );
 
-function handleLocalOpsAvailable(event: Event): void {
-    const detail = (event as LocalOpsAvailableEvent).detail;
+// Every document is a page except the hidden system roots
+function handleDocumentsChanged(event: Event): void {
+    const changed = changedDocuments(event);
 
-    if (opsAffectPageIndex(detail?.ops ?? null)) {
+    if (changed === null || changed.some((id) => !SystemNodes.isRoot(id))) {
         reloadScheduler.schedule();
     }
 }
@@ -371,7 +375,7 @@ function handleWorkspaceSyncEnabled(event: Event): void {
 
 onMounted(() => {
     document.addEventListener('keydown', handleUnselectedPageListKeydown);
-    window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
+    window.addEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
     window.addEventListener(THEME_SELECTED_EVENT, handleThemeSelected);
     window.addEventListener(
         WORKSPACE_SYNC_ENABLED_EVENT,
@@ -397,10 +401,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     document.removeEventListener('keydown', handleUnselectedPageListKeydown);
-    window.removeEventListener(
-        LOCAL_OPS_AVAILABLE_EVENT,
-        handleLocalOpsAvailable,
-    );
+    window.removeEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
     window.removeEventListener(THEME_SELECTED_EVENT, handleThemeSelected);
     window.removeEventListener(
         WORKSPACE_SYNC_ENABLED_EVENT,

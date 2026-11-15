@@ -35,28 +35,13 @@ export function markCachedPageInactive(pageId: string): void {
  * cache, so invalidating it here could discard newer local editor state.
  */
 export function invalidateInactiveCachedPages(
-    ops: Array<Record<string, unknown>> | null,
+    documentIds: string[] | null,
 ): void {
-    if (ops === null) {
-        for (const pageId of cache.keys()) {
-            if (!activePages.has(pageId)) {
-                cache.delete(pageId);
-            }
-        }
-
-        return;
-    }
-
-    for (const op of ops) {
-        const payload = op.payload;
-
-        if (typeof payload !== 'object' || payload === null) {
-            continue;
-        }
-
-        const pageId = (payload as Record<string, unknown>).page_id;
-
-        if (typeof pageId === 'string' && !activePages.has(pageId)) {
+    for (const pageId of [...cache.keys()]) {
+        if (
+            !activePages.has(pageId) &&
+            (documentIds === null || documentIds.includes(pageId))
+        ) {
             cache.delete(pageId);
         }
     }

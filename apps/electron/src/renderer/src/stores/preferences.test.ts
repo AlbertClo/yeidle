@@ -1,3 +1,4 @@
+import { SystemNodes } from '@yeidle/core/app/nodes';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { requestCloudExchangeMock } = vi.hoisted(() => ({
@@ -13,7 +14,7 @@ import {
     fontSizePreference,
     hasSavedThemePreference,
     loadPreferences,
-    opsAffectPreferences,
+    preferencesChanged,
     preferenceRootId,
     saveThemePreference,
     saveTypographyPreference,
@@ -162,26 +163,13 @@ describe('preferences store', () => {
         expect(requestCloudExchangeMock).toHaveBeenCalledOnce();
     });
 
-    it('refreshes only for the active user preference root', () => {
-        expect(
-            opsAffectPreferences([
-                {
-                    payload: {
-                        id: 'theme-entry',
-                        page_id: preferenceRootId.value,
-                    },
-                },
-            ]),
-        ).toBe(true);
-        expect(
-            opsAffectPreferences([
-                {
-                    payload: {
-                        id: 'another-users-theme-entry',
-                        page_id: 'another-users-root',
-                    },
-                },
-            ]),
-        ).toBe(false);
+    it('refreshes only for the preferences document', () => {
+        expect(preferencesChanged([SystemNodes.PREFERENCES_ROOT_ID])).toBe(
+            true,
+        );
+        expect(preferencesChanged(null)).toBe(true);
+        expect(preferencesChanged(['a-page', SystemNodes.PINS_ROOT_ID])).toBe(
+            false,
+        );
     });
 });

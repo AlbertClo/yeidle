@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Node } from '@/types/node';
-import { opsAffectPins, persistPinOrder, pinnedItems, pinRootId } from './pins';
+import { SystemNodes } from '@yeidle/core/app/nodes';
+
+import { persistPinOrder, pinnedItems, pinRootId, pinsChanged } from './pins';
 
 vi.mock('../sync/cloud', () => ({
     requestCloudExchange: vi.fn().mockResolvedValue(true),
@@ -42,36 +44,12 @@ describe('pins store', () => {
         });
     });
 
-    it('refreshes only for this user root or a visible page', () => {
+    it('refreshes for the pins document or a pinned page', () => {
+        expect(pinsChanged([SystemNodes.PINS_ROOT_ID])).toBe(true);
+        expect(pinsChanged([pinnedItem.id])).toBe(true);
+        expect(pinsChanged(null)).toBe(true);
         expect(
-            opsAffectPins([
-                {
-                    payload: {
-                        id: 'entry',
-                        page_id: pinRootId.value,
-                    },
-                },
-            ]),
-        ).toBe(true);
-        expect(
-            opsAffectPins([
-                {
-                    payload: {
-                        id: pinnedItem.id,
-                        page_id: pinnedItem.id,
-                    },
-                },
-            ]),
-        ).toBe(true);
-        expect(
-            opsAffectPins([
-                {
-                    payload: {
-                        id: 'another-users-entry',
-                        page_id: 'another-users-root',
-                    },
-                },
-            ]),
+            pinsChanged(['another-page', SystemNodes.PREFERENCES_ROOT_ID]),
         ).toBe(false);
     });
 });

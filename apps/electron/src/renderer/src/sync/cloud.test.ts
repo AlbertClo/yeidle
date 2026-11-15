@@ -18,10 +18,10 @@ describe('requestCloudExchange', () => {
         });
     });
 
-    it('notifies open views when the durable exchange pulls operations', async () => {
+    it('tells open views anything may have changed after pulling from the cloud', async () => {
         const localWindow = new EventTarget();
         const listener = vi.fn();
-        localWindow.addEventListener('yeidle:local-ops-available', listener);
+        localWindow.addEventListener('yeidle:documents-changed', listener);
         vi.stubGlobal('window', localWindow);
         vi.stubGlobal(
             'fetch',
@@ -36,7 +36,7 @@ describe('requestCloudExchange', () => {
 
         expect(listener).toHaveBeenCalledOnce();
         expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({
-            ops: null,
+            documentIds: null,
         });
     });
 

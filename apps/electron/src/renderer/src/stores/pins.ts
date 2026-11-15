@@ -1,6 +1,8 @@
 import { ref } from 'vue';
 import { requestCloudExchange } from '../sync/cloud';
-import type { CommittedOp } from '../sync/localOps';
+import { SystemNodes } from '@yeidle/core/app/nodes';
+
+import { anyChanged } from '@/sync/documentChanges';
 import type { Node } from '../types/node';
 
 export const pinnedItems = ref<Node[]>([]);
@@ -131,26 +133,15 @@ export async function persistPinOrder(nodeIds: string[]): Promise<void> {
     void requestCloudExchange();
 }
 
-export function opsAffectPins(ops: CommittedOp[] | null): boolean {
-    if (ops === null || pinRootId.value === null) {
-        return true;
-    }
-
-    const visibleNodeIds = new Set(pinnedItems.value.map((item) => item.id));
-
-    return ops.some((op) => {
-        const payload = op.payload;
-
-        if (typeof payload !== 'object' || payload === null) {
-            return false;
-        }
-
-        const fields = payload as Record<string, unknown>;
-
-        return (
-            fields.id === pinRootId.value ||
-            fields.page_id === pinRootId.value ||
-            (typeof fields.id === 'string' && visibleNodeIds.has(fields.id))
-        );
-    });
+/**
+ * Whether a change could affect this store. Every user's entries live under
+ * the same hidden system root, which is its own document.
+ */
+export function pinsChanged(documentIds: string[] | null): boolean {
+    return anyChanged(
+        documentIds,
+        SystemNodes.PINS_ROOT_ID,
+        // A pinned page's title is shown in the sidebar
+        ...pinnedItems.value.map((item) => item.id),
+    );
 }

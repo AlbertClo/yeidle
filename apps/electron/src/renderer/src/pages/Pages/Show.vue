@@ -8,7 +8,14 @@ import {
     Pin,
     Trash2,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from 'vue';
 import { toast } from 'vue-sonner';
 import PageEditor from '@/components/PageEditor.vue';
 import { Button } from '@/components/ui/button';
@@ -47,7 +54,7 @@ import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
 import {
     initializeCollapsedNodes,
     loadCollapsedNodes,
-    opsAffectCollapsedNodes,
+    collapsedNodesChanged,
 } from '@/stores/collapsedNodes';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
 import {
@@ -68,8 +75,11 @@ import type { LocalSelection, RemoteCursor } from '@/presence/pagePresence';
 import { DocumentSession } from '@/sync/documentSession';
 import { realtimeHealth } from '@/sync/realtime';
 import type { DocumentState } from '@/sync/documentSession';
-import { documentsInEvent, LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
-import type { LocalOpsAvailableEvent } from '@/sync/localOps';
+import {
+    anyChanged,
+    changedDocuments,
+    DOCUMENTS_CHANGED_EVENT,
+} from '@/sync/documentChanges';
 import { createMaxWaitScheduler } from '@/sync/maxWaitScheduler';
 import { notifyLocalNodesChanged } from '@/sync/nodeChanges';
 import { applyBlocks, readBlocks } from '@yeidle/core/loro/pageDoc';
@@ -356,16 +366,14 @@ function handleNodesUpdate(nodes: Node[]) {
     syncScheduler.schedule();
 }
 
-function handleLocalOpsAvailable(event: Event) {
-    const detail = (event as LocalOpsAvailableEvent).detail;
+function handleDocumentsChanged(event: Event) {
+    const changed = changedDocuments(event);
 
-    if (opsAffectCollapsedNodes(detail?.ops ?? null)) {
+    if (collapsedNodesChanged(changed)) {
         void loadCollapsedNodes(true);
     }
 
-    const documents = documentsInEvent(detail?.ops ?? null);
-
-    if (documents === null || documents.includes(props.page.id)) {
+    if (anyChanged(changed, session.id)) {
         void pullRemote();
     }
 }
@@ -720,9 +728,7 @@ function refreshRemoteCursors() {
     }
 
     flushLocal();
-    pageEditorRef.value.setRemoteCursors(
-        pagePresence.presence.remoteCursors(),
-    );
+    pageEditorRef.value.setRemoteCursors(pagePresence.presence.remoteCursors());
 }
 
 // At most ~10 updates a second (the realtime server's client event limit)
@@ -765,7 +771,7 @@ function handleEditorNavigationDeparture(
 
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOpsAvailable);
+    window.addEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('keydown', handleGlobalKeydown);
     restoreNavigationScrollPosition();
@@ -776,10 +782,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleBeforeUnload);
-    window.removeEventListener(
-        LOCAL_OPS_AVAILABLE_EVENT,
-        handleLocalOpsAvailable,
-    );
+    window.removeEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     document.removeEventListener('keydown', handleGlobalKeydown);
     stopPresence();

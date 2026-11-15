@@ -27,7 +27,7 @@ import {
     prepareShortcutEvent,
     resetKeySequence,
 } from '@/stores/keyBindings';
-import { documentChangesAsOps, notifyLocalOpsAvailable } from '@/sync/localOps';
+import { notifyDocumentsChanged } from '@/sync/documentChanges';
 import { initializeRealtimeSync } from '@/sync/realtime';
 import { keyboardPlatform } from '@/types/keyboardPlatform';
 import { hasOpenModal } from '@/ui/modal';
@@ -131,7 +131,7 @@ initializeMouseNavigation();
 
 // The app process announces every committed document change to all windows
 window.Native?.subscribeDocumentChanges?.((documentIds) =>
-    notifyLocalOpsAvailable(documentChangesAsOps(documentIds)),
+    notifyDocumentsChanged(documentIds),
 );
 initializeTypography();
 initializeHistoryNavigation();

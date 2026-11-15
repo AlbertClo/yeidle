@@ -11,7 +11,9 @@ import {
     updateTypography,
 } from '../composables/useTypography';
 import { requestCloudExchange } from '../sync/cloud';
-import type { CommittedOp } from '../sync/localOps';
+import { SystemNodes } from '@yeidle/core/app/nodes';
+
+import { anyChanged } from '@/sync/documentChanges';
 import { DEFAULT_APPEARANCE, isTheme } from '../types/theme';
 import {
     DEFAULT_FONT_FAMILY,
@@ -211,23 +213,10 @@ export async function saveWorkspaceStoragePreference(
     }
 }
 
-export function opsAffectPreferences(ops: CommittedOp[] | null): boolean {
-    if (ops === null || preferenceRootId.value === null) {
-        return true;
-    }
-
-    return ops.some((op) => {
-        const payload = op.payload;
-
-        if (typeof payload !== 'object' || payload === null) {
-            return false;
-        }
-
-        const fields = payload as Record<string, unknown>;
-
-        return (
-            fields.id === preferenceRootId.value ||
-            fields.page_id === preferenceRootId.value
-        );
-    });
+/**
+ * Whether a change could affect this store. Every user's entries live under
+ * the same hidden system root, which is its own document.
+ */
+export function preferencesChanged(documentIds: string[] | null): boolean {
+    return anyChanged(documentIds, SystemNodes.PREFERENCES_ROOT_ID);
 }

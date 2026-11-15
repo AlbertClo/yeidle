@@ -1,3 +1,4 @@
+import { SystemNodes } from '@yeidle/core/app/nodes';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { requestCloudExchangeMock } = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ import {
     collapsedNodesRootId,
     expandNodes,
     initializeCollapsedNodes,
-    opsAffectCollapsedNodes,
+    collapsedNodesChanged,
 } from './collapsedNodes';
 
 describe('collapsed node store', () => {
@@ -95,18 +96,11 @@ describe('collapsed node store', () => {
         await persistence;
     });
 
-    it('detects operations for the active personal collapse root', () => {
-        collapsedNodesRootId.value = 'user-root';
-
+    it('refreshes only for the collapsed-state document', () => {
         expect(
-            opsAffectCollapsedNodes([
-                { payload: { id: 'entry', page_id: 'user-root' } },
-            ]),
+            collapsedNodesChanged([SystemNodes.COLLAPSED_NODES_ROOT_ID]),
         ).toBe(true);
-        expect(
-            opsAffectCollapsedNodes([
-                { payload: { id: 'entry', page_id: 'another-root' } },
-            ]),
-        ).toBe(false);
+        expect(collapsedNodesChanged(null)).toBe(true);
+        expect(collapsedNodesChanged(['a-page'])).toBe(false);
     });
 });

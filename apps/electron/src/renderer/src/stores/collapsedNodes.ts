@@ -1,6 +1,8 @@
 import { ref } from 'vue';
 import { requestCloudExchange } from '@/sync/cloud';
-import type { CommittedOp } from '@/sync/localOps';
+import { SystemNodes } from '@yeidle/core/app/nodes';
+
+import { anyChanged } from '@/sync/documentChanges';
 
 export const collapsedNodeIds = ref<Set<string>>(new Set());
 export const collapsedNodesRootId = ref<string | null>(null);
@@ -131,23 +133,10 @@ async function persistCollapseState(
     }
 }
 
-export function opsAffectCollapsedNodes(ops: CommittedOp[] | null): boolean {
-    if (ops === null || collapsedNodesRootId.value === null) {
-        return true;
-    }
-
-    return ops.some((op) => {
-        const payload = op.payload;
-
-        if (typeof payload !== 'object' || payload === null) {
-            return false;
-        }
-
-        const fields = payload as Record<string, unknown>;
-
-        return (
-            fields.id === collapsedNodesRootId.value ||
-            fields.page_id === collapsedNodesRootId.value
-        );
-    });
+/**
+ * Whether a change could affect this store. Every user's entries live under
+ * the same hidden system root, which is its own document.
+ */
+export function collapsedNodesChanged(documentIds: string[] | null): boolean {
+    return anyChanged(documentIds, SystemNodes.COLLAPSED_NODES_ROOT_ID);
 }

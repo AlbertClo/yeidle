@@ -1,4 +1,4 @@
-import { notifyLocalOpsAvailable } from './localOps';
+import { notifyDocumentsChanged } from './documentChanges';
 
 let exchangeRequested = false;
 let exchangeRun: Promise<boolean> | null = null;
@@ -18,7 +18,7 @@ async function exchangeOnce(): Promise<boolean> {
             const result = (await response.json()) as { pulled?: unknown };
 
             if (typeof result.pulled === 'number' && result.pulled > 0) {
-                notifyLocalOpsAvailable(null);
+                notifyDocumentsChanged(null);
             }
         } catch {
             // The HTTP acknowledgement is sufficient for callers that do not

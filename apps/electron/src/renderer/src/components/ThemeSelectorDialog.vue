@@ -13,12 +13,14 @@ import {
 import {
     loadPreferences,
     hasSavedThemePreference,
-    opsAffectPreferences,
+    preferencesChanged,
     saveThemePreference,
     themePreference,
 } from '@/stores/preferences';
-import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
-import type { LocalOpsAvailableEvent } from '@/sync/localOps';
+import {
+    changedDocuments,
+    DOCUMENTS_CHANGED_EVENT,
+} from '@/sync/documentChanges';
 import { THEME_OPTIONS } from '@/types';
 import type { Theme } from '@/types';
 import {
@@ -163,10 +165,8 @@ async function selectTheme(theme: Theme): Promise<void> {
     }
 }
 
-function handleLocalOps(event: Event): void {
-    const detail = (event as LocalOpsAvailableEvent).detail;
-
-    if (opsAffectPreferences(detail?.ops ?? null)) {
+function handleDocumentsChanged(event: Event): void {
+    if (preferencesChanged(changedDocuments(event))) {
         void loadPreferences(true);
     }
 }
@@ -180,12 +180,12 @@ watch(isOpen, (open) => {
 onMounted(() => {
     void loadPreferences(true);
     window.addEventListener(OPEN_THEME_SELECTOR_EVENT, openDialog);
-    window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOps);
+    window.addEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener(OPEN_THEME_SELECTOR_EVENT, openDialog);
-    window.removeEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOps);
+    window.removeEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
 });
 </script>
 

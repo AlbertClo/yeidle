@@ -15,12 +15,14 @@ import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { bindingLabel } from '@/stores/keyBindings';
 import {
     loadPins,
-    opsAffectPins,
+    pinsChanged,
     persistPinOrder,
     pinnedItems,
 } from '@/stores/pins';
-import { LOCAL_OPS_AVAILABLE_EVENT } from '@/sync/localOps';
-import type { LocalOpsAvailableEvent } from '@/sync/localOps';
+import {
+    changedDocuments,
+    DOCUMENTS_CHANGED_EVENT,
+} from '@/sync/documentChanges';
 import { PINNED_ITEM_COMMANDS } from '@/types/keyBindings';
 
 const { isCurrentUrl } = useCurrentUrl();
@@ -92,10 +94,8 @@ function finishDrag(): void {
     dropped = false;
 }
 
-function handleLocalOps(event: Event): void {
-    const detail = (event as LocalOpsAvailableEvent).detail;
-
-    if (opsAffectPins(detail?.ops ?? null)) {
+function handleDocumentsChanged(event: Event): void {
+    if (pinsChanged(changedDocuments(event))) {
         void loadPins(true);
     }
 }
@@ -108,11 +108,11 @@ function pinnedShortcutLabel(index: number): string | null {
 
 onMounted(() => {
     void loadPins(true);
-    window.addEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOps);
+    window.addEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
 });
 
 onBeforeUnmount(() => {
-    window.removeEventListener(LOCAL_OPS_AVAILABLE_EVENT, handleLocalOps);
+    window.removeEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged);
 });
 </script>
 
