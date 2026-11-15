@@ -15,20 +15,26 @@ const props = defineProps<{
 
 const selectedIndex = ref(0);
 
-watch(() => props.items, () => {
-    selectedIndex.value = 0;
-});
+watch(
+    () => props.items,
+    () => {
+        selectedIndex.value = 0;
+    },
+);
 
 function scrollToSelected() {
     nextTick(() => {
-        const el = document.querySelector('.wiki-suggestion-item[data-selected="true"]') as HTMLElement;
+        const el = document.querySelector(
+            '.wiki-suggestion-item[data-selected="true"]',
+        ) as HTMLElement;
         el?.scrollIntoView({ block: 'nearest' });
     });
 }
 
 function onKeyDown(event: KeyboardEvent): boolean {
     if (event.key === 'ArrowUp') {
-        selectedIndex.value = (selectedIndex.value - 1 + props.items.length) % props.items.length;
+        selectedIndex.value =
+            (selectedIndex.value - 1 + props.items.length) % props.items.length;
         scrollToSelected();
         return true;
     }
@@ -51,23 +57,33 @@ defineExpose({ onKeyDown });
 </script>
 
 <template>
+    <!--
+        v-show, not v-if: the popup shows the element from the first render,
+        so the root has to exist even while there are no suggestions yet
+    -->
     <div
-        v-if="items.length > 0"
-        class="bg-popover border-border z-50 overflow-hidden rounded-md border shadow-md"
+        v-show="items.length > 0"
+        class="z-50 overflow-hidden rounded-md border border-border bg-popover shadow-md"
     >
         <div class="max-h-[200px] overflow-y-auto p-1">
             <button
                 v-for="(item, index) in items"
                 :key="item.id"
                 class="wiki-suggestion-item flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
-                :class="index === selectedIndex ? 'bg-accent text-accent-foreground' : ''"
+                :class="
+                    index === selectedIndex
+                        ? 'bg-accent text-accent-foreground'
+                        : ''
+                "
                 :data-selected="index === selectedIndex"
                 @click="command(item)"
                 @mouseenter="selectedIndex = index"
             >
                 <Plus v-if="item.isCreate" class="h-4 w-4 shrink-0" />
                 <FileText v-else class="h-4 w-4 shrink-0" />
-                <span class="truncate">{{ item.isCreate ? `Create: ${item.content}` : item.content }}</span>
+                <span class="truncate">{{
+                    item.isCreate ? `Create: ${item.content}` : item.content
+                }}</span>
             </button>
         </div>
     </div>
