@@ -28,7 +28,7 @@ export function registerWebRoutes(
             const pages = db.all(
                 `SELECT id, content, page_type, daily_note_date, created_at FROM nodes
                  WHERE parent_id IS NULL AND deleted_at IS NULL AND id NOT IN (${placeholders(rootIds.length)})
-                 ORDER BY modified_hlc DESC, id DESC`,
+                 ORDER BY modified_at DESC, id DESC`,
                 rootIds,
             );
             const preferences = new PreferenceNodes(ctx).listing();

@@ -43,7 +43,7 @@ function node(
 }
 
 function setModified(id: string, hlc: string): void {
-    ctx.db().run('UPDATE nodes SET modified_hlc = ? WHERE id = ?', [hlc, id]);
+    ctx.db().run('UPDATE nodes SET modified_at = ? WHERE id = ?', [hlc, id]);
 }
 
 function count(table: string): number {
@@ -51,7 +51,7 @@ function count(table: string): number {
 }
 
 describe('pages', () => {
-    it('orders pages by modified_hlc with a deterministic id tie-breaker', async () => {
+    it('orders pages by modified_at with a deterministic id tie-breaker', async () => {
         const oldest = node('Oldest', null, {
             id: '00000000-0000-7000-8000-000000000001',
         });

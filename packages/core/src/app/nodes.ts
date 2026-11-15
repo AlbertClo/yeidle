@@ -36,7 +36,7 @@ export type NodeRow = {
     tiptap_content: string | null;
     field_clocks?: string | null;
     purged: number;
-    modified_hlc: string;
+    modified_at: string;
     page_type: string | null;
     daily_note_date: string | null;
     document_id: string | null;
@@ -53,7 +53,7 @@ export type NodeJson = {
     updated_at: string | null;
     deleted_at: string | null;
     tiptap_content: unknown;
-    modified_hlc: string;
+    modified_at: string;
     page_type: string | null;
     daily_note_date: string | null;
     document_id: string | null;
@@ -72,7 +72,7 @@ export function serializeNode(row: NodeRow): NodeJson {
         deleted_at: jsonTimestamp(row.deleted_at),
         tiptap_content:
             row.tiptap_content === null ? null : JSON.parse(row.tiptap_content),
-        modified_hlc: row.modified_hlc,
+        modified_at: row.modified_at,
         page_type: row.page_type,
         daily_note_date: row.daily_note_date,
         document_id: row.document_id,

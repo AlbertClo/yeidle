@@ -8,7 +8,7 @@ export type Node = {
     is_checked: boolean | null;
     page_type?: 'daily_note' | null;
     daily_note_date?: string | null;
-    modified_hlc: string;
+    modified_at: string;
     created_at: string;
     updated_at: string;
     children?: Node[];

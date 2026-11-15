@@ -257,7 +257,7 @@ describe('document service', () => {
             [deletedId, pageId, 'a1', 'gone', null, '2026-01-01 00:00:00'],
         ] as const) {
             db.run(
-                `INSERT INTO nodes (id, parent_id, position, content, is_checked, deleted_at, modified_hlc, purged)
+                `INSERT INTO nodes (id, parent_id, position, content, is_checked, deleted_at, modified_at, purged)
                  VALUES (?, ?, ?, ?, ?, ?, '', 0)`,
                 [id, parent, position, content, checked, deleted],
             );

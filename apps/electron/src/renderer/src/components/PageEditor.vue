@@ -2305,7 +2305,7 @@ function listItemToNode(
         content: textContent,
         tiptap_content: tiptapContent,
         is_checked: typeof attrs.checked === 'boolean' ? attrs.checked : null,
-        modified_hlc: '',
+        modified_at: '',
         created_at: '',
         updated_at: '',
         children,

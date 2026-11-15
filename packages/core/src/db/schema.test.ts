@@ -43,4 +43,33 @@ describe('migrate', () => {
         });
         expect(version(db)).toBe(SCHEMA_VERSION);
     });
+
+    it('turns modification stamps from the old clock format into timestamps', () => {
+        const db = openNodeDatabase(':memory:');
+        migrate(db);
+        db.exec('ALTER TABLE nodes RENAME COLUMN modified_at TO modified_hlc');
+        db.exec('PRAGMA user_version = 2');
+        // An HLC from the operation-log era, a stamp from before this step, an empty one
+        db.exec(`INSERT INTO nodes (id, content, modified_hlc) VALUES
+            ('a', 'A', '001763201523456-0003-client-1'),
+            ('b', 'B', '001763201523457-0000-local'),
+            ('c', 'C', '')`);
+
+        migrate(db);
+
+        expect(
+            db.all(
+                'SELECT id, modified_at FROM nodes ORDER BY modified_at DESC',
+            ),
+        ).toEqual([
+            { id: 'b', modified_at: '2025-11-15T10:12:03.457Z' },
+            { id: 'a', modified_at: '2025-11-15T10:12:03.456Z' },
+            { id: 'c', modified_at: '' },
+        ]);
+        expect(
+            db.get(
+                "SELECT sql FROM sqlite_master WHERE name = 'nodes_page_order_index'",
+            ),
+        ).toEqual({ sql: expect.stringContaining('"modified_at"') });
+    });
 });

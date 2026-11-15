@@ -10,7 +10,7 @@ function node(id: string, children: Node[] = []): Node {
         content: id,
         tiptap_content: null,
         is_checked: null,
-        modified_hlc: '0',
+        modified_at: '0',
         created_at: '',
         updated_at: '',
         children,

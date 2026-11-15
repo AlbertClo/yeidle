@@ -9,13 +9,13 @@ type Score = {
     tier: number;
     distance: number;
     fts_rank: number;
-    modified_hlc: string;
+    modified_at: string;
     id: string;
 };
 
 const CANDIDATE_LIMIT = 360;
 const RESULT_LIMIT = 60;
-const ORDERED_BY_MODIFICATION = 'ORDER BY modified_hlc DESC, id DESC';
+const ORDERED_BY_MODIFICATION = 'ORDER BY modified_at DESC, id DESC';
 
 /**
  * Node search over the FTS5 trigram index: exact and trigram candidates (plus
@@ -259,7 +259,7 @@ function score(node: NodeRow, query: string, ftsRank: number): Score {
         tier,
         distance: tier < 6 ? 0 : bestDistance(query, content),
         fts_rank: ftsRank,
-        modified_hlc: node.modified_hlc,
+        modified_at: node.modified_at,
         id: node.id,
     };
 }
@@ -413,7 +413,7 @@ function compare(left: Score, right: Score): number {
     }
 
     return (
-        spaceship(right.modified_hlc, left.modified_hlc) ||
+        spaceship(right.modified_at, left.modified_at) ||
         spaceship(right.id, left.id)
     );
 }

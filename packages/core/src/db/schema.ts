@@ -204,6 +204,25 @@ const MIGRATIONS: ((db: Database) => void)[] = [
             last_sync_error = NULL`);
         db.exec('UPDATE document_updates SET cloud_seq = NULL');
     },
+
+    // 3: nodes.modified_hlc held a hybrid logical clock in the operation-log
+    // era and a clock-shaped stamp since; it becomes a plain timestamp with
+    // milliseconds (ISO 8601, so text order is time order). Values written
+    // in either old format start with 15 digits of milliseconds.
+    (db) => {
+        if (hasColumn(db, 'nodes', 'modified_hlc')) {
+            db.exec(
+                'ALTER TABLE "nodes" RENAME COLUMN "modified_hlc" TO "modified_at"',
+            );
+        }
+
+        db.exec(`UPDATE nodes SET modified_at = strftime(
+                '%Y-%m-%dT%H:%M:%fZ',
+                CAST(substr(modified_at, 1, 15) AS INTEGER) / 1000.0,
+                'unixepoch'
+            )
+            WHERE modified_at GLOB '${'[0-9]'.repeat(15)}*'`);
+    },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

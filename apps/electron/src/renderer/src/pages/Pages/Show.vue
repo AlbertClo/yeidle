@@ -107,7 +107,7 @@ function blocksToNodes(blocks: Block[]): Node[] {
         content: block.content,
         tiptap_content: block.tiptap_content as Node['tiptap_content'],
         is_checked: block.is_checked,
-        modified_hlc: '',
+        modified_at: '',
         created_at: block.created_at ?? '',
         updated_at: '',
         children: blocksToNodes(block.children ?? []),

@@ -13,7 +13,7 @@ const pinnedItem: Node = {
     content: 'Saved page',
     tiptap_content: null,
     is_checked: null,
-    modified_hlc: '',
+    modified_at: '',
     created_at: '',
     updated_at: '',
 };

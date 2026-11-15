@@ -54,7 +54,7 @@ function remove(id: string): void {
 }
 
 function setModified(id: string, hlc: string): void {
-    ctx.db().run('UPDATE nodes SET modified_hlc = ? WHERE id = ?', [hlc, id]);
+    ctx.db().run('UPDATE nodes SET modified_at = ? WHERE id = ?', [hlc, id]);
 }
 
 const ids = (results: { id: string }[]) => results.map((result) => result.id);
@@ -91,7 +91,7 @@ describe('node tree loader', () => {
         expect(tree.children[0].children[0].id).toBe(nested);
         expect(tree.children[0].children[0].children).toHaveLength(0);
         expect(tree.children[0]).not.toHaveProperty('created_at');
-        expect(tree.children[0]).not.toHaveProperty('modified_hlc');
+        expect(tree.children[0]).not.toHaveProperty('modified_at');
     });
 
     it('omits soft-deleted descendants', () => {
@@ -221,7 +221,7 @@ describe('node search', () => {
         // A row written by the NativePHP app before the index existed
         const page = uuidv7();
         db.run(
-            "INSERT INTO nodes (id, parent_id, position, content, modified_hlc) VALUES (?, NULL, 'a0', ?, '000000000000100-0000-a')",
+            "INSERT INTO nodes (id, parent_id, position, content, modified_at) VALUES (?, NULL, 'a0', ?, '000000000000100-0000-a')",
             [page, 'Pre-existing searchable page'],
         );
 

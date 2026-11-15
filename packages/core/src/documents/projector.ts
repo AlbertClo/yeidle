@@ -3,7 +3,11 @@ import type { Database } from '../db/database';
 import type { DocumentRows, MediaRow, PageRow } from '../loro/projection';
 import { canonicalJson } from '../loro/richText';
 import { isUuid, uuidv7 } from '../support/ids';
-import { modifiedClock, parseTimestamp, sqlTimestamp } from '../support/time';
+import {
+    modifiedTimestamp,
+    parseTimestamp,
+    sqlTimestamp,
+} from '../support/time';
 
 import { extractMentions } from './linkParser';
 
@@ -84,7 +88,7 @@ export class Projector {
     write(documentId: string, rows: DocumentRows): boolean {
         const now = new Date();
         const stamp = sqlTimestamp(now);
-        const modified = modifiedClock(now);
+        const modified = modifiedTimestamp(now);
         let changed = false;
 
         for (const media of rows.media) {
@@ -199,14 +203,14 @@ export class Projector {
             }
 
             this.db.run(
-                'UPDATE nodes SET deleted_at = ?, modified_hlc = ?, updated_at = ? WHERE id = ?',
+                'UPDATE nodes SET deleted_at = ?, modified_at = ?, updated_at = ? WHERE id = ?',
                 [stamp, modified, stamp, id],
             );
             blocksChanged = true;
         }
 
         if (blocksChanged || changed) {
-            this.db.run('UPDATE nodes SET modified_hlc = ? WHERE id = ?', [
+            this.db.run('UPDATE nodes SET modified_at = ? WHERE id = ?', [
                 modified,
                 documentId,
             ]);
@@ -238,7 +242,7 @@ export class Projector {
             document_id: data.document_id,
             created_at: createdAt,
             updated_at: stamp,
-            modified_hlc: modified,
+            modified_at: modified,
         };
         const keys = Object.keys(values) as (keyof typeof values)[];
 
@@ -295,7 +299,7 @@ export class Projector {
             a < b ? -1 : 1,
         )) {
             this.db.run(
-                `INSERT OR IGNORE INTO nodes (id, content, position, modified_hlc, purged, created_at, updated_at)
+                `INSERT OR IGNORE INTO nodes (id, content, position, modified_at, purged, created_at, updated_at)
                  VALUES (?, '', 'a0', '', 0, ?, ?)`,
                 [targetId, stamp, stamp],
             );

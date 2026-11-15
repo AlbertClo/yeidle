@@ -26,7 +26,7 @@ export function registerPageRoutes(router: Router, ctx: AppContext): void {
             ctx
                 .db()
                 .all<NodeRow>(
-                    `SELECT * FROM nodes WHERE ${LIVE_PAGES_SQL} ORDER BY modified_hlc DESC, id DESC`,
+                    `SELECT * FROM nodes WHERE ${LIVE_PAGES_SQL} ORDER BY modified_at DESC, id DESC`,
                 )
                 .map(serializeNode),
         ),

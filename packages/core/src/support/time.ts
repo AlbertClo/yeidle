@@ -25,10 +25,9 @@ export function parseTimestamp(value: string): Date | null {
 }
 
 /**
- * Sortable modification stamp for nodes.modified_hlc. Keeps the old HLC
- * column's ordering (15-digit milliseconds first) so page ordering works on
- * workspaces from the NativePHP app.
+ * nodes.modified_at: ISO 8601 with milliseconds, so ordering the text orders
+ * by time (and recent edits within a second stay distinct).
  */
-export function modifiedClock(date: Date = new Date()): string {
-    return `${String(date.getTime()).padStart(15, '0')}-0000-local`;
+export function modifiedTimestamp(date: Date = new Date()): string {
+    return date.toISOString();
 }
