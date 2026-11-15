@@ -312,11 +312,7 @@ export class CloudAccount {
         this.ctx.workspaces.markCloudStatus(workspace.id, 'syncing');
 
         try {
-            const result = await this.syncFor().connect(
-                account.cloud_url,
-                account.token,
-                workspace.id,
-            );
+            const result = await this.syncFor().connect(workspace.id);
             this.ctx.workspaces.markCloudStatus(workspace.id, 'ready');
 
             return { synced: true, result };
@@ -350,8 +346,7 @@ export class CloudAccount {
             },
         );
         const workspace = response.body?.workspace as
-            | CloudWorkspace
-            | undefined;
+            CloudWorkspace | undefined;
 
         if (response.status !== 201 || typeof workspace?.id !== 'string') {
             throw new CloudError(
@@ -382,8 +377,7 @@ export class CloudAccount {
             { name: name.trim() },
         );
         const workspace = response.body?.workspace as
-            | CloudWorkspace
-            | undefined;
+            CloudWorkspace | undefined;
 
         if (!response.ok || typeof workspace?.id !== 'string') {
             throw new CloudError(
@@ -473,8 +467,8 @@ export class CloudAccount {
     }
 
     private clearLocalAccount(): void {
+        // The token only lives here, so syncing stops with it
         this.write({ account: null, pending: null });
-        this.syncFor().signOut();
     }
 
     private replaceCloudWorkspace(

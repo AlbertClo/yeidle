@@ -1,21 +1,23 @@
 import type { LoroDoc } from 'loro-crdt';
 
+import { extractMentions } from '../documents/linkParser';
+import { isUuid } from '../support/ids';
+
 import { flattenBlocks, readBlocks } from './pageDoc';
 import { hasPageMeta, readPageMeta } from './pageMeta';
-import type { TiptapContent } from './richText';
 
 /**
- * The rows a document contributes to the SQLite read model (the nodes,
- * node_links and media tables). PHP writes them; nothing else writes those
- * tables.
+ * The rows a document contributes to the read model (pages, blocks, links,
+ * media). The projector writes them; nothing else writes those tables.
  */
 
 export type PageRow = {
     id: string;
-    content: string;
-    page_type: 'daily_note' | null;
-    daily_note_date: string | null;
-    created_at: string | null;
+    title: string;
+    kind: 'page' | 'daily';
+    daily_date: string | null;
+    /** Unix ms, when the document records one. */
+    created_at: number | null;
     deleted: boolean;
     /** False when only blocks have arrived so far (no page fields yet). */
     has_meta: boolean;
@@ -23,12 +25,9 @@ export type PageRow = {
 
 export type BlockRow = {
     id: string;
-    parent_id: string;
-    position: string;
-    content: string;
-    tiptap_content: TiptapContent;
-    is_checked: boolean | null;
-    created_at: string | null;
+    text: string;
+    /** Linked page and block ids (UUID mentions, references, embeds). */
+    links: string[];
 };
 
 export type MediaRow = {
@@ -49,27 +48,45 @@ export type DocumentRows = {
 export const MEDIA_DOCUMENT_ID = 'media';
 export const MEDIA = 'media';
 
+const NO_ROWS: DocumentRows = { page: null, blocks: [], media: [] };
+
+/** ISO 8601 (or any Date-parsable string) as unix ms. */
+export function parseTime(value: string | null | undefined): number | null {
+    if (!value) {
+        return null;
+    }
+
+    const time = Date.parse(value);
+
+    return Number.isNaN(time) ? null : time;
+}
+
 export function projectPage(doc: LoroDoc, pageId: string): DocumentRows {
     const meta = readPageMeta(doc);
+    const daily = meta.page_type === 'daily_note' && meta.daily_note_date;
 
     return {
         page: {
             id: pageId,
-            content: meta.title,
-            page_type: meta.page_type,
-            daily_note_date: meta.daily_note_date,
-            created_at: meta.created_at,
+            title: meta.title,
+            kind: daily ? 'daily' : 'page',
+            daily_date: daily ? meta.daily_note_date : null,
+            created_at: daily
+                ? Date.parse(`${meta.daily_note_date}T00:00:00Z`)
+                : parseTime(meta.created_at),
             deleted: meta.deleted,
             has_meta: hasPageMeta(doc),
         },
         blocks: flattenBlocks(readBlocks(doc, pageId)).map((block) => ({
             id: block.id,
-            parent_id: block.parent_id!,
-            position: block.position,
-            content: block.content,
-            tiptap_content: block.tiptap_content,
-            is_checked: block.is_checked,
-            created_at: block.created_at ?? null,
+            text: block.content,
+            links: [
+                ...new Set(
+                    extractMentions(block.tiptap_content)
+                        .map((mention) => mention.id)
+                        .filter((id) => isUuid(id) && id !== block.id),
+                ),
+            ].sort(),
         })),
         media: [],
     };
@@ -105,13 +122,16 @@ export function projectMedia(doc: LoroDoc): DocumentRows {
     return { page: null, blocks: [], media };
 }
 
+/** Page documents are named by the page's UUID; other documents have no rows. */
 export function projectDocument(
     doc: LoroDoc,
     documentId: string,
 ): DocumentRows {
-    return documentId === MEDIA_DOCUMENT_ID
-        ? projectMedia(doc)
-        : projectPage(doc, documentId);
+    if (documentId === MEDIA_DOCUMENT_ID) {
+        return projectMedia(doc);
+    }
+
+    return isUuid(documentId) ? projectPage(doc, documentId) : NO_ROWS;
 }
 
 /** Media metadata is immutable: create-if-absent. */

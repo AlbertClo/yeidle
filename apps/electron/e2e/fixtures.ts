@@ -259,10 +259,12 @@ export async function waitForSaved(page: Page, text: string): Promise<void> {
                         { headers: { Accept: 'application/json' } },
                     );
                     const results = (await response.json()) as {
-                        content: string;
+                        text: string;
                     }[];
 
-                    return results.some((node) => node.content.includes(query));
+                    return results.some((result) =>
+                        result.text.includes(query),
+                    );
                 }, text),
             { timeout: 5_000 },
         )

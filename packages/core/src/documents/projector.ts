@@ -1,346 +1,264 @@
 import { placeholders } from '../db/database';
 import type { Database } from '../db/database';
 import type { DocumentRows, MediaRow, PageRow } from '../loro/projection';
-import { canonicalJson } from '../loro/richText';
-import { isUuid, uuidv7 } from '../support/ids';
-import {
-    modifiedTimestamp,
-    parseTimestamp,
-    sqlTimestamp,
-} from '../support/time';
-
-import { extractMentions } from './linkParser';
+import { parseTime } from '../loro/projection';
 
 /**
- * Writes a document's projected rows into the read model (nodes, node_links,
- * media). Only rows that differ are written; blocks that left the document
- * are soft-deleted. Nothing else writes these tables.
+ * Writes a document's projected rows into the read model: pages, blocks,
+ * links, the search index and media. Only rows that differ are written, and
+ * what left the document is deleted. Nothing else writes these tables.
  */
 
-type NodeRow = {
-    id: string;
-    parent_id: string | null;
-    position: string;
-    content: string;
-    tiptap_content: string | null;
-    is_checked: number | null;
-    page_type: string | null;
-    daily_note_date: string | null;
-    created_at: string | null;
-    deleted_at: string | null;
-    document_id: string | null;
+type StoredPage = {
+    title: string;
+    kind: string;
+    daily_date: string | null;
+    created_at: number;
 };
 
-type NodeData = {
+type StoredBlock = {
+    search_id: number;
     id: string;
-    parent_id: string | null;
-    position: string;
-    content: string;
-    tiptap_content: unknown;
-    is_checked: boolean | null;
-    page_type: string | null;
-    daily_note_date: string | null;
-    deleted: boolean;
-    document_id: string;
+    page_id: string;
+    text: string;
 };
-
-function sameJson(stored: string | null, value: unknown): boolean {
-    if (stored === null || value === null || value === undefined) {
-        return stored === null && (value === null || value === undefined);
-    }
-
-    try {
-        return canonicalJson(JSON.parse(stored)) === canonicalJson(value);
-    } catch {
-        return false;
-    }
-}
-
-function differs(old: NodeRow, data: NodeData): boolean {
-    return (
-        old.parent_id !== data.parent_id ||
-        old.position !== data.position ||
-        old.content !== data.content ||
-        !sameJson(old.tiptap_content, data.tiptap_content) ||
-        (old.is_checked === null ? null : old.is_checked === 1) !==
-            data.is_checked ||
-        old.page_type !== data.page_type ||
-        old.daily_note_date !== data.daily_note_date ||
-        (old.deleted_at !== null) !== data.deleted ||
-        old.document_id !== data.document_id
-    );
-}
-
-function toSqlTimestamp(value: string | null | undefined): string | null {
-    if (!value) {
-        return null;
-    }
-
-    const date = parseTimestamp(value);
-
-    return date === null ? null : sqlTimestamp(date);
-}
 
 export class Projector {
     constructor(private db: Database) {}
 
     /** Returns whether anything changed. */
     write(documentId: string, rows: DocumentRows): boolean {
-        const now = new Date();
-        const stamp = sqlTimestamp(now);
-        const modified = modifiedTimestamp(now);
+        const now = Date.now();
         let changed = false;
 
         for (const media of rows.media) {
-            changed = this.writeMedia(media, stamp) || changed;
+            changed = this.writeMedia(media, now) || changed;
         }
 
         if (rows.page === null) {
             return changed;
         }
 
-        const existing = new Map<string, NodeRow>();
-        const columns =
-            'id, parent_id, position, content, tiptap_content, is_checked, page_type, daily_note_date, created_at, deleted_at, document_id';
-
-        // Two indexed lookups; an OR would scan the table
-        for (const row of this.db.all<NodeRow>(
-            `SELECT ${columns} FROM nodes WHERE document_id = ?
-             UNION SELECT ${columns} FROM nodes WHERE id = ?`,
-            [documentId, documentId],
-        )) {
-            existing.set(row.id, row);
-        }
-
-        // Rows from before the document existed, or link shells
-        const blockIds = rows.blocks.map((block) => block.id);
-
-        for (let i = 0; i < blockIds.length; i += 500) {
-            const chunk = blockIds.slice(i, i + 500);
-
-            for (const row of this.db.all<NodeRow>(
-                `SELECT ${columns} FROM nodes WHERE document_id IS NULL AND id IN (${placeholders(chunk.length)})`,
-                chunk,
-            )) {
-                existing.set(row.id, row);
-            }
-        }
-
         const page = rows.page;
-        const oldPage = existing.get(documentId);
+        const stored = this.db.get<StoredPage>(
+            'SELECT title, kind, daily_date, created_at FROM pages WHERE id = ?',
+            [documentId],
+        );
 
-        if (page.has_meta || oldPage !== undefined || rows.blocks.length > 0) {
-            const data: NodeData = {
-                id: documentId,
-                parent_id: null,
-                position: 'a0',
-                content: page.content,
-                tiptap_content: null,
-                is_checked: null,
-                page_type: page.page_type,
-                daily_note_date: page.daily_note_date,
-                deleted: page.deleted,
-                document_id: documentId,
-            };
-            const createdAt = this.pageCreatedAt(page, oldPage, stamp);
-
-            if (
-                oldPage === undefined ||
-                differs(oldPage, data) ||
-                oldPage.created_at !== createdAt
-            ) {
-                this.upsert(data, oldPage, createdAt, stamp, modified);
+        // A page whose blocks arrived before its fields is listed untitled
+        if (page.deleted || (!page.has_meta && rows.blocks.length === 0)) {
+            if (stored !== undefined) {
+                this.deletePage(documentId);
                 changed = true;
             }
+
+            return changed;
         }
 
-        let blocksChanged = false;
-        // Links are rebuilt once every row of this document exists, so a
-        // link to a later block on the same page finds it instead of
-        // creating a placeholder row for it
-        const relink: { id: string; content: unknown }[] = [];
+        const createdAt = page.created_at ?? stored?.created_at ?? now;
+        let pageChanged = false;
 
-        for (const block of rows.blocks) {
-            const old = existing.get(block.id);
-            const data: NodeData = {
-                id: block.id,
-                parent_id: block.parent_id,
-                position: block.position,
-                content: block.content,
-                tiptap_content: block.tiptap_content,
-                is_checked: block.is_checked,
-                page_type: null,
-                daily_note_date: null,
-                deleted: false,
-                document_id: documentId,
-            };
-
-            if (old !== undefined && !differs(old, data)) {
-                continue;
-            }
-
-            const createdAt =
-                old?.created_at ?? toSqlTimestamp(block.created_at) ?? stamp;
-            this.upsert(data, old, createdAt, stamp, modified);
-
-            if (
-                old === undefined ||
-                old.deleted_at !== null ||
-                !sameJson(old.tiptap_content, block.tiptap_content)
-            ) {
-                relink.push({ id: block.id, content: block.tiptap_content });
-            }
-
-            blocksChanged = true;
-        }
-
-        for (const { id, content } of relink) {
-            this.rebuildLinks(id, content, stamp);
-        }
-
-        const live = new Set(blockIds);
-
-        for (const [id, row] of existing) {
-            if (
-                id === documentId ||
-                live.has(id) ||
-                row.deleted_at !== null ||
-                row.document_id !== documentId
-            ) {
-                continue;
-            }
-
+        if (stored === undefined) {
             this.db.run(
-                'UPDATE nodes SET deleted_at = ?, modified_at = ?, updated_at = ? WHERE id = ?',
-                [stamp, modified, stamp, id],
+                `INSERT INTO pages (id, title, kind, daily_date, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                    documentId,
+                    page.title,
+                    page.kind,
+                    page.daily_date,
+                    createdAt,
+                    now,
+                ],
             );
-            blocksChanged = true;
+            pageChanged = true;
+        } else if (differs(stored, page, createdAt)) {
+            this.db.run(
+                'UPDATE pages SET title = ?, kind = ?, daily_date = ?, created_at = ? WHERE id = ?',
+                [page.title, page.kind, page.daily_date, createdAt, documentId],
+            );
+            pageChanged = true;
         }
 
-        if (blocksChanged || changed) {
-            this.db.run('UPDATE nodes SET modified_at = ? WHERE id = ?', [
-                modified,
+        const blocksChanged = this.writeBlocks(documentId, rows);
+
+        if (pageChanged || blocksChanged) {
+            this.db.run('UPDATE pages SET updated_at = ? WHERE id = ?', [
+                now,
                 documentId,
             ]);
         }
 
-        return changed || blocksChanged;
+        return changed || pageChanged || blocksChanged;
     }
 
-    private upsert(
-        data: NodeData,
-        old: NodeRow | undefined,
-        createdAt: string,
-        stamp: string,
-        modified: string,
-    ): void {
-        const values = {
-            parent_id: data.parent_id,
-            position: data.position,
-            content: data.content,
-            tiptap_content:
-                data.tiptap_content === null ||
-                data.tiptap_content === undefined
-                    ? null
-                    : JSON.stringify(data.tiptap_content),
-            is_checked: data.is_checked,
-            page_type: data.page_type,
-            daily_note_date: data.daily_note_date,
-            deleted_at: data.deleted ? (old?.deleted_at ?? stamp) : null,
-            document_id: data.document_id,
-            created_at: createdAt,
-            updated_at: stamp,
-            modified_at: modified,
-        };
-        const keys = Object.keys(values) as (keyof typeof values)[];
+    /** Empties the read model (before rebuilding it). */
+    clear(): void {
+        this.db.exec(`
+            INSERT INTO block_search(block_search) VALUES ('delete-all');
+            DELETE FROM links;
+            DELETE FROM blocks;
+            DELETE FROM pages;
+            DELETE FROM media;
+        `);
+    }
 
-        if (old === undefined) {
-            this.db.run(
-                `INSERT INTO nodes (id, purged, ${keys.join(', ')}) VALUES (?, 0, ${placeholders(keys.length)})`,
-                [data.id, ...keys.map((key) => values[key])],
-            );
+    private writeBlocks(pageId: string, rows: DocumentRows): boolean {
+        const existing = new Map<string, StoredBlock>();
 
-            return;
+        for (const block of this.db.all<StoredBlock>(
+            'SELECT search_id, id, page_id, text FROM blocks WHERE page_id = ?',
+            [pageId],
+        )) {
+            existing.set(block.id, block);
         }
 
-        this.db.run(
-            `UPDATE nodes SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`,
-            [...keys.map((key) => values[key]), data.id],
-        );
-    }
+        const links = new Map<string, string[]>();
 
-    private pageCreatedAt(
-        page: PageRow,
-        old: NodeRow | undefined,
-        stamp: string,
-    ): string {
-        if (page.page_type === 'daily_note' && page.daily_note_date) {
-            return `${page.daily_note_date} 00:00:00`;
+        for (const link of this.db.all<{
+            source_block_id: string;
+            target_id: string;
+        }>(
+            `SELECT links.source_block_id, links.target_id FROM links
+             INNER JOIN blocks ON blocks.id = links.source_block_id
+             WHERE blocks.page_id = ?
+             ORDER BY links.target_id`,
+            [pageId],
+        )) {
+            const targets = links.get(link.source_block_id) ?? [];
+            targets.push(link.target_id);
+            links.set(link.source_block_id, targets);
         }
 
-        return toSqlTimestamp(page.created_at) ?? old?.created_at ?? stamp;
-    }
+        // Blocks that another page's projection still holds (moved between
+        // pages): the page that has them now takes them over
+        const elsewhere = new Map<string, StoredBlock>();
+        const unknown = rows.blocks
+            .map((block) => block.id)
+            .filter((id) => !existing.has(id));
 
-    /**
-     * node_links derives from UUID mentions in the block's content. Targets
-     * that don't exist yet get shell rows so the foreign key holds; their
-     * own document fills them in later.
-     */
-    private rebuildLinks(
-        nodeId: string,
-        tiptapContent: unknown,
-        stamp: string,
-    ): void {
-        this.db.run('DELETE FROM node_links WHERE source_node_id = ?', [
-            nodeId,
-        ]);
+        for (let i = 0; i < unknown.length; i += 500) {
+            const chunk = unknown.slice(i, i + 500);
 
-        const links = new Map<string, string | null>();
-
-        for (const mention of extractMentions(tiptapContent)) {
-            if (isUuid(mention.id)) {
-                links.set(mention.id, mention.label);
+            for (const block of this.db.all<StoredBlock>(
+                `SELECT search_id, id, page_id, text FROM blocks WHERE id IN (${placeholders(chunk.length)})`,
+                chunk,
+            )) {
+                elsewhere.set(block.id, block);
             }
         }
 
-        for (const [targetId, label] of [...links].sort(([a], [b]) =>
-            a < b ? -1 : 1,
+        let changed = false;
+        const live = new Set<string>();
+
+        for (const block of rows.blocks) {
+            live.add(block.id);
+            const old = existing.get(block.id) ?? elsewhere.get(block.id);
+
+            if (old === undefined) {
+                const searchId = this.db.run(
+                    'INSERT INTO blocks (id, page_id, text) VALUES (?, ?, ?)',
+                    [block.id, pageId, block.text],
+                ).lastInsertRowid;
+                this.index(searchId, block.text);
+                changed = true;
+            } else if (old.page_id !== pageId || old.text !== block.text) {
+                this.unindex(old.search_id, old.text);
+                this.db.run(
+                    'UPDATE blocks SET page_id = ?, text = ? WHERE search_id = ?',
+                    [pageId, block.text, old.search_id],
+                );
+                this.index(old.search_id, block.text);
+                changed = true;
+            }
+
+            // A block taken over from another page brings its links along
+            const oldLinks = elsewhere.has(block.id)
+                ? null
+                : (links.get(block.id) ?? []);
+
+            if (oldLinks === null || oldLinks.join() !== block.links.join()) {
+                this.db.run('DELETE FROM links WHERE source_block_id = ?', [
+                    block.id,
+                ]);
+
+                for (const target of block.links) {
+                    this.db.run(
+                        'INSERT INTO links (source_block_id, target_id) VALUES (?, ?)',
+                        [block.id, target],
+                    );
+                }
+
+                changed = true;
+            }
+        }
+
+        for (const old of existing.values()) {
+            if (!live.has(old.id)) {
+                this.unindex(old.search_id, old.text);
+                this.db.run('DELETE FROM blocks WHERE search_id = ?', [
+                    old.search_id,
+                ]);
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    private deletePage(pageId: string): void {
+        for (const block of this.db.all<StoredBlock>(
+            'SELECT search_id, id, page_id, text FROM blocks WHERE page_id = ?',
+            [pageId],
         )) {
-            this.db.run(
-                `INSERT OR IGNORE INTO nodes (id, content, position, modified_at, purged, created_at, updated_at)
-                 VALUES (?, '', 'a0', '', 0, ?, ?)`,
-                [targetId, stamp, stamp],
-            );
-            this.db.run(
-                `INSERT INTO node_links (id, source_node_id, target_node_id, display_name, created_at)
-                 VALUES (?, ?, ?, ?, ?)`,
-                [uuidv7(), nodeId, targetId, label, stamp],
-            );
+            this.unindex(block.search_id, block.text);
         }
+
+        // Blocks and their links go with it
+        this.db.run('DELETE FROM pages WHERE id = ?', [pageId]);
     }
 
-    private writeMedia(media: MediaRow, stamp: string): boolean {
-        if (
-            this.db.get('SELECT 1 FROM media WHERE id = ?', [media.id]) !==
-            undefined
-        ) {
-            return false;
-        }
+    private index(searchId: number, text: string): void {
+        this.db.run('INSERT INTO block_search (rowid, text) VALUES (?, ?)', [
+            searchId,
+            text,
+        ]);
+    }
 
+    private unindex(searchId: number, text: string): void {
         this.db.run(
-            `INSERT INTO media (id, filename, original_name, mime_type, size, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [
-                media.id,
-                media.hash,
-                media.original_name,
-                media.mime_type,
-                media.size,
-                toSqlTimestamp(media.created_at) ?? stamp,
-                stamp,
-            ],
+            "INSERT INTO block_search (block_search, rowid, text) VALUES ('delete', ?, ?)",
+            [searchId, text],
         );
-
-        return true;
     }
+
+    private writeMedia(media: MediaRow, now: number): boolean {
+        return (
+            this.db.run(
+                `INSERT OR IGNORE INTO media (id, hash, original_name, mime_type, size, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                    media.id,
+                    media.hash,
+                    media.original_name,
+                    media.mime_type,
+                    media.size,
+                    parseTime(media.created_at) ?? now,
+                ],
+            ).changes > 0
+        );
+    }
+}
+
+function differs(
+    stored: StoredPage,
+    page: PageRow,
+    createdAt: number,
+): boolean {
+    return (
+        stored.title !== page.title ||
+        stored.kind !== page.kind ||
+        stored.daily_date !== page.daily_date ||
+        stored.created_at !== createdAt
+    );
 }

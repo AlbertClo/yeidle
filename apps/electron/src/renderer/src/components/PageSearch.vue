@@ -11,7 +11,7 @@ import {
     CommandList,
 } from '@/components/ui/command';
 import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
-import type { Node } from '@/types/node';
+import type { Page, SearchResult } from '@/types/node';
 import { OPEN_PAGE_SEARCH_EVENT } from '@/ui/pageSearch';
 
 const props = defineProps<{
@@ -19,32 +19,23 @@ const props = defineProps<{
 }>();
 
 const isOpen = ref(false);
-const results = ref<Node[]>([]);
-const recentPages = ref<Node[]>([]);
+const results = ref<SearchResult[]>([]);
+const recentPages = ref<SearchResult[]>([]);
 const searchQuery = ref('');
 let lastSearch: string | null = null;
-let initialData: { recentPages: Node[]; results: Node[] } | null = null;
-let initialDataRequest: Promise<{
-    recentPages: Node[];
-    results: Node[];
-}> | null = null;
+type InitialData = { recentPages: SearchResult[]; results: SearchResult[] };
+
+let initialData: InitialData | null = null;
+let initialDataRequest: Promise<InitialData> | null = null;
 let openRequestId = 0;
 let searchRequestId = 0;
 let searchAbortController: AbortController | null = null;
 
-function uniqueResults(data: Node[]): Node[] {
-    const pageMap = new Map<string, Node>();
-
-    for (const node of data) {
-        if (!node.parent_id || !pageMap.has(node.id)) {
-            pageMap.set(node.id, node);
-        }
-    }
-
-    return [...pageMap.values()];
+function pageResult(page: Page): SearchResult {
+    return { kind: 'page', id: page.id, page_id: page.id, text: page.title };
 }
 
-async function fetchNodes(url: string, signal?: AbortSignal): Promise<Node[]> {
+async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
     const response = await fetch(url, {
         headers: { Accept: 'application/json' },
         signal,
@@ -56,13 +47,10 @@ async function fetchNodes(url: string, signal?: AbortSignal): Promise<Node[]> {
         );
     }
 
-    return response.json() as Promise<Node[]>;
+    return response.json() as Promise<T>;
 }
 
-function preloadInitialData(): Promise<{
-    recentPages: Node[];
-    results: Node[];
-}> {
+function preloadInitialData(): Promise<InitialData> {
     if (initialData) {
         return Promise.resolve(initialData);
     }
@@ -72,13 +60,13 @@ function preloadInitialData(): Promise<{
     }
 
     initialDataRequest = Promise.all([
-        fetchNodes('/api/recent-pages'),
-        fetchNodes('/api/pages'),
+        fetchJson<Page[]>('/api/recent-pages'),
+        fetchJson<Page[]>('/api/pages'),
     ])
         .then(([recent, pages]) => {
             initialData = {
-                recentPages: recent,
-                results: uniqueResults(pages).slice(0, 60),
+                recentPages: recent.map(pageResult),
+                results: pages.slice(0, 60).map(pageResult),
             };
 
             return initialData;
@@ -113,8 +101,8 @@ function autoHighlightFirst() {
 const exactPageMatch = computed(() =>
     results.value.some(
         (r) =>
-            !r.parent_id &&
-            r.content.toLowerCase() === searchQuery.value.toLowerCase(),
+            r.kind === 'page' &&
+            r.text.toLowerCase() === searchQuery.value.toLowerCase(),
     ),
 );
 
@@ -139,18 +127,25 @@ function doSearch(val: string) {
     const controller = new AbortController();
     searchAbortController = controller;
 
-    fetchNodes(`/api/search?q=${encodeURIComponent(val)}`, controller.signal)
+    fetchJson<SearchResult[]>(
+        `/api/search?q=${encodeURIComponent(val)}`,
+        controller.signal,
+    )
         .then((data) => {
             if (requestId !== searchRequestId || val !== searchQuery.value) {
                 return;
             }
 
             const query = val.toLowerCase();
-            const sorted = uniqueResults(data).sort((a, b) => {
+            const sorted = data.sort((a, b) => {
                 const aExact =
-                    !a.parent_id && a.content.toLowerCase() === query ? -1 : 0;
+                    a.kind === 'page' && a.text.toLowerCase() === query
+                        ? -1
+                        : 0;
                 const bExact =
-                    !b.parent_id && b.content.toLowerCase() === query ? -1 : 0;
+                    b.kind === 'page' && b.text.toLowerCase() === query
+                        ? -1
+                        : 0;
 
                 return aExact - bExact;
             });
@@ -158,9 +153,9 @@ function doSearch(val: string) {
             autoHighlightFirst();
         })
         .catch((error: unknown) => {
-            if (
-                !(error instanceof DOMException && error.name === 'AbortError')
-            ) {
+            if (!(
+                error instanceof DOMException && error.name === 'AbortError'
+            )) {
                 console.error(error);
             }
         });
@@ -171,29 +166,29 @@ function createPage() {
     isOpen.value = false;
     searchQuery.value = '';
     results.value = [];
-    fetch('/api/nodes', {
+    fetch('/api/pages', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
         },
-        body: JSON.stringify({ content: title }),
+        body: JSON.stringify({ title }),
     })
         .then((res) => res.json())
-        .then((node) => {
-            router.visit(`/pages/${node.id}`);
+        .then((page: Page) => {
+            router.visit(`/pages/${page.id}`);
         });
 }
 
-function navigate(node: Node) {
-    const pageId = node.page_id ?? node.parent_id ?? node.id;
-    const blockQuery = node.parent_id
-        ? `?block=${encodeURIComponent(node.id)}`
-        : '';
+function navigate(result: SearchResult) {
+    const blockQuery =
+        result.kind === 'block'
+            ? `?block=${encodeURIComponent(result.id)}`
+            : '';
     isOpen.value = false;
     lastSearch = '';
     results.value = [];
-    router.visit(`/pages/${pageId}${blockQuery}`);
+    router.visit(`/pages/${result.page_id}${blockQuery}`);
 }
 
 async function openSearch() {
@@ -278,12 +273,12 @@ onBeforeUnmount(() => {
                 <CommandItem
                     v-for="page in recentPages"
                     :key="`recent-${page.id}`"
-                    :value="`recent: ${page.content || '[untitled]'}`"
+                    :value="`recent: ${page.text || '[untitled]'}`"
                     @select="navigate(page)"
                 >
                     <Clock class="mr-2 h-4 w-4 shrink-0" />
                     <span class="truncate">{{
-                        page.content || '[untitled]'
+                        page.text || '[untitled]'
                     }}</span>
                 </CommandItem>
             </CommandGroup>
@@ -292,11 +287,11 @@ onBeforeUnmount(() => {
                 <CommandItem
                     v-for="result in results"
                     :key="result.id"
-                    :value="result.content || '[untitled]'"
+                    :value="result.text || '[untitled]'"
                     @select="navigate(result)"
                 >
                     <FileText
-                        v-if="!result.parent_id"
+                        v-if="result.kind === 'page'"
                         class="mr-2 h-4 w-4 shrink-0"
                     />
                     <div
@@ -308,7 +303,7 @@ onBeforeUnmount(() => {
                         />
                     </div>
                     <span class="truncate">{{
-                        result.content || '[untitled]'
+                        result.text || '[untitled]'
                     }}</span>
                 </CommandItem>
             </CommandGroup>

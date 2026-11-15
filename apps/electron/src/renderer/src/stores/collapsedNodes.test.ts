@@ -1,4 +1,3 @@
-import { SystemNodes } from '@yeidle/core/app/nodes';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { requestCloudExchangeMock } = vi.hoisted(() => ({
@@ -13,7 +12,6 @@ import {
     collapseNode,
     collapseNodes,
     collapsedNodeIds,
-    collapsedNodesRootId,
     expandNodes,
     initializeCollapsedNodes,
     collapsedNodesChanged,
@@ -21,18 +19,17 @@ import {
 
 describe('collapsed node store', () => {
     beforeEach(() => {
-        initializeCollapsedNodes('user-root', []);
+        initializeCollapsedNodes([]);
         requestCloudExchangeMock.mockClear();
         vi.restoreAllMocks();
     });
 
     it('optimistically collapses a node and preserves descendant folds', async () => {
-        initializeCollapsedNodes('user-root', ['child']);
+        initializeCollapsedNodes(['child']);
         const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: 'user-root',
-                    node_ids: ['child', 'parent'],
+                    block_ids: ['child', 'parent'],
                 }),
                 { status: 200 },
             ),
@@ -42,14 +39,14 @@ describe('collapsed node store', () => {
 
         expect([...collapsedNodeIds.value]).toEqual(['child', 'parent']);
         await persistence;
-        expect(fetchMock).toHaveBeenCalledWith('/api/collapsed-nodes', {
+        expect(fetchMock).toHaveBeenCalledWith('/api/collapsed-blocks', {
             method: 'PUT',
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                node_ids: ['parent'],
+                block_ids: ['parent'],
                 collapsed: true,
             }),
         });
@@ -57,7 +54,7 @@ describe('collapsed node store', () => {
     });
 
     it('expands exactly the requested nodes in one batch', async () => {
-        initializeCollapsedNodes('user-root', [
+        initializeCollapsedNodes([
             'grandparent',
             'parent',
             'unrelated',
@@ -65,8 +62,7 @@ describe('collapsed node store', () => {
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: 'user-root',
-                    node_ids: ['unrelated'],
+                    block_ids: ['unrelated'],
                 }),
                 { status: 200 },
             ),
@@ -83,8 +79,7 @@ describe('collapsed node store', () => {
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: 'user-root',
-                    node_ids: ['parent', 'child'],
+                    block_ids: ['parent', 'child'],
                 }),
                 { status: 200 },
             ),
@@ -96,10 +91,8 @@ describe('collapsed node store', () => {
         await persistence;
     });
 
-    it('refreshes only for the collapsed-state document', () => {
-        expect(
-            collapsedNodesChanged([SystemNodes.COLLAPSED_NODES_ROOT_ID]),
-        ).toBe(true);
+    it('refreshes only for the user document', () => {
+        expect(collapsedNodesChanged(['user:local'])).toBe(true);
         expect(collapsedNodesChanged(null)).toBe(true);
         expect(collapsedNodesChanged(['a-page'])).toBe(false);
     });

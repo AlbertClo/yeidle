@@ -2,11 +2,15 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import {
+    addMedia as addMediaRow,
+    MEDIA_DOCUMENT_ID,
+} from '../../loro/projection';
 import { uuidv7 } from '../../support/ids';
 import { registerMediaRoutes } from '../controllers/media';
 import { call, Router, testContext } from '../testing';
 
-import { CLOUD, fakeRelay, WORKSPACE } from './fakeCloud';
+import { fakeRelay, signInDevice, WORKSPACE } from './fakeCloud';
 import { cloudFor } from './index';
 
 const devices: ReturnType<typeof testContext>[] = [];
@@ -21,6 +25,7 @@ afterEach(() => {
 function device(relay: ReturnType<typeof fakeRelay>) {
     const ctx = testContext();
     ctx.host.cloudFetch = relay.fetch;
+    signInDevice(ctx);
     devices.push(ctx);
 
     return ctx;
@@ -29,7 +34,7 @@ function device(relay: ReturnType<typeof fakeRelay>) {
 const mediaPath = (ctx: ReturnType<typeof testContext>, hash: string) =>
     ctx.host.files.join(ctx.workspace().storagePath, 'media', hash);
 
-/** Stores a file the way a finished upload does: blob on disk + media.create. */
+/** Stores a file the way a finished upload does: blob on disk + media document entry. */
 function addMedia(ctx: ReturnType<typeof testContext>, content: string) {
     const bytes = new TextEncoder().encode(content);
     const hash = createHash('sha256').update(bytes).digest('hex');
@@ -38,24 +43,22 @@ function addMedia(ctx: ReturnType<typeof testContext>, content: string) {
     );
     ctx.host.files.writeFile(mediaPath(ctx, hash), bytes);
     const id = uuidv7();
-    ctx.documents().applyChanges([
-        {
-            type: 'media.create',
-            payload: {
-                id,
-                hash,
-                original_name: `${content}.txt`,
-                mime_type: 'text/plain',
-                size: bytes.length,
-            },
-        },
-    ]);
+    ctx.documents().edit(MEDIA_DOCUMENT_ID, (doc) =>
+        addMediaRow(doc, {
+            id,
+            hash,
+            original_name: `${content}.txt`,
+            mime_type: 'text/plain',
+            size: bytes.length,
+            created_at: null,
+        }),
+    );
 
     return { id, hash, bytes };
 }
 
 async function pair(ctx: ReturnType<typeof testContext>) {
-    await cloudFor(ctx).sync().connect(CLOUD, 'token', WORKSPACE);
+    await cloudFor(ctx).sync().connect(WORKSPACE);
 }
 
 describe('CloudBlobs', () => {
@@ -71,13 +74,9 @@ describe('CloudBlobs', () => {
         expect(await blobs.uploadPending()).toBe(1);
         expect(relay.blobs.get(first.hash)).toEqual(first.bytes);
         expect(blobs.pendingUploadCount()).toBe(0);
-        expect(
-            a
-                .db()
-                .get(
-                    'SELECT COUNT(*) AS n FROM media WHERE cloud_uploaded_at IS NULL',
-                ),
-        ).toEqual({ n: 0 });
+        expect(a.db().all('SELECT hash FROM uploaded_blobs')).toEqual([
+            { hash: first.hash },
+        ]);
         expect(await blobs.uploadPending()).toBe(0);
     });
 
@@ -91,6 +90,25 @@ describe('CloudBlobs', () => {
         await cloudFor(a).blobs().uploadPending();
 
         expect(cloudFor(a).blobs().pendingUploadCount()).toBe(0);
+        expect(a.db().all('SELECT hash FROM uploaded_blobs')).toEqual([
+            { hash: media.hash },
+        ]);
+    });
+
+    it('keeps upload progress out of the synced media rows', async () => {
+        const relay = fakeRelay();
+        const a = device(relay);
+        const media = addMedia(a, 'progress');
+        await pair(a);
+        await cloudFor(a).blobs().uploadPending();
+
+        // Rebuilding the read model from the documents keeps it
+        a.documents().rebuildReadModel();
+
+        expect(cloudFor(a).blobs().pendingUploadCount()).toBe(0);
+        expect(
+            a.db().get('SELECT hash FROM media WHERE id = ?', [media.id]),
+        ).toEqual({ hash: media.hash });
     });
 
     it('downloads files another device uploaded, in the background', async () => {

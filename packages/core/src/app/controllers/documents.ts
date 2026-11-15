@@ -44,18 +44,18 @@ export function registerDocumentRoutes(router: Router, ctx: AppContext): void {
                 }
 
                 if (
-                    typeof update.client_id !== 'string' ||
+                    typeof update.origin !== 'string' ||
                     typeof update.bytes !== 'string'
                 ) {
                     invalid(
                         `updates.${i}`,
-                        'Each update needs a client_id and bytes.',
+                        'Each update needs an origin and bytes.',
                     );
                 }
 
                 return {
                     update_id: update.update_id,
-                    client_id: update.client_id,
+                    origin: update.origin,
                     bytes: fromBase64(update.bytes),
                 };
             }),
@@ -73,7 +73,7 @@ export function registerDocumentRoutes(router: Router, ctx: AppContext): void {
                 .updatesSince(params.documentId, since)
                 .map((update) => ({
                     seq: update.seq,
-                    client_id: update.client_id,
+                    origin: update.origin,
                     bytes: toBase64(update.bytes),
                 })),
             seq: Math.max(since, store.latestSeq(params.documentId)),

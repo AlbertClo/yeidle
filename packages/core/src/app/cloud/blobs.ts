@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 
 import type { Database } from '../../db/database';
 import { uuidv7 } from '../../support/ids';
-import { sqlTimestamp } from '../../support/time';
 import type { Files } from '../host';
 
 import { CloudError, cloudMessage, cloudRequest } from './http';
@@ -14,7 +13,7 @@ import type { CloudFetch } from './http';
  * content-addressed (`<storage>/media/<sha256>`) and travel separately, via
  * short-lived presigned URLs straight to and from storage:
  *
- *   upload:   local files whose media rows have no cloud_uploaded_at
+ *   upload:   local files whose hash isn't in uploaded_blobs
  *             (HEAD first; storage verifies the SHA-256 on PUT)
  *   download: when a file is shown and missing here, and in the background
  *             after a pull so files are available offline
@@ -170,8 +169,8 @@ export class CloudBlobs {
     async downloadMissing(): Promise<number> {
         let downloaded = 0;
         const hashes = this.db
-            .all<{ filename: string }>('SELECT DISTINCT filename FROM media')
-            .map((row) => row.filename)
+            .all<{ hash: string }>('SELECT DISTINCT hash FROM media')
+            .map((row) => row.hash)
             .filter(
                 (hash) =>
                     HASH.test(hash) && !this.files.isFile(this.path(hash)),
@@ -289,27 +288,28 @@ export class CloudBlobs {
         size: number;
     }[] {
         return this.db
-            .all<{ filename: string; mime_type: string; size: number }>(
-                `SELECT filename, MIN(mime_type) AS mime_type, MIN(size) AS size
-                 FROM media WHERE cloud_uploaded_at IS NULL GROUP BY filename`,
+            .all<{ hash: string; mime_type: string; size: number }>(
+                `SELECT hash, MIN(mime_type) AS mime_type, MIN(size) AS size
+                 FROM media
+                 WHERE hash NOT IN (SELECT hash FROM uploaded_blobs)
+                 GROUP BY hash`,
             )
             .filter(
                 (row) =>
-                    HASH.test(row.filename) &&
-                    this.files.isFile(this.path(row.filename)),
+                    HASH.test(row.hash) &&
+                    this.files.isFile(this.path(row.hash)),
             )
             .map((row) => ({
-                hash: row.filename,
+                hash: row.hash,
                 mime_type: row.mime_type,
                 size: Number(row.size),
             }));
     }
 
     private markUploaded(hash: string): void {
-        this.db.run(
-            'UPDATE media SET cloud_uploaded_at = ? WHERE filename = ? AND cloud_uploaded_at IS NULL',
-            [sqlTimestamp(), hash],
-        );
+        this.db.run('INSERT OR IGNORE INTO uploaded_blobs (hash) VALUES (?)', [
+            hash,
+        ]);
     }
 
     private requireConnection(): BlobConnection {

@@ -10,10 +10,10 @@ import { registerMediaRoutes } from './controllers/media';
 import { registerNavigationHistoryRoutes } from './controllers/navigationHistory';
 import { registerPageRoutes } from './controllers/pages';
 import { registerRoamImportRoutes } from './controllers/roamImport';
-import { registerSystemNodeRoutes } from './controllers/systemNodes';
+import { registerUserStateRoutes } from './controllers/userState';
 import { registerWebRoutes } from './controllers/web';
 import { registerWorkspaceRoutes } from './controllers/workspaces';
-import { DARK_THEMES, PreferenceNodes } from './services/preferences';
+import { DARK_THEMES, Preferences } from './services/preferences';
 
 export type Appearance = { theme: string; dark: boolean };
 
@@ -38,7 +38,7 @@ export function createAppServer(
             sidebarOpen: ctx.settings.get<boolean>('sidebar_open') ?? true,
         }),
         renderHtml: (page) => {
-            const theme = new PreferenceNodes(ctx).listing().theme ?? 'system';
+            const theme = new Preferences(ctx).listing().theme ?? 'system';
 
             return options.renderHtml(page, {
                 theme,
@@ -49,7 +49,7 @@ export function createAppServer(
 
     registerDocumentRoutes(router, ctx);
     registerPageRoutes(router, ctx);
-    registerSystemNodeRoutes(router, ctx);
+    registerUserStateRoutes(router, ctx);
     registerMediaRoutes(router, ctx);
     registerKeyBindingRoutes(router, ctx);
     registerNavigationHistoryRoutes(router, ctx);

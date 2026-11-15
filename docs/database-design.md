@@ -1,8 +1,8 @@
-# Database design (proposal)
+# Database design
 
-Status: proposal for review. Nothing here is implemented yet. Backwards
-compatibility is out of scope: existing workspaces are discarded and data comes
-back in through the Roam import.
+Status: implemented (November 2026). Backwards compatibility was out of
+scope: workspaces from the earlier schema are set aside and data comes back in
+through the Roam import.
 
 ## Why redesign
 
@@ -58,17 +58,20 @@ and had the Loro tables added on top. What that left behind:
 | --- | --- | --- |
 | Page | the page id | Page fields (title, kind, daily date, deleted flag) and the movable block tree with rich text per block. Unchanged from today. |
 | Media | `media` | File metadata, keyed by id. Unchanged. |
-| User | `user:<user id>` (`user:local` before sign-in) | **New.** `preferences` (LoroMap: theme, font family, font size, workspace storage), `pins` (LoroMovableList of page ids), `collapsed` (LoroMap block id → true). Replaces the three hidden node trees. |
+| User | `user:<user id>` (`user:local` before sign-in) | `preferences` (LoroMap: `theme`, `font_family`, `font_size`, `workspace_storage`), `pins` (LoroMovableList of page ids), `collapsed` (LoroMap block id → true). Replaced the three hidden node trees. |
 
 Each user in a shared workspace has their own user document, so pins and
-collapsed state stay personal, as they are today. On sign-in, `user:local`
-is merged into the signed-in user's document, replacing today's "adopt the
-local root" step.
+collapsed state stay personal. After sign-in, the first use of the user
+document merges `user:local` into it (the user's own preferences win, pins
+are appended, collapsed blocks are unioned) and empties `user:local`, except
+for the workspace storage choice, which stays with the device. `user:local`
+is never pushed to the cloud: every device has its own.
 
 User documents are small, so the app reads them straight from the in-memory
-Loro document. They get no read-model tables. The cloud relay needs no change:
-it stores opaque updates per document id, and a `user:…` document is just
-another id.
+Loro document. They get no read-model tables. The cloud relay needed no
+change: it stores opaque updates per document id, and a `user:…` document is
+just another id. Page documents are named by the page's UUID; the projector
+ignores documents with any other id except `media`.
 
 ### Per-workspace SQLite
 
@@ -110,13 +113,14 @@ CREATE TABLE pages (
     created_at  INTEGER NOT NULL,              -- unix ms
     updated_at  INTEGER NOT NULL               -- last change to the page or its blocks
 );
-CREATE INDEX pages_recent ON pages (updated_at DESC, id);
+CREATE INDEX pages_recent ON pages (updated_at, id);  -- read backwards: newest first
 CREATE INDEX pages_title ON pages (title);
 
 CREATE TABLE blocks (
-    id       TEXT PRIMARY KEY,
-    page_id  TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
-    text     TEXT NOT NULL                  -- plain text: search, backlinks, references, embeds
+    search_id  INTEGER PRIMARY KEY,         -- the search index's key (stable across VACUUM)
+    id         TEXT NOT NULL UNIQUE,
+    page_id    TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    text       TEXT NOT NULL                -- plain text: search, backlinks, references, embeds
 );
 CREATE INDEX blocks_page ON blocks (page_id);
 
@@ -129,7 +133,7 @@ CREATE INDEX links_target ON links (target_id);
 
 -- Full-text index over blocks.text; the text itself is stored once, in blocks
 CREATE VIRTUAL TABLE block_search USING fts5(
-    text, content = 'blocks', content_rowid = 'rowid', tokenize = 'trigram'
+    text, content = 'blocks', content_rowid = 'search_id', tokenize = 'trigram'
 );
 
 CREATE TABLE media (
@@ -154,8 +158,14 @@ Each table holds only what some query reads:
   folds ASCII letters only, as the code does today), so there's no separate
   normalised column.
 - **Search indexes `blocks.text` in place** (an external-content FTS table)
-  instead of keeping a second copy. Page titles are matched on `pages` with
-  `LIKE`, which is fast at a few thousand rows.
+  instead of keeping a second copy. An external-content index refers to rows
+  by an integer key, and SQLite's implicit rowid can change on `VACUUM`, so
+  blocks have an explicit `search_id`. Page titles aren't in the index: there
+  are few enough (thousands) to score every title in memory on each search,
+  which also finds titles with typos.
+- **A block taken over by another page** (moved between pages, and seen on
+  the new page before the old page drops it) moves to the page that wrote it
+  last; each page only deletes blocks it still owns.
 
 - **Hard deletes.** A deleted page or block is simply absent. No
   `deleted_at`, no reachability walks. Restoring goes through Loro history.
@@ -180,8 +190,8 @@ CREATE TABLE meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 ) WITHOUT ROWID;
--- device_id, cloud_cursor, cloud_last_attempt_at,
--- cloud_last_success_at, cloud_last_error
+-- device_id, cloud_workspace_id (set once paired), cloud_user_id (who paired it),
+-- cloud_cursor, cloud_last_attempt_at, cloud_last_success_at, cloud_last_error
 
 CREATE TABLE uploaded_blobs (
     hash  TEXT PRIMARY KEY                  -- the cloud has this file
@@ -209,8 +219,10 @@ CREATE TABLE navigation_current (
 ) WITHOUT ROWID;
 ```
 
-- **`meta` replaces `sync_state`.** Pairing is a fact about the account and
-  the workspace id, so the cloud URL and token stay in the account file only.
+- **`meta` replaces `sync_state`.** The cloud URL and token stay in the
+  account file only; signing out stops sync because the token is gone.
+  `cloud_user_id` keeps the paired user's personal state (user document, key
+  bindings, history) in use after signing out.
 - **`uploaded_blobs` replaces `media.cloud_uploaded_at`.** Upload progress is
   this device's business, and keying it by hash matches how files dedupe.
 - **Recent pages come from navigation history**, so `page_visits` goes.
@@ -225,12 +237,12 @@ folder. They're small, app-wide, and written rarely.
 
 | Need | Today | Proposed |
 | --- | --- | --- |
-| All pages, most recent first | `nodes` + `LIVE_PAGES_SQL` + `deleted_at IS NULL` | `SELECT … FROM pages ORDER BY updated_at DESC, id` |
+| All pages, most recent first | `nodes` + `LIVE_PAGES_SQL` + `deleted_at IS NULL` | `SELECT … FROM pages ORDER BY updated_at DESC, id DESC` |
 | Title exists / find by title | `LOWER(content) = ?` over pages | `WHERE title = ?` (indexed, case-insensitive) |
 | Page tree | recursive CTE from the page, sent next to the Loro document and then unused | not needed: the view renders from the Loro document; the route sends the page's fields and the document |
-| Backlinks with page titles | links + recursive ancestor walk | `links JOIN blocks JOIN pages` |
-| Block reference / embed | `findNode` + `isReachable` + `isSystemNode` | `blocks WHERE id = ?` (present means live) |
-| Search | FTS over `nodes.content` + `LIKE` fallbacks + parent walks for each match's page | FTS over `blocks.text` joined to `pages`; titles by `LIKE` on `pages` |
+| Backlinks with page titles | links + recursive ancestor walk | `links JOIN blocks JOIN pages`, one row per page, recently changed first |
+| Block reference / embed | `findNode` + `isReachable` + `isSystemNode` | `blocks WHERE id = ?` (present means live), children from the page's Loro document |
+| Search | FTS over `nodes.content` + `LIKE` fallbacks + parent walks for each match's page | FTS over `blocks.text` joined to `pages`; every title scored in memory |
 | Recent pages | `page_visits` | navigation history, newest first |
 | Daily note for a date | `page_type`/`daily_note_date` scan | by id: daily-note ids are derived from the date |
 | Pins, preferences, collapsed | hidden node trees + per-user roots | the user document |
@@ -249,13 +261,30 @@ folder. They're small, app-wide, and written rarely.
   `DocumentService.rootResolver`, the `node.set`/`node.delete` "op shape"
   used by the importer and the HTTP façade (callers write Loro directly or go
   through page/block functions), migration steps 1–3,
-  `loadNodeTree` and the duplicate block tree the page route sends next to
+  `loadNodeTree` and the duplicate block tree the page route sent next to
   the Loro document (the view renders from the document and uses only the
-  page's own fields), and `GET /api/pages/{id}`, which nothing calls.
+  page's own fields).
+
+## HTTP API
+
+The routes that returned Laravel-shaped node rows now return the read
+model's shapes:
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/pages`, `GET /api/recent-pages`, `GET /api/pages/{id}`, `POST /api/pages {title}` (existing page with that title, or a new one) | `Page`: `id`, `title`, `kind`, `daily_date`, `created_at`, `updated_at` |
+| `GET /api/search?q=` | `kind` (`page` or `block`), `id`, `page_id`, `text` |
+| `GET /api/blocks/{id}` (was `/api/nodes/{id}/reference`) | `id`, `page_id`, `text`, `children` (nested `id`, `text`, `children`) |
+| `GET /api/pins`, `PUT /api/pins/order {page_ids}`, `PUT`/`DELETE /api/pages/{id}/pin` | pinned `Page`s |
+| `GET`/`PUT /api/collapsed-blocks {block_ids, collapsed}` (was `collapsed-nodes`) | `block_ids` |
+| `GET /api/preferences` and its `PUT`s | the preferences, without a root id |
+| Document updates | `origin` instead of `client_id` |
+
+`POST /api/nodes` and `POST /api/page-visits` are gone.
 
 ## Rebuilding the read model
 
-`rebuildReadModel(db)`: in one transaction, delete every read-model row, load
+`DocumentService.rebuildReadModel()`: in one transaction, delete every read-model row, load
 each document from `documents`/`document_updates`, and project it.
 
 Before launch it isn't needed at startup. It exists as a test that the
@@ -264,7 +293,7 @@ compare) and as a repair tool if the read model is ever suspected of
 drifting. After launch it is how read-model changes ship: bump the version,
 rebuild on first start.
 
-## Implementation plan
+## Implementation plan (done)
 
 1. The schema above, created in one step with its version in
    `PRAGMA user_version`. The old migration steps go; the small runner can
@@ -292,8 +321,12 @@ describe behaviour, not tables, so they guard the whole change.
 1. **One file or two per workspace.** Splitting storage (`documents.sqlite`)
    from the read model and device state (`cache.sqlite`) makes "delete the
    cache" a file delete, but costs cross-file consistency when writing a
-   document and its projection together. This proposal keeps one file.
+   document and its projection together. One file for now.
 2. **Richer embeds.** Embeds show the target block's plain text, so
    formatting inside it is lost. If that matters, render embeds from the
    target page's Loro document (the renderer can already open one), not from
    a rich-text copy in the cache.
+3. **The update log grows forever.** Compaction folds updates into a
+   snapshot, but `document_updates` keeps every update, because the cloud
+   outbox and update-id deduplication read it. Pushed updates older than the
+   snapshot could be pruned, keeping only their ids.

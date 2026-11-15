@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { addMedia, MEDIA_DOCUMENT_ID } from '../../loro/projection';
 import { call, request, Router, testContext } from '../testing';
 
 import { registerMediaRoutes } from './media';
@@ -78,13 +79,17 @@ describe('media routes', () => {
 
         expect(response.status).toBe(201);
         const hash = sha256('abcdef');
-        expect(response.json).toMatchObject({
-            filename: hash,
+        expect(response.json).toEqual({
+            id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            hash,
             original_name: 'test.bin',
             mime_type: 'application/octet-stream',
             size: 6,
+            created_at: expect.any(Number),
         });
-        expect(response.json.id).toMatch(/^[0-9a-f-]{36}$/);
+        expect(Math.abs(response.json.created_at - Date.now())).toBeLessThan(
+            60_000,
+        );
 
         const storage = ctx.workspace().storagePath;
         expect(fs.readFileSync(path.join(storage, 'media', hash), 'utf8')).toBe(
@@ -94,11 +99,11 @@ describe('media routes', () => {
         expect(
             ctx
                 .db()
-                .get('SELECT filename, original_name FROM media WHERE id = ?', [
+                .get('SELECT hash, original_name FROM media WHERE id = ?', [
                     response.json.id,
                 ]),
         ).toEqual({
-            filename: hash,
+            hash,
             original_name: 'test.bin',
         });
     });
@@ -108,7 +113,7 @@ describe('media routes', () => {
         const second = await upload('b.txt', ['same']);
 
         expect(first.json.id).not.toBe(second.json.id);
-        expect(first.json.filename).toBe(second.json.filename);
+        expect(first.json.hash).toBe(second.json.hash);
         expect(
             fs.readdirSync(path.join(ctx.workspace().storagePath, 'media')),
         ).toEqual([sha256('same')]);
@@ -193,18 +198,16 @@ describe('media routes', () => {
         ).toBe(404);
 
         const id = '00000000-0000-7000-8000-000000000002';
-        ctx.documents().applyChanges([
-            {
-                type: 'media.create',
-                payload: {
-                    id,
-                    hash: sha256('remote only'),
-                    original_name: 'r.txt',
-                    mime_type: 'text/plain',
-                    size: 11,
-                },
-            },
-        ]);
+        ctx.documents().edit(MEDIA_DOCUMENT_ID, (doc) =>
+            addMedia(doc, {
+                id,
+                hash: sha256('remote only'),
+                original_name: 'r.txt',
+                mime_type: 'text/plain',
+                size: 11,
+                created_at: null,
+            }),
+        );
 
         const missing = await call(router, 'GET', `/api/media/${id}`);
         expect(missing.status).toBe(503);

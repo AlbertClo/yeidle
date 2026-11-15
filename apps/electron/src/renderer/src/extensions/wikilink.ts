@@ -4,6 +4,7 @@ import tippy from 'tippy.js';
 import type { Instance } from 'tippy.js';
 import WikiLinkSuggestion from '@/components/WikiLinkSuggestion.vue';
 import type { SuggestionItem } from '@/components/WikiLinkSuggestion.vue';
+import type { Page, SearchResult } from '@/types/node';
 import { WIKI_LINK_ALLOW_SPACES } from './wikilinkMatch';
 
 export function wikiLinkSuggestion(): Omit<
@@ -23,16 +24,13 @@ export function wikiLinkSuggestion(): Omit<
                         headers: { Accept: 'application/json' },
                     },
                 );
-                const data = await res.json();
-
-                const pages = data.filter(
-                    (n: { parent_id: string | null }) => !n.parent_id,
-                );
+                const data = (await res.json()) as SearchResult[];
+                const pages = data.filter((result) => result.kind === 'page');
 
                 for (const page of pages.slice(0, 10)) {
                     items.push({
                         id: page.id,
-                        content: page.content || '[untitled]',
+                        content: page.text || '[untitled]',
                     });
                 }
 
@@ -51,12 +49,12 @@ export function wikiLinkSuggestion(): Omit<
                 const res = await fetch('/api/pages', {
                     headers: { Accept: 'application/json' },
                 });
-                const data = await res.json();
+                const data = (await res.json()) as Page[];
 
                 for (const page of data.slice(0, 10)) {
                     items.push({
                         id: page.id,
-                        content: page.content || '[untitled]',
+                        content: page.title || '[untitled]',
                     });
                 }
             }
@@ -116,23 +114,23 @@ export function wikiLinkSuggestion(): Omit<
         },
         command: ({ editor, range, props: item }) => {
             if (item.isCreate) {
-                fetch('/api/nodes', {
+                fetch('/api/pages', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         Accept: 'application/json',
                     },
-                    body: JSON.stringify({ content: item.content }),
+                    body: JSON.stringify({ title: item.content }),
                 })
                     .then((res) => res.json())
-                    .then((node) => {
+                    .then((page: Page) => {
                         editor
                             .chain()
                             .focus()
                             .deleteRange(range)
                             .insertContent({
                                 type: 'mention',
-                                attrs: { id: node.id, label: item.content },
+                                attrs: { id: page.id, label: item.content },
                             })
                             .insertContent(' ')
                             .run();

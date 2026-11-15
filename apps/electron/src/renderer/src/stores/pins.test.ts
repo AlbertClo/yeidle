@@ -1,29 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Node } from '@/types/node';
-import { SystemNodes } from '@yeidle/core/app/nodes';
+import type { Page } from '@/types/node';
 
-import { persistPinOrder, pinnedItems, pinRootId, pinsChanged } from './pins';
+import { persistPinOrder, pinnedItems, pinsChanged } from './pins';
 
 vi.mock('../sync/cloud', () => ({
     requestCloudExchange: vi.fn().mockResolvedValue(true),
 }));
 
-const pinnedItem: Node = {
+const pinnedItem: Page = {
     id: '00000000-0000-7000-8000-000000000001',
-    parent_id: null,
-    position: 'a0',
-    content: 'Saved page',
-    tiptap_content: null,
-    is_checked: null,
-    modified_at: '',
-    created_at: '',
-    updated_at: '',
+    title: 'Saved page',
+    kind: 'page',
+    daily_date: null,
+    created_at: 0,
+    updated_at: 0,
 };
 
 describe('pins store', () => {
     beforeEach(() => {
         pinnedItems.value = [pinnedItem];
-        pinRootId.value = '00000000-0000-7000-8000-000000000099';
         vi.restoreAllMocks();
     });
 
@@ -40,16 +35,14 @@ describe('pins store', () => {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ node_ids: [pinnedItem.id] }),
+            body: JSON.stringify({ page_ids: [pinnedItem.id] }),
         });
     });
 
-    it('refreshes for the pins document or a pinned page', () => {
-        expect(pinsChanged([SystemNodes.PINS_ROOT_ID])).toBe(true);
+    it('refreshes for the user document or a pinned page', () => {
+        expect(pinsChanged(['user:local'])).toBe(true);
         expect(pinsChanged([pinnedItem.id])).toBe(true);
         expect(pinsChanged(null)).toBe(true);
-        expect(
-            pinsChanged(['another-page', SystemNodes.PREFERENCES_ROOT_ID]),
-        ).toBe(false);
+        expect(pinsChanged(['another-page', 'media'])).toBe(false);
     });
 });

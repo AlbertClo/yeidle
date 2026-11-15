@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { Meta } from '../../db/meta';
+import { createPage, outline, setBlocks } from '../../documents/testing';
+import { updatePageMeta } from '../../loro/pageMeta';
 import { uuidv7 } from '../../support/ids';
 import type { AppContext } from '../context';
+import { LOCAL_USER_DOCUMENT_ID, pinsList } from '../services/userDocument';
 import { testContext } from '../testing';
 
 import { CLOUD, fakeRelay, WORKSPACE } from './fakeCloud';
 import { CloudError } from './http';
 import { CloudSync } from './sync';
+import type { CloudCredentials } from './sync';
 
 const contexts: ReturnType<typeof testContext>[] = [];
 
@@ -23,54 +28,48 @@ afterEach(() => {
     }
 });
 
-function setNode(
-    ctx: AppContext,
-    id: string,
-    pageId: string,
-    fields: Record<string, unknown>,
-): void {
-    ctx.documents().applyChanges([
-        { type: 'node.set', payload: { id, page_id: pageId, fields } },
-    ]);
+function page(ctx: AppContext, title: string, blocks: string[] = []): string {
+    return createPage(ctx.documents(), title, {
+        blocks: blocks.map((text) => ({ text })),
+    });
 }
 
-function page(ctx: AppContext, title: string): string {
-    const id = uuidv7();
-    setNode(ctx, id, id, { parent_id: null, position: 'a0', content: title });
-
-    return id;
-}
-
-/** The projected live tree, comparable across devices. */
+/** The read model's pages and blocks, comparable across devices. */
 function snapshot(ctx: AppContext) {
-    return ctx.db().all(
-        `SELECT id, parent_id, position, content FROM nodes
-             WHERE deleted_at IS NULL ORDER BY id`,
-    );
+    return {
+        pages: ctx.db().all('SELECT id, title FROM pages ORDER BY id'),
+        blocks: ctx
+            .db()
+            .all('SELECT id, page_id, text FROM blocks ORDER BY id'),
+    };
 }
 
-const syncOf = (ctx: AppContext, relay: ReturnType<typeof fakeRelay>) =>
-    new CloudSync(ctx.db(), ctx.documents(), relay.fetch);
+const signedIn: CloudCredentials = { url: CLOUD, token: 'token' };
+
+const syncOf = (
+    ctx: AppContext,
+    relay: ReturnType<typeof fakeRelay>,
+    credentials: CloudCredentials | null = signedIn,
+) => new CloudSync(ctx.db(), ctx.documents(), relay.fetch, () => credentials);
+
+const outboxCount = (ctx: AppContext) =>
+    ctx
+        .db()
+        .get<{ n: number }>(
+            'SELECT COUNT(*) AS n FROM document_updates WHERE cloud_seq IS NULL',
+        )!.n;
 
 describe('CloudSync', () => {
     it('seeds an empty cloud workspace and bootstraps an empty device from it', async () => {
         const relay = fakeRelay();
         const a = device();
-        const pageId = page(a, 'Inbox');
-
-        for (let i = 0; i < 5; i++) {
-            setNode(a, uuidv7(), pageId, {
-                parent_id: pageId,
-                position: `a${i}`,
-                content: `Block ${i}`,
-            });
-        }
-
-        const seeded = await syncOf(a, relay).connect(
-            `${CLOUD}/`,
-            'token',
-            WORKSPACE,
+        const pageId = page(
+            a,
+            'Inbox',
+            [0, 1, 2, 3, 4].map((i) => `Block ${i}`),
         );
+
+        const seeded = await syncOf(a, relay).connect(WORKSPACE);
 
         expect(seeded).toMatchObject({
             seeded: true,
@@ -78,20 +77,19 @@ describe('CloudSync', () => {
             ok: true,
         });
         expect(relay.log.length).toBeGreaterThan(0);
+        expect(outboxCount(a)).toBe(0);
+
+        const meta = new Meta(a.db());
+        expect(meta.get('cloud_workspace_id')).toBe(WORKSPACE);
+        expect(meta.get('cloud_user_id')).toBe('1');
+        expect(meta.number('cloud_cursor')).toBe(relay.log.at(-1)!.server_seq);
+        // The token stays in the account file
         expect(
-            a
-                .db()
-                .get(
-                    'SELECT COUNT(*) AS n FROM document_updates WHERE cloud_seq IS NULL',
-                ),
-        ).toEqual({ n: 0 });
+            a.db().all('SELECT key FROM meta WHERE value = ?', ['token']),
+        ).toEqual([]);
 
         const b = device();
-        const bootstrapped = await syncOf(b, relay).connect(
-            CLOUD,
-            'token',
-            WORKSPACE,
-        );
+        const bootstrapped = await syncOf(b, relay).connect(WORKSPACE);
 
         expect(bootstrapped).toMatchObject({
             seeded: false,
@@ -99,33 +97,40 @@ describe('CloudSync', () => {
             ok: true,
         });
         expect(snapshot(b)).toEqual(snapshot(a));
-        expect(snapshot(b)).toHaveLength(6);
+        expect(snapshot(b).blocks).toHaveLength(5);
+        expect(outline(b.documents(), pageId)).toEqual(
+            outline(a.documents(), pageId),
+        );
+        // Pulled updates keep the device that made them as their origin
+        expect(
+            b
+                .db()
+                .all<{ origin: string }>(
+                    'SELECT DISTINCT origin FROM document_updates',
+                )
+                .map((row) => row.origin),
+        ).toEqual([new Meta(a.db()).deviceId()]);
     });
 
     it('converges concurrent edits made on two paired devices', async () => {
         const relay = fakeRelay();
         const a = device();
-        const pageId = page(a, 'Shared');
-        const blockId = uuidv7();
-        setNode(a, blockId, pageId, {
-            parent_id: pageId,
-            position: 'a0',
-            content: 'first',
-        });
+        const pageId = page(a, 'Shared', ['first']);
         const syncA = syncOf(a, relay);
-        await syncA.connect(CLOUD, 'token', WORKSPACE);
+        await syncA.connect(WORKSPACE);
 
         const b = device();
         const syncB = syncOf(b, relay);
-        await syncB.connect(CLOUD, 'token', WORKSPACE);
+        await syncB.connect(WORKSPACE);
 
         // Offline on both sides at once
-        setNode(a, blockId, pageId, { content: 'edited on A' });
-        setNode(b, uuidv7(), pageId, {
-            parent_id: pageId,
-            position: 'a1',
-            content: 'added on B',
-        });
+        a.documents().edit(pageId, (doc) =>
+            updatePageMeta(doc, { title: 'Renamed on A' }),
+        );
+        setBlocks(b.documents(), pageId, [
+            { id: snapshot(b).blocks[0].id as string, text: 'first' },
+            { text: 'added on B' },
+        ]);
         const otherPage = page(b, 'Only on B');
 
         await syncA.exchange();
@@ -133,20 +138,23 @@ describe('CloudSync', () => {
         await syncA.exchange();
 
         expect(snapshot(a)).toEqual(snapshot(b));
-        expect(snapshot(a).map((row) => row.content)).toEqual(
-            expect.arrayContaining(['edited on A', 'added on B', 'Only on B']),
+        expect(snapshot(a).pages.map((row) => row.title)).toEqual(
+            expect.arrayContaining(['Renamed on A', 'Only on B']),
         );
-        expect(snapshot(a).some((row) => row.id === otherPage)).toBe(true);
+        expect(outline(a.documents(), pageId)).toEqual(['first', 'added on B']);
+        expect(snapshot(a).pages.some((row) => row.id === otherPage)).toBe(
+            true,
+        );
     });
 
     it('pushes nothing back that it pulled, and pulls nothing it pushed', async () => {
         const relay = fakeRelay();
         const a = device();
         page(a, 'One');
-        await syncOf(a, relay).connect(CLOUD, 'token', WORKSPACE);
+        await syncOf(a, relay).connect(WORKSPACE);
         const b = device();
         const syncB = syncOf(b, relay);
-        await syncB.connect(CLOUD, 'token', WORKSPACE);
+        await syncB.connect(WORKSPACE);
         const before = relay.log.length;
 
         const again = await syncB.exchange();
@@ -159,15 +167,70 @@ describe('CloudSync', () => {
         const relay = fakeRelay();
         const a = device();
         page(a, 'From A');
-        await syncOf(a, relay).connect(CLOUD, 'token', WORKSPACE);
+        await syncOf(a, relay).connect(WORKSPACE);
 
         const c = device();
         page(c, 'From C');
 
-        await expect(
-            syncOf(c, relay).connect(CLOUD, 'token', WORKSPACE),
-        ).rejects.toThrow(CloudError);
+        await expect(syncOf(c, relay).connect(WORKSPACE)).rejects.toThrow(
+            CloudError,
+        );
         expect(syncOf(c, relay).configured()).toBe(false);
+        expect(new Meta(c.db()).get('cloud_workspace_id')).toBeNull();
+    });
+
+    it('never pushes user:local, and does not count it as notes when pairing', async () => {
+        const relay = fakeRelay();
+        const a = device();
+        page(a, 'From A');
+        await syncOf(a, relay).connect(WORKSPACE);
+
+        const b = device();
+        b.documents().edit(LOCAL_USER_DOCUMENT_ID, (doc) =>
+            pinsList(doc).push(uuidv7()),
+        );
+        const syncB = syncOf(b, relay);
+
+        await expect(syncB.connect(WORKSPACE)).resolves.toMatchObject({
+            bootstrapped: true,
+            ok: true,
+        });
+
+        b.documents().edit(LOCAL_USER_DOCUMENT_ID, (doc) =>
+            pinsList(doc).push(uuidv7()),
+        );
+        b.documents().edit('user:1', (doc) => pinsList(doc).push(uuidv7()));
+        await syncB.exchange();
+
+        expect(relay.log.map((row) => row.document_id)).not.toContain(
+            LOCAL_USER_DOCUMENT_ID,
+        );
+        expect(relay.log.map((row) => row.document_id)).toContain('user:1');
+        expect(syncB.status()).toMatchObject({ outbox: 0 });
+    });
+
+    it('needs a signed-in account to pair or sync', async () => {
+        const relay = fakeRelay();
+        const a = device();
+        page(a, 'Signed out');
+
+        await expect(syncOf(a, relay, null).connect(WORKSPACE)).rejects.toThrow(
+            /Sign in/,
+        );
+
+        await syncOf(a, relay).connect(WORKSPACE);
+        const signedOut = syncOf(a, relay, null);
+
+        expect(signedOut.configured()).toBe(false);
+        expect(signedOut.status()).toMatchObject({
+            configured: false,
+            health: 'unconfigured',
+            workspace_id: WORKSPACE,
+        });
+        await expect(signedOut.exchange()).resolves.toMatchObject({
+            configured: false,
+            ok: false,
+        });
     });
 
     it('keeps the outbox while offline and records the error', async () => {
@@ -175,27 +238,36 @@ describe('CloudSync', () => {
         const a = device();
         const pageId = page(a, 'Offline');
         const sync = syncOf(a, relay);
-        await sync.connect(CLOUD, 'token', WORKSPACE);
+        await sync.connect(WORKSPACE);
+        expect(sync.status()).toMatchObject({
+            configured: true,
+            health: 'healthy',
+            cloud_url: CLOUD,
+        });
 
         relay.setOffline(true);
-        setNode(a, pageId, pageId, { content: 'renamed offline' });
+        a.documents().edit(pageId, (doc) =>
+            updatePageMeta(doc, { title: 'renamed offline' }),
+        );
         const failed = await sync.exchange();
 
         expect(failed.ok).toBe(false);
         expect(sync.status()).toMatchObject({ health: 'error', outbox: 1 });
+        expect(new Meta(a.db()).get('cloud_last_error')).toMatch(/Push failed/);
 
         relay.setOffline(false);
         const recovered = await sync.exchange();
 
         expect(recovered).toMatchObject({ ok: true, pushed: 1 });
         expect(sync.status()).toMatchObject({ health: 'healthy', outbox: 0 });
+        expect(new Meta(a.db()).get('cloud_last_error')).toBeNull();
     });
 
     it("signs only this workspace's sync and page presence channels", async () => {
         const relay = fakeRelay();
         const a = device();
         const sync = syncOf(a, relay);
-        await sync.connect(CLOUD, 'token', WORKSPACE);
+        await sync.connect(WORKSPACE);
 
         await expect(
             sync.authorizeRealtime(

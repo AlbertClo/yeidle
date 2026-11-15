@@ -1,4 +1,3 @@
-import { SystemNodes } from '@yeidle/core/app/nodes';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { requestCloudExchangeMock } = vi.hoisted(() => ({
@@ -15,7 +14,6 @@ import {
     hasSavedThemePreference,
     loadPreferences,
     preferencesChanged,
-    preferenceRootId,
     saveThemePreference,
     saveTypographyPreference,
     saveWorkspaceStoragePreference,
@@ -30,7 +28,6 @@ describe('preferences store', () => {
         fontSizePreference.value = 16;
         hasSavedThemePreference.value = false;
         workspaceStoragePreference.value = null;
-        preferenceRootId.value = '00000000-0000-7000-8000-000000000099';
         requestCloudExchangeMock.mockClear();
         vi.restoreAllMocks();
     });
@@ -39,7 +36,6 @@ describe('preferences store', () => {
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: preferenceRootId.value,
                     theme: null,
                 }),
                 { status: 200 },
@@ -59,7 +55,6 @@ describe('preferences store', () => {
         const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: preferenceRootId.value,
                     theme: 'light',
                 }),
                 { status: 200 },
@@ -85,7 +80,6 @@ describe('preferences store', () => {
         const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: preferenceRootId.value,
                     theme: 'catppuccin-mocha',
                 }),
                 { status: 200 },
@@ -107,7 +101,6 @@ describe('preferences store', () => {
         const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: preferenceRootId.value,
                     theme: 'light',
                     font_family: 'jetbrains-mono',
                     font_size: 18,
@@ -138,7 +131,6 @@ describe('preferences store', () => {
         const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    root_id: preferenceRootId.value,
                     theme: 'light',
                     workspace_storage: 'local',
                 }),
@@ -164,11 +156,11 @@ describe('preferences store', () => {
     });
 
     it('refreshes only for the preferences document', () => {
-        expect(preferencesChanged([SystemNodes.PREFERENCES_ROOT_ID])).toBe(
+        expect(preferencesChanged(['user:local'])).toBe(
             true,
         );
         expect(preferencesChanged(null)).toBe(true);
-        expect(preferencesChanged(['a-page', SystemNodes.PINS_ROOT_ID])).toBe(
+        expect(preferencesChanged(['a-page', 'media'])).toBe(
             false,
         );
     });

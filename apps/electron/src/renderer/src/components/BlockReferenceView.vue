@@ -13,7 +13,7 @@ import {
 
 type ReferenceTarget = {
     id: string;
-    content: string;
+    text: string;
     page_id: string;
 };
 
@@ -24,7 +24,7 @@ const loading = ref(false);
 const targetId = computed(() => props.node.attrs.targetId as string | null);
 const label = computed(
     () =>
-        target.value?.content ||
+        target.value?.text ||
         (props.node.attrs.fallback as string) ||
         (props.node.attrs.targetUid as string) ||
         'Missing block',
@@ -38,7 +38,7 @@ async function loadTarget() {
     loading.value = true;
 
     try {
-        const response = await fetch(`/api/nodes/${targetId.value}/reference`, {
+        const response = await fetch(`/api/blocks/${targetId.value}`, {
             headers: { Accept: 'application/json' },
         });
 

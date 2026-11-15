@@ -1,75 +1,71 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { nodeFiles } from '../support/nodeFiles';
 
 import { openNodeDatabase } from './nodeSqlite';
-import { migrate, SCHEMA_VERSION } from './schema';
+import { openWorkspaceDatabase, SCHEMA_VERSION } from './schema';
 
+let directory: string;
+let file: string;
+
+beforeEach(() => {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), 'yeidle-schema-'));
+    file = path.join(directory, 'workspace.sqlite');
+});
+
+afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+const open = () => openWorkspaceDatabase(openNodeDatabase, nodeFiles, file);
 const version = (db: ReturnType<typeof openNodeDatabase>) =>
     db.get<{ user_version: number }>('PRAGMA user_version')!.user_version;
 
-describe('migrate', () => {
-    it('brings a new database to the current version', () => {
-        const db = openNodeDatabase(':memory:');
-        migrate(db);
+describe('openWorkspaceDatabase', () => {
+    it('creates the schema in a new database', () => {
+        const { db, setAside } = open();
 
+        expect(setAside).toBeNull();
         expect(version(db)).toBe(SCHEMA_VERSION);
         expect(
-            db.get(
-                "SELECT 1 FROM sqlite_master WHERE name = 'document_updates'",
-            ),
+            db.get("SELECT 1 FROM sqlite_master WHERE name = 'pages'"),
         ).toBeDefined();
-
-        // Running again is a no-op
-        migrate(db);
-        expect(version(db)).toBe(SCHEMA_VERSION);
+        db.close();
     });
 
-    it('drops cloud pairings from the operation-log era', () => {
-        const db = openNodeDatabase(':memory:');
-        migrate(db);
-        db.exec('PRAGMA user_version = 1');
-        db.run(
-            `INSERT INTO sync_state (client_id, last_server_seq, cloud_url, cloud_token, workspace_id)
-             VALUES ('device', 42, 'http://cloud', 'token', 'ws')`,
-        );
+    it('opens a current database as it is', () => {
+        const first = open();
+        first.db.run("INSERT INTO meta (key, value) VALUES ('device_id', 'x')");
+        first.db.close();
 
-        migrate(db);
+        const { db, setAside } = open();
 
-        expect(db.get('SELECT * FROM sync_state')).toMatchObject({
-            client_id: 'device',
-            last_server_seq: 0,
-            cloud_url: null,
-            cloud_token: null,
-            workspace_id: null,
-        });
-        expect(version(db)).toBe(SCHEMA_VERSION);
+        expect(setAside).toBeNull();
+        expect(db.get('SELECT value FROM meta')).toEqual({ value: 'x' });
+        db.close();
     });
 
-    it('turns modification stamps from the old clock format into timestamps', () => {
-        const db = openNodeDatabase(':memory:');
-        migrate(db);
-        db.exec('ALTER TABLE nodes RENAME COLUMN modified_at TO modified_hlc');
-        db.exec('PRAGMA user_version = 2');
-        // An HLC from the operation-log era, a stamp from before this step, an empty one
-        db.exec(`INSERT INTO nodes (id, content, modified_hlc) VALUES
-            ('a', 'A', '001763201523456-0003-client-1'),
-            ('b', 'B', '001763201523457-0000-local'),
-            ('c', 'C', '')`);
+    it('sets a database from another schema version aside', () => {
+        const old = openNodeDatabase(file);
+        old.exec('CREATE TABLE nodes (id TEXT); PRAGMA user_version = 3');
+        old.exec("INSERT INTO nodes VALUES ('kept')");
+        old.close();
+        fs.writeFileSync(`${file}.old`, 'an earlier one');
 
-        migrate(db);
+        const { db, setAside } = open();
 
+        expect(setAside).toBe(`${file}.2.old`);
+        expect(version(db)).toBe(SCHEMA_VERSION);
         expect(
-            db.all(
-                'SELECT id, modified_at FROM nodes ORDER BY modified_at DESC',
-            ),
-        ).toEqual([
-            { id: 'b', modified_at: '2025-11-15T10:12:03.457Z' },
-            { id: 'a', modified_at: '2025-11-15T10:12:03.456Z' },
-            { id: 'c', modified_at: '' },
-        ]);
-        expect(
-            db.get(
-                "SELECT sql FROM sqlite_master WHERE name = 'nodes_page_order_index'",
-            ),
-        ).toEqual({ sql: expect.stringContaining('"modified_at"') });
+            db.get("SELECT 1 FROM sqlite_master WHERE name = 'nodes'"),
+        ).toBeUndefined();
+        db.close();
+
+        const moved = openNodeDatabase(setAside!, { readOnly: true });
+        expect(moved.get('SELECT id FROM nodes')).toEqual({ id: 'kept' });
+        moved.close();
+        expect(fs.readFileSync(`${file}.old`, 'utf8')).toBe('an earlier one');
     });
 });

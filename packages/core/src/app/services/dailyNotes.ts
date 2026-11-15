@@ -1,7 +1,8 @@
-import type { AppContext } from '../context';
-import { findNode, isDailyNote } from '../nodes';
-import type { NodeRow } from '../nodes';
+import { updatePageMeta } from '../../loro/pageMeta';
 import { uuid5 } from '../../support/ids';
+import type { AppContext } from '../context';
+import { findPage } from '../pages';
+import type { Page } from '../pages';
 
 export const DAILY_NOTE_PAGE_TYPE = 'daily_note';
 
@@ -55,43 +56,29 @@ export class DailyNoteService {
     constructor(private ctx: AppContext) {}
 
     /** Returns the day's page, creating (or restoring) it first. */
-    open(workspaceId: string, date: string): NodeRow {
+    open(workspaceId: string, date: string): Page {
         const db = this.ctx.db();
         const id = dailyNotePageId(workspaceId, date);
-        const existing = findNode(db, id, { withTrashed: true });
+        const existing = findPage(db, id);
 
-        if (
-            existing !== null &&
-            isDailyNote(existing) &&
-            existing.deleted_at === null
-        ) {
+        if (existing !== null && existing.kind === 'daily') {
             return existing;
         }
 
-        this.ctx.documents().applyChanges(
-            [
-                {
-                    type: 'node.set',
-                    payload: {
-                        id,
-                        page_id: id,
-                        fields: {
-                            parent_id: null,
-                            position: 'a0',
-                            content: dailyNoteTitle(date),
-                            tiptap_content: null,
-                            is_checked: null,
-                            page_type: DAILY_NOTE_PAGE_TYPE,
-                            daily_note_date: date,
-                            created_at: `${date}T00:00:00.000Z`,
-                        },
-                    },
-                },
-            ],
+        this.ctx.documents().edit(
+            id,
+            (doc) =>
+                updatePageMeta(doc, {
+                    title: dailyNoteTitle(date),
+                    page_type: DAILY_NOTE_PAGE_TYPE,
+                    daily_note_date: date,
+                    created_at: `${date}T00:00:00.000Z`,
+                    deleted: false,
+                }),
             'Open daily note',
         );
 
-        const page = findNode(db, id);
+        const page = findPage(db, id);
 
         if (page === null) {
             throw new Error(`Daily note ${id} was not created.`);

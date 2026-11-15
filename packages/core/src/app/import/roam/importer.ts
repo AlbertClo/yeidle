@@ -1,5 +1,10 @@
 import { placeholders } from '../../../db/database';
-import type { Change } from '../../../documents/service';
+import type { DocumentEdit } from '../../../documents/service';
+import { mergeBlocks } from '../../../loro/mergeBlocks';
+import type { BlockInput } from '../../../loro/mergeBlocks';
+import { updatePageMeta } from '../../../loro/pageMeta';
+import type { PageMeta } from '../../../loro/pageMeta';
+import type { TiptapContent } from '../../../loro/richText';
 import type { AppContext } from '../../context';
 
 import { canonicalUrl, RoamAttachmentImporter } from './attachments';
@@ -93,97 +98,128 @@ export class RoamImporter {
         const records = exported.records();
         await progress?.('nodes', 0, records.length);
 
-        // A page's changes are always written together: sibling positions
-        // are only comparable within one write of a page document
-        const changesByPage = new Map<string, Change[]>();
+        // A page is always written in one go: sibling positions are only
+        // comparable within one merge
+        const pages = new Map<
+            string,
+            { meta: Partial<PageMeta> | null; blocks: BlockInput[] }
+        >();
 
         for (const record of records) {
-            let fields: Record<string, unknown>;
+            const page = pages.get(record.page_id) ?? {
+                meta: null,
+                blocks: [],
+            };
+            pages.set(record.page_id, page);
 
             if (record.parent_id === null) {
-                fields = {
-                    parent_id: null,
-                    position: record.position,
-                    content: record.content,
-                    tiptap_content: null,
-                    is_checked: null,
-                    page_type: record.page_type,
+                page.meta = {
+                    title: record.content,
+                    page_type:
+                        record.page_type === 'daily_note' ? 'daily_note' : null,
                     daily_note_date: record.daily_note_date,
+                    deleted: false,
+                    ...(record.created_at !== null
+                        ? { created_at: record.created_at }
+                        : {}),
                 };
-            } else {
-                const converted = converter.convert(
-                    record.content,
-                    record.heading,
-                );
-                fields = {
-                    parent_id: record.parent_id,
-                    position: record.position,
-                    content: converted.content,
-                    tiptap_content: converted.tiptap_content,
-                    is_checked: converted.is_checked,
-                };
-            }
 
-            if (record.created_at !== null) {
-                fields.created_at = record.created_at;
-            }
-
-            const changes = changesByPage.get(record.page_id) ?? [];
-            changes.push({
-                type: 'node.set',
-                payload: { id: record.id, page_id: record.page_id, fields },
-            });
-            changesByPage.set(record.page_id, changes);
-        }
-
-        let batch: Change[] = [];
-        let written = 0;
-
-        for (const changes of changesByPage.values()) {
-            batch.push(...changes);
-
-            if (batch.length < BATCH_SIZE) {
                 continue;
             }
 
+            const converted = converter.convert(record.content, record.heading);
+            page.blocks.push({
+                id: record.id,
+                parent_id: record.parent_id,
+                position: record.position,
+                tiptap_content: converted.tiptap_content as TiptapContent,
+                is_checked: converted.is_checked,
+                created_at: record.created_at,
+            });
+        }
+
+        let batch: [
+            string,
+            { meta: Partial<PageMeta> | null; blocks: BlockInput[] },
+        ][] = [];
+        let batchSize = 0;
+        let written = 0;
+
+        const flush = async () => {
             if (!dryRun) {
                 this.writeBatch(batch, report);
             }
 
-            written += batch.length;
+            written += batchSize;
             batch = [];
+            batchSize = 0;
             await progress?.('nodes', written, records.length);
+        };
+
+        for (const entry of pages) {
+            batch.push(entry);
+            batchSize += entry[1].blocks.length + (entry[1].meta ? 1 : 0);
+
+            if (batchSize >= BATCH_SIZE) {
+                await flush();
+            }
         }
 
         if (batch.length > 0) {
-            if (!dryRun) {
-                this.writeBatch(batch, report);
-            }
-
-            await progress?.('nodes', records.length, records.length);
+            await flush();
         }
 
         return report;
     }
 
-    private writeBatch(changes: Change[], report: RoamImportReport): void {
-        const ids = changes.map(
-            (change) => (change.payload as { id: string }).id,
-        );
-        let alreadyImported = 0;
+    private writeBatch(
+        pages: [
+            string,
+            { meta: Partial<PageMeta> | null; blocks: BlockInput[] },
+        ][],
+        report: RoamImportReport,
+    ): void {
+        const db = this.ctx.db();
+        const count = (table: string, ids: string[]) => {
+            let found = 0;
 
-        for (let i = 0; i < ids.length; i += 500) {
-            const chunk = ids.slice(i, i + 500);
-            alreadyImported += this.ctx
-                .db()
-                .get<{ count: number }>(
-                    `SELECT COUNT(*) AS count FROM nodes WHERE deleted_at IS NULL AND id IN (${placeholders(chunk.length)})`,
+            for (let i = 0; i < ids.length; i += 500) {
+                const chunk = ids.slice(i, i + 500);
+                found += db.get<{ count: number }>(
+                    `SELECT COUNT(*) AS count FROM ${table} WHERE id IN (${placeholders(chunk.length)})`,
                     chunk,
                 )!.count;
-        }
+            }
 
-        this.ctx.documents().applyChanges(changes, MESSAGE);
+            return found;
+        };
+        const pageIds = pages
+            .filter(([, page]) => page.meta !== null)
+            .map(([id]) => id);
+        const blockIds = pages.flatMap(([, page]) =>
+            page.blocks.map((block) => block.id),
+        );
+        const alreadyImported =
+            count('pages', pageIds) + count('blocks', blockIds);
+
+        this.ctx.documents().editMany(
+            pages.map(([pageId, page]): DocumentEdit => ({
+                document_id: pageId,
+                edit: (doc) => {
+                    if (page.meta !== null) {
+                        updatePageMeta(doc, page.meta);
+                    }
+
+                    if (page.blocks.length > 0) {
+                        mergeBlocks(doc, pageId, page.blocks);
+                    }
+                },
+            })),
+            MESSAGE,
+        );
+
+        const total = pageIds.length + blockIds.length;
         report.nodesAlreadyImported += alreadyImported;
-        report.nodesWritten += changes.length - alreadyImported;
+        report.nodesWritten += total - alreadyImported;
     }
 }

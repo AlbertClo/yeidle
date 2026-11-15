@@ -1,66 +1,103 @@
 import { placeholders } from '../../db/database';
 import type { Database } from '../../db/database';
-import { serializeNode, SystemNodes } from '../nodes';
-import type { NodeJson, NodeRow } from '../nodes';
 
-export type SearchResult = NodeJson & { page_id: string };
+/** A page (matched by title) or a block (matched by text). */
+export type SearchResult = {
+    kind: 'page' | 'block';
+    id: string;
+    page_id: string;
+    /** The page's title, or the block's text. */
+    text: string;
+};
+
+type Candidate = SearchResult & { updated_at: number };
 
 type Score = {
     tier: number;
     distance: number;
     fts_rank: number;
-    modified_at: string;
+    updated_at: number;
     id: string;
 };
 
 const CANDIDATE_LIMIT = 360;
 const RESULT_LIMIT = 60;
-const ORDERED_BY_MODIFICATION = 'ORDER BY modified_at DESC, id DESC';
 
 /**
- * Node search over the FTS5 trigram index: exact and trigram candidates (plus
- * LIKE patterns for short queries and typos), filtered to reachable nodes and
- * ranked by match tier, edit distance, bm25 and recency.
+ * Search over page titles and block text. Blocks come from the FTS5 trigram
+ * index (plus LIKE patterns for short queries and typos); page titles are
+ * few enough to score every one. Results rank by match tier (pages before
+ * blocks at each tier), edit distance, bm25 and recency.
  */
-export function searchNodes(db: Database, rawQuery: string): SearchResult[] {
+export function search(db: Database, rawQuery: string): SearchResult[] {
     const query = normalize(rawQuery);
 
     if (query === '') {
         return [];
     }
 
-    const candidateRanks = candidates(db, query);
+    const threshold = distanceThreshold(query);
+    const scored: { candidate: Candidate; score: Score }[] = [];
 
-    if (candidateRanks.size === 0) {
-        return [];
+    for (const page of db.all<{
+        id: string;
+        title: string;
+        updated_at: number;
+    }>('SELECT id, title, updated_at FROM pages')) {
+        scored.push({
+            candidate: {
+                kind: 'page',
+                id: page.id,
+                page_id: page.id,
+                text: page.title,
+                updated_at: page.updated_at,
+            },
+            score: score(page.id, page.title, true, query, 0, page.updated_at),
+        });
     }
 
-    const ids = [...candidateRanks.keys()];
-    const nodes = db.all<NodeRow>(
-        `SELECT * FROM nodes WHERE id IN (${placeholders(ids.length)}) AND deleted_at IS NULL`,
-        ids,
-    );
-    const threshold = distanceThreshold(query);
+    const ranks = blockCandidates(db, query);
+    const ids = [...ranks.keys()];
 
-    return reachableNodes(db, nodes)
-        .map(({ node, pageId }) => ({
-            node,
-            pageId,
-            score: score(node, query, candidateRanks.get(node.id)!),
-        }))
-        .filter(
-            (result) =>
-                result.score.tier < 6 || result.score.distance <= threshold,
-        )
+    for (const block of ids.length === 0
+        ? []
+        : db.all<{
+              id: string;
+              page_id: string;
+              text: string;
+              updated_at: number;
+          }>(
+              `SELECT blocks.id, blocks.page_id, blocks.text, pages.updated_at
+               FROM blocks INNER JOIN pages ON pages.id = blocks.page_id
+               WHERE blocks.id IN (${placeholders(ids.length)})`,
+              ids,
+          )) {
+        scored.push({
+            candidate: { kind: 'block', ...block },
+            score: score(
+                block.id,
+                block.text,
+                false,
+                query,
+                ranks.get(block.id)!,
+                block.updated_at,
+            ),
+        });
+    }
+
+    return scored
+        .filter(({ score }) => score.tier < 6 || score.distance <= threshold)
         .sort((left, right) => compare(left.score, right.score))
         .slice(0, RESULT_LIMIT)
-        .map(({ node, pageId }) => ({
-            ...serializeNode(node),
-            page_id: pageId,
+        .map(({ candidate }) => ({
+            kind: candidate.kind,
+            id: candidate.id,
+            page_id: candidate.page_id,
+            text: candidate.text,
         }));
 }
 
-function candidates(db: Database, query: string): Map<string, number> {
+function blockCandidates(db: Database, query: string): Map<string, number> {
     if (length(query) < 3) {
         return likeCandidates(db, query);
     }
@@ -87,10 +124,10 @@ function candidates(db: Database, query: string): Map<string, number> {
 
 function ftsCandidates(db: Database, match: string): Map<string, number> {
     const rows = db.all<{ id: string; search_rank: number }>(
-        `SELECT nodes.id, bm25(node_search) AS search_rank
-        FROM node_search
-        INNER JOIN nodes ON nodes.rowid = node_search.rowid
-        WHERE node_search MATCH ?
+        `SELECT blocks.id, bm25(block_search) AS search_rank
+        FROM block_search
+        INNER JOIN blocks ON blocks.search_id = block_search.rowid
+        WHERE block_search MATCH ?
         ORDER BY search_rank
         LIMIT ?`,
         [match, CANDIDATE_LIMIT],
@@ -101,13 +138,24 @@ function ftsCandidates(db: Database, match: string): Map<string, number> {
     );
 }
 
-function likeCandidates(db: Database, query: string): Map<string, number> {
-    const rows = db.all<{ id: string }>(
-        `SELECT id FROM nodes WHERE content LIKE ? AND deleted_at IS NULL ${ORDERED_BY_MODIFICATION} LIMIT ?`,
-        [`%${query}%`, CANDIDATE_LIMIT],
-    );
+/** Blocks whose text matches any pattern, on recently changed pages first. */
+function likeBlocks(db: Database, patterns: string[]): string[] {
+    return db
+        .all<{ id: string }>(
+            `SELECT blocks.id FROM blocks
+             INNER JOIN pages ON pages.id = blocks.page_id
+             WHERE ${patterns.map(() => 'blocks.text LIKE ?').join(' OR ')}
+             ORDER BY pages.updated_at DESC, blocks.id DESC
+             LIMIT ?`,
+            [...patterns, CANDIDATE_LIMIT],
+        )
+        .map((row) => row.id);
+}
 
-    return new Map(rows.map((row, index) => [row.id, index]));
+function likeCandidates(db: Database, query: string): Map<string, number> {
+    return new Map(
+        likeBlocks(db, [`%${query}%`]).map((id, index) => [id, index]),
+    );
 }
 
 function shortTypoCandidates(db: Database, query: string): Map<string, number> {
@@ -134,13 +182,12 @@ function shortTypoCandidates(db: Database, query: string): Map<string, number> {
         }
     }
 
-    const unique = [...new Set(patterns)];
-    const rows = db.all<{ id: string }>(
-        `SELECT id FROM nodes WHERE (${unique.map(() => 'content LIKE ?').join(' OR ')}) AND deleted_at IS NULL ${ORDERED_BY_MODIFICATION} LIMIT ?`,
-        [...unique, CANDIDATE_LIMIT],
+    return new Map(
+        likeBlocks(db, [...new Set(patterns)]).map((id, index) => [
+            id,
+            1_000_000 + index,
+        ]),
     );
-
-    return new Map(rows.map((row, index) => [row.id, 1_000_000 + index]));
 }
 
 function trigrams(query: string): string[] {
@@ -158,88 +205,15 @@ function trigrams(query: string): string[] {
     return [...found].slice(0, 64);
 }
 
-/**
- * Resolves all candidate parent chains in batches instead of one query per
- * ancestor, keeping nodes whose chain reaches a live, non-system page.
- */
-function reachableNodes(
-    db: Database,
-    nodes: NodeRow[],
-): { node: NodeRow; pageId: string }[] {
-    const known = new Map<string, NodeRow>(
-        nodes.map((node) => [node.id, node]),
-    );
-    const missing = new Set<string>();
-
-    while (true) {
-        const parentIds = [
-            ...new Set(
-                [...known.values()]
-                    .map((node) => node.parent_id)
-                    .filter(
-                        (id): id is string =>
-                            !!id && !known.has(id) && !missing.has(id),
-                    ),
-            ),
-        ];
-
-        if (parentIds.length === 0) {
-            break;
-        }
-
-        const parents = db.all<NodeRow>(
-            `SELECT * FROM nodes WHERE id IN (${placeholders(parentIds.length)})`,
-            parentIds,
-        );
-        const found = new Set(parents.map((parent) => parent.id));
-
-        for (const parentId of parentIds) {
-            if (!found.has(parentId)) {
-                missing.add(parentId);
-            }
-        }
-
-        for (const parent of parents) {
-            known.set(parent.id, parent);
-        }
-    }
-
-    const reachable: { node: NodeRow; pageId: string }[] = [];
-
-    for (const node of nodes) {
-        const visited = new Set<string>();
-        let current: NodeRow | undefined = node;
-
-        while (current) {
-            if (
-                SystemNodes.isRoot(current.id) ||
-                current.purged ||
-                current.deleted_at !== null
-            ) {
-                break;
-            }
-
-            if (current.parent_id === null) {
-                reachable.push({ node, pageId: current.id });
-
-                break;
-            }
-
-            if (visited.has(current.id)) {
-                break;
-            }
-
-            visited.add(current.id);
-            current = known.get(current.parent_id);
-        }
-    }
-
-    return reachable;
-}
-
-function score(node: NodeRow, query: string, ftsRank: number): Score {
-    const content = normalize(node.content);
-    const isPage = node.parent_id === null;
+function score(
+    id: string,
+    text: string,
+    isPage: boolean,
+    query: string,
+    ftsRank: number,
+    updatedAt: number,
+): Score {
+    const content = normalize(text);
     let tier: number;
 
     if (content === query) {
@@ -259,8 +233,8 @@ function score(node: NodeRow, query: string, ftsRank: number): Score {
         tier,
         distance: tier < 6 ? 0 : bestDistance(query, content),
         fts_rank: ftsRank,
-        modified_at: node.modified_at,
-        id: node.id,
+        updated_at: updatedAt,
+        id,
     };
 }
 
@@ -413,7 +387,7 @@ function compare(left: Score, right: Score): number {
     }
 
     return (
-        spaceship(right.modified_at, left.modified_at) ||
+        spaceship(right.updated_at, left.updated_at) ||
         spaceship(right.id, left.id)
     );
 }

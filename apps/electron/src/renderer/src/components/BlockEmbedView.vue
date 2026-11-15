@@ -11,14 +11,9 @@ import {
     changedDocuments,
     DOCUMENTS_CHANGED_EVENT,
 } from '@/sync/documentChanges';
-import type { Node } from '@/types/node';
+import type { BlockTree } from '@/types/node';
 
-type EmbedTarget = {
-    id: string;
-    content: string;
-    page_id: string;
-    children: Node[];
-};
+type EmbedTarget = BlockTree & { page_id: string };
 
 const props = defineProps<NodeViewProps>();
 const target = ref<EmbedTarget | null>(null);
@@ -39,7 +34,7 @@ async function loadTarget() {
     loading.value = true;
 
     try {
-        const response = await fetch(`/api/nodes/${targetId.value}/reference`, {
+        const response = await fetch(`/api/blocks/${targetId.value}`, {
             headers: { Accept: 'application/json' },
         });
 
@@ -111,7 +106,7 @@ onBeforeUnmount(() => {
             class="block-embed-source"
             @mousedown.prevent="openTarget"
         >
-            {{ target?.content || fallback }}
+            {{ target?.text || fallback }}
         </button>
         <EmbeddedBlockTree
             v-if="target?.children?.length"

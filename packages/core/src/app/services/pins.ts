@@ -1,197 +1,82 @@
-import { placeholders } from '../../db/database';
-import type { NodeChange } from '../../loro/nodeOps';
-import { abort } from '../../http/http';
 import type { AppContext } from '../context';
-import {
-    childrenOf,
-    findNode,
-    isPage,
-    isReachable,
-    isSystemNode,
-    SystemNodes,
-} from '../nodes';
-import type { NodeRow } from '../nodes';
+import { pagesInOrder } from '../pages';
+import type { Page } from '../pages';
 
-import {
-    activeAccountRoot,
-    containerChanges,
-    deleteChange,
-    entryFields,
-    entryId,
-    setChange,
-} from './accountRoots';
-import { positionAt } from './positions';
+import { pinsList, UserDocument } from './userDocument';
 
-/**
- * Pins live in the normal synced node graph: hidden workspace root ->
- * hidden account root -> pin entries whose content is the pinned page's id.
- */
-export class PinNodes {
-    static readonly ROOT_ID = SystemNodes.PINS_ROOT_ID;
-
+/** Pinned pages: the user document's `pins` list of page ids. */
+export class Pins {
     constructor(private ctx: AppContext) {}
 
-    listing(): { root_id: string; items: NodeRow[] } {
-        const db = this.ctx.db();
-        const rootId = this.activeRootId();
-        const entries = this.entries(rootId);
-        const ids = [
+    /** Pinned pages that exist, in order. */
+    listing(): Page[] {
+        return pagesInOrder(this.ctx.db(), this.ids());
+    }
+
+    isPinned(pageId: string): boolean {
+        return this.ids().includes(pageId);
+    }
+
+    add(pageId: string): void {
+        new UserDocument(this.ctx).edit((doc) => {
+            const list = pinsList(doc);
+
+            if (!(list.toArray() as string[]).includes(pageId)) {
+                list.push(pageId);
+            }
+        }, 'Pin page');
+    }
+
+    remove(pageId: string): void {
+        new UserDocument(this.ctx).edit((doc) => {
+            const list = pinsList(doc);
+
+            // Two devices may have pinned the same page
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (list.get(i) === pageId) {
+                    list.delete(i, 1);
+                }
+            }
+        }, 'Unpin page');
+    }
+
+    /**
+     * Puts the pins in the given order. Returns false when `pageIds` isn't
+     * exactly the pinned pages (the list changed meanwhile).
+     */
+    reorder(pageIds: string[]): boolean {
+        const current = this.listing().map((page) => page.id);
+
+        if (
+            pageIds.length !== current.length ||
+            pageIds.some((id) => !current.includes(id))
+        ) {
+            return false;
+        }
+
+        new UserDocument(this.ctx).edit((doc) => {
+            const list = pinsList(doc);
+
+            pageIds.forEach((pageId, target) => {
+                const from = (list.toArray() as string[]).indexOf(pageId);
+
+                if (from !== target) {
+                    list.move(from, target);
+                }
+            });
+        }, 'Reorder pins');
+
+        return true;
+    }
+
+    /** Unique pinned ids in order (pages that were deleted included). */
+    private ids(): string[] {
+        return [
             ...new Set(
-                entries.map((entry) => entry.content).filter((id) => id !== ''),
+                pinsList(
+                    new UserDocument(this.ctx).read(),
+                ).toArray() as string[],
             ),
         ];
-        const itemsById = new Map<string, NodeRow>();
-
-        if (ids.length > 0) {
-            for (const row of db.all<NodeRow>(
-                `SELECT * FROM nodes WHERE id IN (${placeholders(ids.length)}) AND deleted_at IS NULL`,
-                ids,
-            )) {
-                itemsById.set(row.id, row);
-            }
-        }
-
-        return {
-            root_id: rootId,
-            items: entries
-                .map((entry) => itemsById.get(entry.content))
-                .filter(
-                    (item): item is NodeRow =>
-                        item !== undefined &&
-                        isPage(item) &&
-                        isReachable(db, item) &&
-                        !isSystemNode(db, item),
-                ),
-        };
-    }
-
-    isPinned(nodeId: string): boolean {
-        return (
-            findNode(this.ctx.db(), entryId(this.activeRootId(), nodeId)) !==
-            null
-        );
-    }
-
-    add(node: NodeRow): void {
-        const db = this.ctx.db();
-
-        if (!(
-            isPage(node) &&
-            isReachable(db, node) &&
-            !isSystemNode(db, node)
-        )) {
-            abort(404);
-        }
-
-        db.transaction(() => {
-            const rootId = this.activeRootId();
-            const id = entryId(rootId, node.id);
-
-            if (findNode(db, id) !== null) {
-                return;
-            }
-
-            const entries = this.entries(rootId);
-            const changes: NodeChange[] = [
-                ...containerChanges(PinNodes.ROOT_ID, rootId),
-                ...entries.map((entry, index) =>
-                    setChange(entry.id, rootId, {
-                        position: positionAt(index),
-                    }),
-                ),
-                setChange(
-                    id,
-                    rootId,
-                    entryFields(rootId, positionAt(entries.length), node.id),
-                ),
-            ];
-
-            this.ctx.documents().applyChanges(changes, 'Pin page');
-        });
-    }
-
-    remove(nodeId: string): void {
-        const db = this.ctx.db();
-
-        db.transaction(() => {
-            const rootId = this.activeRootId();
-            const entry = findNode(db, entryId(rootId, nodeId));
-
-            if (entry === null) {
-                return;
-            }
-
-            this.ctx
-                .documents()
-                .applyChanges([deleteChange(entry.id, rootId)], 'Unpin page');
-        });
-    }
-
-    reorder(nodeIds: string[]): boolean {
-        return this.ctx.db().transaction(() => {
-            const rootId = this.activeRootId();
-            const entriesByNode = new Map(
-                this.entries(rootId).map((entry) => [entry.content, entry]),
-            );
-
-            if (
-                nodeIds.length !== entriesByNode.size ||
-                nodeIds.some((nodeId) => !entriesByNode.has(nodeId))
-            ) {
-                return false;
-            }
-
-            this.ctx.documents().applyChanges(
-                nodeIds.map((nodeId, index) =>
-                    setChange(entriesByNode.get(nodeId)!.id, rootId, {
-                        position: positionAt(index),
-                    }),
-                ),
-                'Reorder pins',
-            );
-
-            return true;
-        });
-    }
-
-    activeRootId(): string {
-        return activeAccountRoot(
-            this.ctx.db(),
-            PinNodes.ROOT_ID,
-            (localRootId, cloudRootId) =>
-                this.adoptAccountRoot(localRootId, cloudRootId),
-        );
-    }
-
-    private adoptAccountRoot(localRootId: string, cloudRootId: string): void {
-        if (findNode(this.ctx.db(), localRootId) === null) {
-            return;
-        }
-
-        const cloudEntries = new Set(
-            this.entries(cloudRootId).map((entry) => entry.content),
-        );
-        const changes = containerChanges(PinNodes.ROOT_ID, cloudRootId);
-
-        for (const entry of this.entries(localRootId)) {
-            if (!cloudEntries.has(entry.content)) {
-                changes.push(
-                    setChange(
-                        entryId(cloudRootId, entry.content),
-                        cloudRootId,
-                        entryFields(cloudRootId, entry.position, entry.content),
-                    ),
-                );
-            }
-
-            changes.push(deleteChange(entry.id, localRootId));
-        }
-
-        changes.push(deleteChange(localRootId, PinNodes.ROOT_ID));
-        this.ctx.documents().applyChanges(changes, 'Adopt pins');
-    }
-
-    private entries(rootId: string): NodeRow[] {
-        return childrenOf(this.ctx.db(), rootId);
     }
 }

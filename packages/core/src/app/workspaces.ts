@@ -1,5 +1,5 @@
 import type { Database } from '../db/database';
-import { migrate } from '../db/schema';
+import { openWorkspaceDatabase } from '../db/schema';
 import { DocumentService } from '../documents/service';
 import { isUuid, uuidv7 } from '../support/ids';
 
@@ -43,6 +43,8 @@ export type Workspace = {
     storagePath: string;
     /** Set when the database file was missing and an empty one was created. */
     recoveredMissingDatabase: boolean;
+    /** Where a database from an older schema was moved, when it was. */
+    previousDatabase: string | null;
 };
 
 const VERSION = 3;
@@ -87,7 +89,7 @@ export class Workspaces {
         return workspace;
     }
 
-    /** The active workspace, opened (and migrated) on first use. */
+    /** The active workspace, opened on first use. */
     active(): Workspace {
         const state = this.read();
 
@@ -350,8 +352,11 @@ export class Workspaces {
         files.mkdir(files.dirname(databasePath));
         files.mkdir(this.storagePath(record));
 
-        const db = this.openDatabase(databasePath);
-        migrate(db);
+        const { db, setAside } = openWorkspaceDatabase(
+            this.openDatabase,
+            files,
+            databasePath,
+        );
         const documents = new DocumentService(db);
 
         return {
@@ -363,6 +368,7 @@ export class Workspaces {
             databasePath,
             storagePath: this.storagePath(record),
             recoveredMissingDatabase: recovered,
+            previousDatabase: setAside,
         };
     }
 
@@ -380,13 +386,7 @@ export class Workspaces {
         const files = this.host.files;
         const path = this.databasePath(record);
         files.mkdir(files.dirname(path));
-        const db = this.openDatabase(path);
-
-        try {
-            migrate(db);
-        } finally {
-            db.close();
-        }
+        openWorkspaceDatabase(this.openDatabase, files, path).db.close();
 
         return record;
     }

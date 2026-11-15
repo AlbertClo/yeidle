@@ -128,7 +128,7 @@ export class DocumentSession {
         }
 
         const data = (await response.json()) as {
-            updates: { seq: number; client_id: string; bytes: string }[];
+            updates: { seq: number; origin: string; bytes: string }[];
             seq: number;
         };
 
@@ -136,7 +136,7 @@ export class DocumentSession {
             const before = this.doc.oplogVersion();
             const hadUnsent = this.hasUnsentChanges();
             const foreign = data.updates.filter(
-                (update) => update.client_id !== clientId,
+                (update) => update.origin !== clientId,
             );
 
             if (foreign.length > 0) {
@@ -197,7 +197,7 @@ export class DocumentSession {
                     updates: [
                         {
                             update_id: uuidv7(),
-                            client_id: clientId,
+                            origin: clientId,
                             bytes: toBase64(bytes),
                         },
                     ],

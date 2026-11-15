@@ -1,10 +1,9 @@
 import type { Database } from '../db/database';
 import { uuidv7 } from '../support/ids';
-import { sqlTimestamp } from '../support/time';
 
 /**
  * Storage for Loro documents: a compacted snapshot per document plus the
- * append-only update log. The update's local sequence is its row id;
+ * append-only update log. Each update has a local sequence (seq);
  * cloud_seq marks updates the cloud already has (NULL = cloud outbox).
  */
 
@@ -17,7 +16,7 @@ export type StoredDocument = {
 
 export type StoredUpdate = {
     seq: number;
-    client_id: string;
+    origin: string;
     bytes: Uint8Array;
 };
 
@@ -26,10 +25,9 @@ export class DocumentStore {
 
     /** Creates the document row if it doesn't exist yet. */
     ensure(documentId: string): void {
-        this.db.run(
-            'INSERT OR IGNORE INTO documents (id, snapshot_seq, updated_at) VALUES (?, 0, ?)',
-            [documentId, sqlTimestamp()],
-        );
+        this.db.run('INSERT OR IGNORE INTO documents (id) VALUES (?)', [
+            documentId,
+        ]);
     }
 
     exists(documentId: string): boolean {
@@ -40,6 +38,13 @@ export class DocumentStore {
         );
     }
 
+    /** Every stored document id. */
+    ids(): string[] {
+        return this.db
+            .all<{ id: string }>('SELECT id FROM documents ORDER BY id')
+            .map((row) => row.id);
+    }
+
     load(documentId: string): StoredDocument {
         const document = this.db.get<{
             snapshot: Uint8Array | null;
@@ -48,8 +53,8 @@ export class DocumentStore {
             documentId,
         ]);
         const snapshotSeq = document?.snapshot_seq ?? 0;
-        const updates = this.db.all<{ id: number; bytes: Uint8Array }>(
-            'SELECT id, bytes FROM document_updates WHERE document_id = ? AND id > ? ORDER BY id',
+        const updates = this.db.all<{ bytes: Uint8Array }>(
+            'SELECT bytes FROM document_updates WHERE document_id = ? AND seq > ? ORDER BY seq',
             [documentId, snapshotSeq],
         );
 
@@ -67,7 +72,7 @@ export class DocumentStore {
     latestSeq(documentId: string): number {
         return (
             this.db.get<{ seq: number | null }>(
-                'SELECT MAX(id) AS seq FROM document_updates WHERE document_id = ?',
+                'SELECT MAX(seq) AS seq FROM document_updates WHERE document_id = ?',
                 [documentId],
             )?.seq ?? 0
         );
@@ -85,21 +90,21 @@ export class DocumentStore {
     append(
         documentId: string,
         bytes: Uint8Array,
-        clientId: string,
+        origin: string,
         updateId: string = uuidv7(),
         cloudSeq: number | null = null,
     ): number {
         return this.db.run(
-            `INSERT INTO document_updates (document_id, update_id, client_id, bytes, cloud_seq, created_at)
+            `INSERT INTO document_updates (document_id, update_id, origin, bytes, cloud_seq, created_at)
              VALUES (?, ?, ?, ?, ?, ?)`,
-            [documentId, updateId, clientId, bytes, cloudSeq, sqlTimestamp()],
+            [documentId, updateId, origin, bytes, cloudSeq, Date.now()],
         ).lastInsertRowid;
     }
 
     saveSnapshot(documentId: string, snapshot: Uint8Array, seq: number): void {
         this.db.run(
-            'UPDATE documents SET snapshot = ?, snapshot_seq = ?, updated_at = ? WHERE id = ?',
-            [snapshot, seq, sqlTimestamp(), documentId],
+            'UPDATE documents SET snapshot = ?, snapshot_seq = ? WHERE id = ?',
+            [snapshot, seq, documentId],
         );
     }
 
@@ -108,23 +113,17 @@ export class DocumentStore {
         return (
             this.db.get<{ count: number }>(
                 `SELECT COUNT(*) AS count FROM document_updates
-                 WHERE document_id = ? AND id > (SELECT snapshot_seq FROM documents WHERE id = ?)`,
+                 WHERE document_id = ? AND seq > (SELECT snapshot_seq FROM documents WHERE id = ?)`,
                 [documentId, documentId],
             )?.count ?? 0
         );
     }
 
     updatesSince(documentId: string, since: number): StoredUpdate[] {
-        return this.db
-            .all<{ id: number; client_id: string; bytes: Uint8Array }>(
-                'SELECT id, client_id, bytes FROM document_updates WHERE document_id = ? AND id > ? ORDER BY id',
-                [documentId, since],
-            )
-            .map((row) => ({
-                seq: row.id,
-                client_id: row.client_id,
-                bytes: row.bytes,
-            }));
+        return this.db.all<StoredUpdate>(
+            'SELECT seq, origin, bytes FROM document_updates WHERE document_id = ? AND seq > ? ORDER BY seq',
+            [documentId, since],
+        );
     }
 
     /** Which documents changed after a local sequence. */
@@ -133,12 +132,12 @@ export class DocumentStore {
         seq: number;
     } {
         const rows = this.db.all<{ document_id: string; seq: number }>(
-            'SELECT document_id, MAX(id) AS seq FROM document_updates WHERE id > ? GROUP BY document_id',
+            'SELECT document_id, MAX(seq) AS seq FROM document_updates WHERE seq > ? GROUP BY document_id',
             [since],
         );
         const latest =
             this.db.get<{ seq: number | null }>(
-                'SELECT MAX(id) AS seq FROM document_updates',
+                'SELECT MAX(seq) AS seq FROM document_updates',
             )?.seq ?? 0;
 
         return {

@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import type { Node } from '@/types/node';
+import type { BlockTree } from '@/types/node';
 
 defineOptions({ name: 'EmbeddedBlockTree' });
 
 defineProps<{
-    nodes: Node[];
+    nodes: BlockTree[];
 }>();
 </script>
 
 <template>
     <ul v-if="nodes.length > 0" class="embedded-block-tree">
         <li v-for="node in nodes" :key="node.id">
-            <span>{{ node.content }}</span>
+            <span>{{ node.text }}</span>
             <EmbeddedBlockTree
                 v-if="node.children?.length"
                 :nodes="node.children"

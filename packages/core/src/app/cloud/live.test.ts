@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { createPage, outline, setBlocks } from '../../documents/testing';
+import { addMedia, MEDIA_DOCUMENT_ID } from '../../loro/projection';
 import { uuidv7 } from '../../support/ids';
 import { registerCloudRoutes } from '../controllers/cloud';
 import { registerWorkspaceRoutes } from '../controllers/workspaces';
@@ -54,23 +56,11 @@ async function signedInDevice(userId: string) {
     return { ctx, router };
 }
 
-function setNode(
-    ctx: ReturnType<typeof testContext>,
-    id: string,
-    pageId: string,
-    fields: Record<string, unknown>,
-) {
-    ctx.documents().applyChanges([
-        { type: 'node.set', payload: { id, page_id: pageId, fields } },
-    ]);
-}
-
-const tree = (ctx: ReturnType<typeof testContext>) =>
-    ctx
-        .db()
-        .all(
-            'SELECT id, parent_id, position, content FROM nodes WHERE deleted_at IS NULL ORDER BY id',
-        );
+/** The read model's pages and blocks, comparable across devices. */
+const tree = (ctx: ReturnType<typeof testContext>) => ({
+    pages: ctx.db().all('SELECT id, title FROM pages ORDER BY id'),
+    blocks: ctx.db().all('SELECT id, page_id, text FROM blocks ORDER BY id'),
+});
 
 describe.skipIf(!url || !token)('live cloud sync', () => {
     it('pairs two devices and converges edits in both directions', async () => {
@@ -88,17 +78,9 @@ describe.skipIf(!url || !token)('live cloud sync', () => {
         const a = await signedInDevice(userId);
         const workspace = a.ctx.workspaces.create(`Live sync ${Date.now()}`);
         a.ctx.workspaces.activate(workspace.id);
-        const pageId = uuidv7();
         const blockId = uuidv7();
-        setNode(a.ctx, pageId, pageId, {
-            parent_id: null,
-            position: 'a0',
-            content: 'Live sync page',
-        });
-        setNode(a.ctx, blockId, pageId, {
-            parent_id: pageId,
-            position: 'a0',
-            content: 'written on A',
+        const pageId = createPage(a.ctx.documents(), 'Live sync page', {
+            blocks: [{ id: blockId, text: 'written on A' }],
         });
 
         try {
@@ -140,21 +122,23 @@ describe.skipIf(!url || !token)('live cloud sync', () => {
             expect(tree(b.ctx)).toEqual(tree(a.ctx));
 
             // Concurrent edits on both devices
-            setNode(a.ctx, blockId, pageId, { content: 'edited on A' });
-            setNode(b.ctx, uuidv7(), pageId, {
-                parent_id: pageId,
-                position: 'a1',
-                content: 'added on B',
-            });
+            setBlocks(a.ctx.documents(), pageId, [
+                { id: blockId, text: 'edited on A' },
+            ]);
+            setBlocks(b.ctx.documents(), pageId, [
+                { id: blockId, text: 'written on A' },
+                { text: 'added on B' },
+            ]);
 
             await cloudFor(a.ctx).sync().exchange();
             await cloudFor(b.ctx).sync().exchange();
             await cloudFor(a.ctx).sync().exchange();
 
             expect(tree(a.ctx)).toEqual(tree(b.ctx));
-            expect(tree(a.ctx).map((row) => row.content)).toEqual(
-                expect.arrayContaining(['edited on A', 'added on B']),
-            );
+            expect(outline(a.ctx.documents(), pageId)).toEqual([
+                'edited on A',
+                'added on B',
+            ]);
             expect(
                 (await call(a.router, 'GET', '/api/cloud/status')).json,
             ).toMatchObject({ health: 'healthy', outbox: 0 });
@@ -169,18 +153,16 @@ describe.skipIf(!url || !token)('live cloud sync', () => {
                 a.ctx.host.files.join(media(a.ctx), hash),
                 bytes,
             );
-            a.ctx.documents().applyChanges([
-                {
-                    type: 'media.create',
-                    payload: {
-                        id: uuidv7(),
-                        hash,
-                        original_name: 'live.txt',
-                        mime_type: 'text/plain',
-                        size: bytes.length,
-                    },
-                },
-            ]);
+            a.ctx.documents().edit(MEDIA_DOCUMENT_ID, (doc) =>
+                addMedia(doc, {
+                    id: uuidv7(),
+                    hash,
+                    original_name: 'live.txt',
+                    mime_type: 'text/plain',
+                    size: bytes.length,
+                    created_at: null,
+                }),
+            );
             await cloudFor(a.ctx).sync().exchange();
             expect(await cloudFor(a.ctx).blobs().uploadPending()).toBe(1);
 

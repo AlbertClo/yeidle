@@ -1,18 +1,8 @@
 import type { LoroDoc } from 'loro-crdt';
 
 import type { Database } from '../db/database';
-import { applyNodeChanges } from '../loro/nodeOps';
-import type { NodeChange } from '../loro/nodeOps';
-import { applyBlocks, createDoc } from '../loro/pageDoc';
-import type { Block } from '../loro/pageDoc';
-import { updatePageMeta } from '../loro/pageMeta';
-import type { PageMeta } from '../loro/pageMeta';
-import {
-    addMedia,
-    MEDIA_DOCUMENT_ID,
-    projectDocument,
-} from '../loro/projection';
-import type { MediaRow } from '../loro/projection';
+import { createDoc } from '../loro/pageDoc';
+import { MEDIA_DOCUMENT_ID, projectDocument } from '../loro/projection';
 import { uuidv7 } from '../support/ids';
 
 import { Projector } from './projector';
@@ -20,26 +10,16 @@ import { DocumentStore } from './store';
 
 export { MEDIA_DOCUMENT_ID };
 
-/** One PHP-style change: `node.set`/`node.delete`, or `media.create`. */
-export type Change =
-    | NodeChange
-    | {
-          type: 'media.create';
-          payload: Omit<MediaRow, 'created_at'> & {
-              created_at?: string | null;
-          };
-      };
-
-export type DocumentAction = {
+/** A change to one document, made by the app itself (not an editor). */
+export type DocumentEdit = {
     document_id: string;
-    changes?: NodeChange[];
-    replace?: { page: Partial<PageMeta>; blocks: Block[] };
-    media?: MediaRow[];
+    /** Changes the document; the service commits. */
+    edit: (doc: LoroDoc) => void;
 };
 
 export type IncomingUpdate = {
     update_id: string;
-    client_id: string;
+    origin: string;
     bytes: Uint8Array;
     cloud_seq?: number | null;
 };
@@ -100,7 +80,7 @@ export class DocumentService {
                 this.store.append(
                     documentId,
                     update.bytes,
-                    update.client_id,
+                    update.origin,
                     update.update_id,
                     update.cloud_seq ?? null,
                 );
@@ -114,15 +94,26 @@ export class DocumentService {
         return this.store.latestSeq(documentId);
     }
 
-    /** Applies changes that originate in the app itself (not an editor). */
-    apply(actions: DocumentAction[], message = '', clientId = 'app'): string[] {
-        if (actions.length === 0) {
+    /** Changes one document. Returns whether it changed. */
+    edit(
+        documentId: string,
+        edit: (doc: LoroDoc) => void,
+        message = '',
+        origin = 'app',
+    ): boolean {
+        return (
+            this.editMany([{ document_id: documentId, edit }], message, origin)
+                .length > 0
+        );
+    }
+
+    /** Changes several documents in one transaction. Returns those that changed. */
+    editMany(edits: DocumentEdit[], message = '', origin = 'app'): string[] {
+        if (edits.length === 0) {
             return [];
         }
 
-        const documentIds = [
-            ...new Set(actions.map((action) => action.document_id)),
-        ];
+        const documentIds = [...new Set(edits.map((e) => e.document_id))];
 
         return this.write(documentIds, () => {
             const changed: string[] = [];
@@ -131,20 +122,9 @@ export class DocumentService {
                 const doc = this.doc(documentId);
                 const before = doc.oplogVersion();
 
-                for (const action of actions.filter(
-                    (a) => a.document_id === documentId,
-                )) {
-                    if (action.replace) {
-                        updatePageMeta(doc, action.replace.page);
-                        applyBlocks(doc, action.replace.blocks);
-                    }
-
-                    if (action.changes) {
-                        applyNodeChanges(doc, documentId, action.changes);
-                    }
-
-                    for (const media of action.media ?? []) {
-                        addMedia(doc, media);
+                for (const edit of edits) {
+                    if (edit.document_id === documentId) {
+                        edit.edit(doc);
                     }
                 }
 
@@ -162,7 +142,7 @@ export class DocumentService {
                 this.store.append(
                     documentId,
                     doc.export({ mode: 'update', from: before }),
-                    `${clientId}-${uuidv7()}`,
+                    `${origin}-${uuidv7()}`,
                 );
                 this.afterChange(documentId, doc);
                 changed.push(documentId);
@@ -173,60 +153,20 @@ export class DocumentService {
     }
 
     /**
-     * Applies changes in the op shape (`type` + payload with `id`, `page_id`,
-     * `fields`). They are grouped per document; a node's document is its
-     * top-level ancestor, so page_id is only a hint.
+     * Rebuilds the whole read model from the stored documents: a repair
+     * tool, and how read-model changes will ship after launch.
      */
-    applyChanges(changes: Change[], message = '', clientId = 'app'): string[] {
-        const actions = new Map<string, DocumentAction>();
-        const rootOf = this.rootResolver(changes);
+    rebuildReadModel(): void {
+        this.db.transaction(() => {
+            this.projector.clear();
 
-        for (const change of changes) {
-            if (change.type === 'media.create') {
-                const action = actions.get(MEDIA_DOCUMENT_ID) ?? {
-                    document_id: MEDIA_DOCUMENT_ID,
-                    media: [],
-                };
-                action.media!.push({
-                    ...change.payload,
-                    created_at:
-                        change.payload.created_at ?? new Date().toISOString(),
-                });
-                actions.set(MEDIA_DOCUMENT_ID, action);
-
-                continue;
-            }
-
-            const documentId = rootOf(
-                change.payload.id,
-                change.payload.page_id ?? null,
-            );
-            const action = actions.get(documentId) ?? {
-                document_id: documentId,
-                changes: [],
-            };
-            action.changes!.push({
-                ...change,
-                payload: { ...change.payload, page_id: documentId },
-            } as NodeChange);
-            actions.set(documentId, action);
-        }
-
-        return this.apply([...actions.values()], message, clientId);
-    }
-
-    /** Re-projects documents from their stored state. */
-    refresh(documentIds: string[]): void {
-        this.write(documentIds, () => {
-            for (const documentId of documentIds) {
+            for (const documentId of this.store.ids()) {
                 this.cache.delete(documentId);
                 this.projector.write(
                     documentId,
                     projectDocument(this.doc(documentId), documentId),
                 );
             }
-
-            return documentIds;
         });
     }
 
@@ -294,82 +234,5 @@ export class DocumentService {
         }
 
         return doc;
-    }
-
-    private rootResolver(
-        changes: Change[],
-    ): (id: string, hint: string | null) => string {
-        const batchParents = new Map<string, unknown>();
-
-        for (const change of changes) {
-            if (
-                change.type === 'node.set' &&
-                'parent_id' in change.payload.fields
-            ) {
-                batchParents.set(
-                    change.payload.id,
-                    change.payload.fields.parent_id,
-                );
-            }
-        }
-
-        const cache = new Map<string, string>();
-
-        return (id, hint) => {
-            const cached = cache.get(id);
-
-            if (cached) {
-                return cached;
-            }
-
-            const seen = new Set<string>();
-            let current = id;
-            let result: string | null = null;
-
-            while (result === null) {
-                if (seen.has(current)) {
-                    result = hint ?? id;
-                    break;
-                }
-
-                seen.add(current);
-                let parent: unknown;
-
-                if (batchParents.has(current)) {
-                    parent = batchParents.get(current);
-                } else {
-                    const row = this.db.get<{
-                        parent_id: string | null;
-                        document_id: string | null;
-                    }>(
-                        'SELECT parent_id, document_id FROM nodes WHERE id = ?',
-                        [current],
-                    );
-
-                    if (row === undefined) {
-                        result = current === id ? (hint ?? id) : current;
-                        break;
-                    }
-
-                    if (row.document_id !== null) {
-                        result = row.document_id;
-                        break;
-                    }
-
-                    parent = row.parent_id;
-                }
-
-                if (typeof parent !== 'string') {
-                    result = current;
-                    break;
-                }
-
-                current = parent;
-            }
-
-            cache.set(id, result);
-
-            return result;
-        };
     }
 }

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import type { Host } from '../host';
+
 import type { CloudFetch } from './http';
 
 /** Test doubles for Yeidle Cloud: the update relay and blob storage. */
@@ -7,6 +9,28 @@ import type { CloudFetch } from './http';
 export const WORKSPACE = '00000000-0000-7000-8000-000000000001';
 export const CLOUD = 'http://cloud.test';
 const STORAGE = 'http://storage.test';
+
+/** Writes a signed-in account file, as finishing the device sign-in does. */
+export function signInDevice(
+    ctx: { host: Host },
+    userId = '1',
+    url = CLOUD,
+): void {
+    ctx.host.files.writeFile(
+        ctx.host.files.join(ctx.host.dataDirectory, 'cloud-account.json'),
+        JSON.stringify({
+            version: 1,
+            pending: null,
+            account: {
+                cloud_url: url,
+                token: 'token',
+                user: { id: userId, name: 'Albert' },
+                workspaces: [],
+                preferences: { key_bindings: {} },
+            },
+        }),
+    );
+}
 
 /** An in-memory stand-in for the Laravel relay (same request/response shapes). */
 export function fakeRelay() {

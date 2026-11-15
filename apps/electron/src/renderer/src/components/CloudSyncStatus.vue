@@ -120,15 +120,6 @@ const appearance = computed(() => {
         };
     }
 
-    if (status.value.health === 'seeding') {
-        return {
-            label: 'Preparing cloud workspace',
-            detail: 'Uploading the existing local workspace.',
-            icon: RefreshCw,
-            color: 'text-muted-foreground',
-        };
-    }
-
     if (!online.value) {
         return {
             label: 'Offline',

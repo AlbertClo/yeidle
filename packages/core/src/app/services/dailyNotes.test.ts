@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { findNode } from '../nodes';
+import { deletePage } from '../../documents/testing';
 import { uuidv7 } from '../../support/ids';
+import { findPage } from '../pages';
 import { testContext } from '../testing';
 
 import {
@@ -28,12 +29,14 @@ describe('DailyNoteService', () => {
 
         expect(first.id).toBe(dailyNotePageId(workspaceId, '2026-08-30'));
         expect(second.id).toBe(first.id);
-        expect(first.content).toBe('August 30, 2026');
-        expect(first.page_type).toBe('daily_note');
-        expect(first.daily_note_date).toBe('2026-08-30');
-        expect(first.created_at?.slice(0, 10)).toBe('2026-08-30');
+        expect(first).toMatchObject({
+            title: 'August 30, 2026',
+            kind: 'daily',
+            daily_date: '2026-08-30',
+            created_at: Date.parse('2026-08-30T00:00:00Z'),
+        });
         expect(
-            ctx.db().get<{ n: number }>('SELECT COUNT(*) AS n FROM nodes')!.n,
+            ctx.db().get<{ n: number }>('SELECT COUNT(*) AS n FROM pages')!.n,
         ).toBe(1);
         expect(
             ctx
@@ -54,17 +57,14 @@ describe('DailyNoteService', () => {
         const workspaceId = uuidv7();
         const service = new DailyNoteService(ctx);
         const page = service.open(workspaceId, '2026-08-30');
-        ctx.documents().applyChanges([
-            { type: 'node.delete', payload: { id: page.id, page_id: page.id } },
-        ]);
-        expect(
-            findNode(ctx.db(), page.id, { withTrashed: true })!.deleted_at,
-        ).not.toBeNull();
+        deletePage(ctx.documents(), page.id);
+        expect(findPage(ctx.db(), page.id)).toBeNull();
 
         const restored = service.open(workspaceId, '2026-08-30');
 
         expect(restored.id).toBe(page.id);
-        expect(restored.deleted_at).toBeNull();
+        expect(restored.kind).toBe('daily');
+        expect(findPage(ctx.db(), page.id)).toEqual(restored);
     });
 
     it('formats titles like PHP F j, Y', () => {

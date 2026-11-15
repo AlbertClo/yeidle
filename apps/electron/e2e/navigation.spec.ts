@@ -78,14 +78,14 @@ test('arrowing through All Pages scrolls one row at a time', async ({
     // Enough pages to overflow the window
     await page.evaluate(async () => {
         for (let i = 0; i < 60; i++) {
-            await fetch('/api/nodes', {
+            await fetch('/api/pages', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
                 },
                 body: JSON.stringify({
-                    content: `Page ${String(i).padStart(2, '0')}`,
+                    title: `Page ${String(i).padStart(2, '0')}`,
                 }),
             });
         }

@@ -1,12 +1,15 @@
-import { invalid } from '../../http/http';
 import { placeholders } from '../../db/database';
-import { parseTimestamp, sqlTimestamp } from '../../support/time';
+import { invalid } from '../../http/http';
+import { parseTimestamp } from '../../support/time';
 import { cloudProfileKey } from '../cloud/profile';
 import type { AppContext } from '../context';
+import { pagesInOrder } from '../pages';
+import type { Page } from '../pages';
 
 /**
- * The back/forward tree of visited locations, per profile. Local UI state:
+ * The back/forward tree of visited locations, per user. Device state:
  * written straight to the workspace database, outside the documents.
+ * Timestamps are unix ms in the database and ISO 8601 in the API.
  */
 
 export const MAX_NAVIGATION_LOCATIONS = 500;
@@ -47,33 +50,47 @@ type LocationRow = {
     cursor_offset: number | null;
     selection_type: string | null;
     scroll_top: number;
-    visited_at: string;
-    last_visited_at: string;
+    visited_at: number;
+    last_visited_at: number;
     page_title?: string | null;
     node_text?: string | null;
 };
 
-/** History belongs to the signed-in cloud user (`cloud:<id>`), else `local`. */
-export function navigationProfileKey(ctx: AppContext): string {
-    return cloudProfileKey(ctx);
-}
-
 export class NavigationHistoryStore {
     constructor(
         private ctx: AppContext,
-        private profileKey: () => string = () => navigationProfileKey(ctx),
+        /** History belongs to the signed-in cloud user (`cloud:<id>`), else `local`. */
+        private profileKey: () => string = () => cloudProfileKey(ctx),
     ) {}
+
+    /** Pages visited most recently, newest first. */
+    recentPages(limit: number): Page[] {
+        const ids = this.ctx
+            .db()
+            .all<{ page_id: string }>(
+                `SELECT page_id FROM navigation_locations
+                 WHERE user_key = ? AND page_id IS NOT NULL
+                 GROUP BY page_id
+                 ORDER BY MAX(last_visited_at) DESC
+                 LIMIT ?`,
+                // Some may have been deleted since
+                [this.profileKey(), limit * 2],
+            )
+            .map((row) => row.page_id);
+
+        return pagesInOrder(this.ctx.db(), ids).slice(0, limit);
+    }
 
     get(): { locations: NavigationLocation[]; current_id: string | null } {
         const db = this.ctx.db();
         const profileKey = this.profileKey();
         const locations = db
             .all<LocationRow>(
-                `SELECT navigation_locations.*, page_nodes.content AS page_title, block_nodes.content AS node_text
+                `SELECT navigation_locations.*, pages.title AS page_title, blocks.text AS node_text
                  FROM navigation_locations
-                 LEFT JOIN nodes AS page_nodes ON navigation_locations.page_id = page_nodes.id
-                 LEFT JOIN nodes AS block_nodes ON navigation_locations.block_id = block_nodes.id
-                 WHERE navigation_locations.profile_key = ?
+                 LEFT JOIN pages ON navigation_locations.page_id = pages.id
+                 LEFT JOIN blocks ON navigation_locations.block_id = blocks.id
+                 WHERE navigation_locations.user_key = ?
                  ORDER BY navigation_locations.visited_at`,
                 [profileKey],
             )
@@ -100,7 +117,7 @@ export class NavigationHistoryStore {
         if (
             parentId !== null &&
             db.get(
-                'SELECT 1 FROM navigation_locations WHERE id = ? AND profile_key = ?',
+                'SELECT 1 FROM navigation_locations WHERE id = ? AND user_key = ?',
                 [parentId, profileKey],
             ) === undefined
         ) {
@@ -110,7 +127,6 @@ export class NavigationHistoryStore {
             );
         }
 
-        const now = sqlTimestamp();
         const row: LocationRow = {
             id,
             parent_id: parentId,
@@ -127,9 +143,9 @@ export class NavigationHistoryStore {
         db.transaction(() => {
             db.run(
                 `INSERT INTO navigation_locations
-                    (id, profile_key, parent_id, url, page_id, block_id, cursor_offset, selection_type,
-                     scroll_top, visited_at, last_visited_at, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, user_key, parent_id, url, page_id, block_id, cursor_offset, selection_type,
+                     scroll_top, visited_at, last_visited_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT (id) DO UPDATE SET
                     parent_id = excluded.parent_id,
                     url = excluded.url,
@@ -138,8 +154,7 @@ export class NavigationHistoryStore {
                     cursor_offset = excluded.cursor_offset,
                     selection_type = excluded.selection_type,
                     scroll_top = excluded.scroll_top,
-                    last_visited_at = excluded.last_visited_at,
-                    updated_at = excluded.updated_at`,
+                    last_visited_at = excluded.last_visited_at`,
                 [
                     row.id,
                     profileKey,
@@ -152,13 +167,11 @@ export class NavigationHistoryStore {
                     row.scroll_top,
                     row.visited_at,
                     row.last_visited_at,
-                    now,
-                    now,
                 ],
             );
 
             if (makeCurrent) {
-                this.writeCurrent(profileKey, id, now);
+                this.writeCurrent(profileKey, id);
             }
         });
 
@@ -173,21 +186,19 @@ export class NavigationHistoryStore {
 
         if (
             db.get(
-                'SELECT 1 FROM navigation_locations WHERE id = ? AND profile_key = ?',
+                'SELECT 1 FROM navigation_locations WHERE id = ? AND user_key = ?',
                 [id, profileKey],
             ) === undefined
         ) {
             invalid('id', 'The navigation location does not exist.');
         }
 
-        const now = sqlTimestamp();
-
         db.transaction(() => {
             db.run(
-                'UPDATE navigation_locations SET last_visited_at = ?, updated_at = ? WHERE id = ? AND profile_key = ?',
-                [now, now, id, profileKey],
+                'UPDATE navigation_locations SET last_visited_at = ? WHERE id = ? AND user_key = ?',
+                [Date.now(), id, profileKey],
             );
-            this.writeCurrent(profileKey, id, now);
+            this.writeCurrent(profileKey, id);
         });
     }
 
@@ -196,38 +207,30 @@ export class NavigationHistoryStore {
         const profileKey = this.profileKey();
 
         db.transaction(() => {
-            db.run(
-                'DELETE FROM navigation_history_states WHERE profile_key = ?',
-                [profileKey],
-            );
-            db.run('DELETE FROM navigation_locations WHERE profile_key = ?', [
+            db.run('DELETE FROM navigation_current WHERE user_key = ?', [
+                profileKey,
+            ]);
+            db.run('DELETE FROM navigation_locations WHERE user_key = ?', [
                 profileKey,
             ]);
         });
     }
 
     private currentId(profileKey: string): string | null {
-        const state = this.ctx
-            .db()
-            .get<{
-                current_location_id: string | null;
-            }>('SELECT current_location_id FROM navigation_history_states WHERE profile_key = ?', [profileKey]);
+        const state = this.ctx.db().get<{
+            location_id: string | null;
+        }>('SELECT location_id FROM navigation_current WHERE user_key = ?', [profileKey]);
 
-        return typeof state?.current_location_id === 'string'
-            ? state.current_location_id
+        return typeof state?.location_id === 'string'
+            ? state.location_id
             : null;
     }
 
-    /** Matches Laravel's updateOrInsert: created_at is rewritten on update too. */
-    private writeCurrent(profileKey: string, id: string, now: string): void {
+    private writeCurrent(profileKey: string, id: string): void {
         this.ctx.db().run(
-            `INSERT INTO navigation_history_states (profile_key, current_location_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT (profile_key) DO UPDATE SET
-                current_location_id = excluded.current_location_id,
-                created_at = excluded.created_at,
-                updated_at = excluded.updated_at`,
-            [profileKey, id, now, now],
+            `INSERT INTO navigation_current (user_key, location_id) VALUES (?, ?)
+             ON CONFLICT (user_key) DO UPDATE SET location_id = excluded.location_id`,
+            [profileKey, id],
         );
     }
 
@@ -237,9 +240,9 @@ export class NavigationHistoryStore {
         const locations = db.all<{
             id: string;
             parent_id: string | null;
-            last_visited_at: string;
+            last_visited_at: number;
         }>(
-            'SELECT id, parent_id, last_visited_at FROM navigation_locations WHERE profile_key = ?',
+            'SELECT id, parent_id, last_visited_at FROM navigation_locations WHERE user_key = ?',
             [profileKey],
         );
 
@@ -300,28 +303,21 @@ export class NavigationHistoryStore {
         for (let i = 0; i < remove.length; i += 500) {
             const batch = remove.slice(i, i + 500);
             db.run(
-                `DELETE FROM navigation_locations WHERE profile_key = ? AND id IN (${placeholders(batch.length)})`,
+                `DELETE FROM navigation_locations WHERE user_key = ? AND id IN (${placeholders(batch.length)})`,
                 [profileKey, ...batch],
             );
         }
     }
 }
 
-function storedTimestamp(value: string): string {
+function storedTimestamp(value: string): number {
     const date = parseTimestamp(value);
 
     if (date === null) {
         throw new Error(`Invalid timestamp [${value}].`);
     }
 
-    return sqlTimestamp(date);
-}
-
-/** Carbon's toIso8601String in UTC: `2026-08-30T01:00:00+00:00`. */
-function iso8601(value: string): string {
-    const date = parseTimestamp(value);
-
-    return date === null ? value : `${date.toISOString().slice(0, 19)}+00:00`;
+    return date.getTime();
 }
 
 function serialize(location: LocationRow): NavigationLocation {
@@ -337,8 +333,8 @@ function serialize(location: LocationRow): NavigationLocation {
                 : Number(location.cursor_offset),
         selection_type: location.selection_type ?? null,
         scroll_top: Number(location.scroll_top),
-        visited_at: iso8601(location.visited_at),
-        last_visited_at: iso8601(location.last_visited_at),
+        visited_at: new Date(location.visited_at).toISOString(),
+        last_visited_at: new Date(location.last_visited_at).toISOString(),
         page_title: location.page_title ?? null,
         node_text: location.node_text ?? null,
     };
