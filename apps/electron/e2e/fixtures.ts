@@ -63,7 +63,10 @@ export { expect };
 /** The app currently running on each data folder. */
 const running = new Map<string, ElectronApplication>();
 
-async function launchApp(dataDirectory: string): Promise<ElectronApplication> {
+export async function launchApp(
+    dataDirectory: string,
+    env: Record<string, string> = {},
+): Promise<ElectronApplication> {
     const app = await _electron.launch({
         args: [appDirectory],
         env: {
@@ -73,6 +76,7 @@ async function launchApp(dataDirectory: string): Promise<ElectronApplication> {
             YEIDLE_LEGACY_DIR: path.join(dataDirectory, 'no-legacy'),
             YEIDLE_CLOUD_URL: 'http://127.0.0.1:9',
             ELECTRON_RENDERER_URL: '',
+            ...env,
         },
     });
     running.set(dataDirectory, app);
@@ -80,8 +84,12 @@ async function launchApp(dataDirectory: string): Promise<ElectronApplication> {
     return app;
 }
 
-async function openWindow(app: ElectronApplication): Promise<Page> {
+export async function openWindow(app: ElectronApplication): Promise<Page> {
     const page = await app.firstWindow();
+    // Behave as the focused window even when it isn't (another app has
+    // focus, or several tests run at once); the editor depends on focus
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     // The app navigates on startup; wait until its sidebar is up
     await expect(page.getByText('All Pages').first()).toBeVisible({
         timeout: 15_000,
@@ -94,7 +102,7 @@ async function openWindow(app: ElectronApplication): Promise<Page> {
  * What a user does once on a new install: pick a theme, keep the workspace
  * on this device, and continue offline instead of signing in.
  */
-async function completeFirstLaunch(page: Page): Promise<void> {
+export async function completeFirstLaunch(page: Page): Promise<void> {
     await page.evaluate(async () => {
         const put = (url: string, body: unknown) =>
             fetch(url, {
@@ -135,15 +143,29 @@ export function editor(page: Page) {
 
 /**
  * The page's blocks as an indented outline, one line per block:
- * `["Apples", "  Pears"]` is Pears nested under Apples.
+ * `["Apples", "  Pears"]` is Pears nested under Apples. A block holding a
+ * file reads `[file: name]`.
  */
 export async function outline(page: Page): Promise<string[]> {
     return editor(page).evaluate((root) => {
         const lines: string[] = [];
         const walk = (list: Element, depth: number) => {
             for (const item of list.querySelectorAll(':scope > li')) {
-                const text =
-                    item.querySelector(':scope > p')?.textContent ?? '';
+                const file = item
+                    .querySelector(':scope > [data-file-node]')
+                    ?.getAttribute('originalname');
+                const textblock = item
+                    .querySelector(
+                        ':scope > :is(p, h1, h2, h3, h4, h5, h6, pre)',
+                    )
+                    ?.cloneNode(true) as Element | undefined;
+                // Other windows' cursors are decorations, not text
+                textblock
+                    ?.querySelectorAll('.remote-caret')
+                    .forEach((caret) => caret.remove());
+                const text = file
+                    ? `[file: ${file}]`
+                    : (textblock?.textContent ?? '');
                 lines.push(`${'  '.repeat(depth)}${text}`);
                 const children = item.querySelector(':scope > ul');
 
@@ -166,15 +188,25 @@ export async function outline(page: Page): Promise<string[]> {
 export function block(page: Page, text: string) {
     return editor(page)
         .locator('li')
-        .filter({ has: page.locator(':scope > p', { hasText: text }) })
+        .filter({
+            has: page.locator(':scope > :is(p, h1, h2, h3, h4, h5, h6, pre)', {
+                hasText: text,
+            }),
+        })
         .last();
 }
 
 /** Opens Find or Create Page and returns its input. */
 export async function openSearch(page: Page) {
-    await page.keyboard.press('Alt+e');
     const search = page.getByPlaceholder('Find or Create Page');
-    await expect(search).toBeVisible();
+    // Retried: a shortcut pressed while the app is still navigating is lost
+    await expect(async () => {
+        if (!(await search.isVisible())) {
+            await page.keyboard.press('Alt+e');
+        }
+
+        await expect(search).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
 
     return search;
 }
@@ -233,4 +265,128 @@ export async function waitForSaved(page: Page, text: string): Promise<void> {
 
 function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Inserts a link to an existing page at the cursor, as a user does with [[. */
+export async function insertLink(page: Page, title: string): Promise<void> {
+    await page.keyboard.type(`[[${title}`);
+    await page
+        .locator('.wiki-suggestion-item')
+        .filter({ hasText: new RegExp(`^\\s*${escapeRegExp(title)}\\s*$`) })
+        .click();
+    await expect(
+        editor(page).locator('.wiki-link', { hasText: title }).last(),
+    ).toBeVisible();
+    // The editor takes focus back on the next frame
+    await expect(editor(page)).toBeFocused();
+}
+
+/** Pastes a small PNG into the editor at the cursor. */
+export async function pasteImage(page: Page, name = 'dot.png'): Promise<void> {
+    await editor(page).evaluate((element, fileName) => {
+        // A 1×1 PNG
+        const png = Uint8Array.from(
+            atob(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            ),
+            (character) => character.charCodeAt(0),
+        );
+        const clipboard = new DataTransfer();
+        clipboard.items.add(new File([png], fileName, { type: 'image/png' }));
+        element.dispatchEvent(
+            new ClipboardEvent('paste', {
+                clipboardData: clipboard,
+                bubbles: true,
+                cancelable: true,
+            }),
+        );
+    }, name);
+    await expect(
+        editor(page).locator(`[data-file-node][originalname="${name}"]`),
+    ).toBeVisible();
+}
+
+/** The value of the focused text field (e.g. the page title). */
+export function focusedValue(page: Page): Promise<string | null> {
+    return page.evaluate(() =>
+        document.activeElement instanceof HTMLInputElement
+            ? document.activeElement.value
+            : null,
+    );
+}
+
+/** The node the editor has selected as a whole (a link, a file), if any. */
+export function selectedNode(page: Page) {
+    return editor(page).locator('.ProseMirror-selectednode');
+}
+
+/**
+ * Presses a key `times` times at a person's pace. The editor's own arrow
+ * handling reads the selection the browser has just moved, so presses fired
+ * back to back can arrive before it has caught up.
+ */
+export async function press(page: Page, key: string, times = 1): Promise<void> {
+    for (let i = 0; i < times; i++) {
+        await page.keyboard.press(key);
+        await page.waitForTimeout(80);
+    }
+}
+
+/**
+ * Presses `key` at a person's pace until `reached()` is true, at most
+ * `limit` times. For keys whose exact count isn't the point (arrowing up
+ * through a line before leaving the block).
+ */
+export async function pressUntil(
+    page: Page,
+    key: string,
+    reached: () => Promise<boolean>,
+    limit = 5,
+): Promise<void> {
+    for (let i = 0; i < limit; i++) {
+        if (await reached()) {
+            return;
+        }
+
+        await press(page, key);
+    }
+
+    expect(await reached(), `${key} ×${limit} didn't get there`).toBe(true);
+}
+
+/** Clicks into the block containing `text` and waits for the caret there. */
+export async function clickInto(page: Page, text: string): Promise<void> {
+    await block(page, text).locator(':scope > p').click();
+    await expect
+        .poll(() =>
+            page.evaluate(() => getSelection()?.anchorNode?.textContent ?? ''),
+        )
+        .toContain(text);
+}
+
+/** Renames the open page by editing its title. */
+export async function renamePage(page: Page, title: string): Promise<void> {
+    await page.getByRole('heading', { level: 1 }).click();
+    // The heading turns into a text field
+    await expect.poll(() => focusedValue(page)).not.toBeNull();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.type(title);
+    await page.keyboard.press('Enter');
+    await expectOnPage(page, title);
+}
+
+/** Puts the caret at the end of the block containing `text`. */
+export async function caretToEnd(page: Page, text: string): Promise<void> {
+    await clickInto(page, text);
+    await block(page, text)
+        .locator(':scope > :is(p, h1, h2, h3, h4, h5, h6, pre)')
+        .evaluate((element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            range.collapse(false);
+            const selection = getSelection()!;
+            selection.removeAllRanges();
+            selection.addRange(range);
+        });
+    await page.waitForTimeout(80);
 }

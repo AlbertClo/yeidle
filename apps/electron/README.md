@@ -55,6 +55,17 @@ details. That's what makes them useful when refactoring.
 - `e2e/fixtures.ts`: the app fixture (`page`, `restart()` to relaunch on the
   same data) and helpers such as `createPage`, `openPage`, `outline` (the
   page's blocks as an indented list) and `waitForSaved`.
+- Specs: `editing`, `keyboard` (moving blocks, arrows, files, the link
+  popover), `links`, `navigation` (All Pages, search, back/forward, daily
+  notes, pins), `pages` (collapsing, daily-note stepping, renaming),
+  `roam-import`, and `cloud-sync`.
+- `cloud-sync.spec.ts` runs two app instances against a real cloud and is
+  skipped unless `YEIDLE_E2E_CLOUD_URL` and `YEIDLE_E2E_CLOUD_TOKEN` are set
+  (see the file for the command).
+- Known issues are kept as `test.fixme` tests: they're skipped until fixed,
+  then flipped to `test`.
+- Test windows emulate focus, so tests behave the same while you use other
+  apps or run several at once.
 - Run one file or test: `npx playwright test e2e/links.spec.ts -g backlink`.
 - Failures keep a trace and a screenshot in `test-results/`; open a trace
   with `npx playwright show-trace <path>/trace.zip`.

@@ -3,6 +3,7 @@ import {
     editor,
     expect,
     expectOnPage,
+    insertLink,
     openPage,
     test,
     waitForSaved,
@@ -17,11 +18,8 @@ test.describe('links', () => {
         await waitForSaved(page, 'Wading birds');
 
         await createPage(page, 'Morning walk');
-        await page.keyboard.type('Saw two [[Herons');
-        await page
-            .locator('.wiki-suggestion-item')
-            .filter({ hasText: /^\s*Herons\s*$/ })
-            .click();
+        await page.keyboard.type('Saw two ');
+        await insertLink(page, 'Herons');
         await page.keyboard.type(' by the river');
 
         const link = editor(page).locator('.wiki-link', { hasText: 'Herons' });
