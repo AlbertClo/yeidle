@@ -38,7 +38,7 @@ buildNpmPackage {
     ];
   };
 
-  npmDepsHash = "sha256-/tXkX8ZH4JRNkiijW4Bp6dLjXd6T9viGWUaR5HSQzQY=";
+  npmDepsHash = "sha256-gj4hSrE8b3kPWnYeKOwYFJwrJc9XXBuSO3dD2kX5L6I=";
 
   # Electron comes from nixpkgs; nothing else needs install scripts (native
   # tool binaries such as esbuild's arrive as optional dependencies)

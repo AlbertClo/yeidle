@@ -12,6 +12,7 @@
         "start": "electron-vite preview",
         "types:check": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
         "test": "vitest run",
+        "test:e2e": "electron-vite build && playwright test",
         "lint": "eslint . --fix",
         "format": "prettier --write src/"
     },
@@ -57,6 +58,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",
+        "@playwright/test": "^1.56.1",
         "@stylistic/eslint-plugin": "^5.10.0",
         "@tailwindcss/vite": "^4.1.11",
         "@types/node": "^22.13.5",

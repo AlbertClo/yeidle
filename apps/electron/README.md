@@ -14,6 +14,7 @@ npm install
 npm start      # build and run
 npm run dev    # run with hot reload
 npm test       # core and renderer tests
+npm run test:e2e   # end-to-end tests: builds, then drives the real app
 ```
 
 ## Installing on NixOS
@@ -42,6 +43,21 @@ Update with `nix flake update yeidle` and a rebuild. After changing
 
 The installed app keeps its data in `~/.config/yeidle` and signs in to
 `YEIDLE_CLOUD_URL` (default `http://localhost:8200`).
+
+## End-to-end tests
+
+`e2e/` holds Playwright tests that drive the built app through Playwright's
+Electron support. Each test starts the app on a fresh data folder, past
+first-launch setup (theme, local storage, continue offline), and works the
+way a user does: keyboard, visible text and roles, not implementation
+details. That's what makes them useful when refactoring.
+
+- `e2e/fixtures.ts`: the app fixture (`page`, `restart()` to relaunch on the
+  same data) and helpers such as `createPage`, `openPage`, `outline` (the
+  page's blocks as an indented list) and `waitForSaved`.
+- Run one file or test: `npx playwright test e2e/links.spec.ts -g backlink`.
+- Failures keep a trace and a screenshot in `test-results/`; open a trace
+  with `npx playwright show-trace <path>/trace.zip`.
 
 ## How it fits together
 
