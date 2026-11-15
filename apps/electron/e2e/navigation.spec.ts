@@ -71,3 +71,62 @@ test.describe('finding and moving between pages', () => {
         await expectOnPage(page, 'Projects');
     });
 });
+
+test('arrowing through All Pages scrolls one row at a time', async ({
+    page,
+}) => {
+    // Enough pages to overflow the window
+    await page.evaluate(async () => {
+        for (let i = 0; i < 60; i++) {
+            await fetch('/api/nodes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                },
+                body: JSON.stringify({
+                    content: `Page ${String(i).padStart(2, '0')}`,
+                }),
+            });
+        }
+    });
+    await page.getByRole('link', { name: 'All Pages' }).first().click();
+    const rows = page.locator('[data-page-row]');
+    await expect(rows.nth(59)).toBeAttached();
+
+    // The scrolling ancestor of the list, and the distance between rows
+    const scrollTop = () =>
+        rows.first().evaluate((row) => {
+            let element: HTMLElement | null = row.parentElement;
+
+            while (element && element.scrollHeight <= element.clientHeight) {
+                element = element.parentElement;
+            }
+
+            return (element ?? document.scrollingElement!).scrollTop;
+        });
+    const rowStep = await rows
+        .nth(1)
+        .evaluate(
+            (row) =>
+                row.getBoundingClientRect().top -
+                row.previousElementSibling!.getBoundingClientRect().top,
+        );
+
+    await rows.first().focus();
+    await expect(rows.first()).toBeFocused();
+    let previous = await scrollTop();
+    let largestStep = 0;
+
+    for (let i = 1; i < 45; i++) {
+        await page.keyboard.press('ArrowDown');
+        await expect(rows.nth(i)).toBeFocused();
+        await expect(rows.nth(i)).toBeInViewport();
+        const current = await scrollTop();
+        largestStep = Math.max(largestStep, current - previous);
+        previous = current;
+    }
+
+    expect(previous).toBeGreaterThan(0);
+    expect(largestStep).toBeLessThanOrEqual(rowStep + 2);
+});
