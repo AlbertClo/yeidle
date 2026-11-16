@@ -22,7 +22,9 @@ withDefaults(
     },
 );
 
-const { state: sidebarState } = useSidebar();
+// Phones: the sidebar is a drawer with its own workspace switcher, and the
+// header keeps only the controls
+const { state: sidebarState, isMobile } = useSidebar();
 const workspaceSectionStyle = computed(() => ({
     width:
         sidebarState.value === 'collapsed'
@@ -36,6 +38,7 @@ const workspaceSectionStyle = computed(() => ({
         class="window-drag-region fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b border-sidebar-border/70 bg-sidebar"
     >
         <div
+            v-if="!isMobile"
             class="flex h-full shrink-0 items-center"
             :style="workspaceSectionStyle"
         >
@@ -50,7 +53,9 @@ const workspaceSectionStyle = computed(() => ({
             <div class="window-no-drag flex min-w-0 items-center gap-2">
                 <SidebarTrigger class="-ml-1" />
                 <NavigationControls />
-                <template v-if="breadcrumbs && breadcrumbs.length > 0">
+                <template
+                    v-if="!isMobile && breadcrumbs && breadcrumbs.length > 0"
+                >
                     <Breadcrumbs :breadcrumbs="breadcrumbs" />
                 </template>
             </div>

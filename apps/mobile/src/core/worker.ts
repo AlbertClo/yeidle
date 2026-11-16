@@ -5,6 +5,7 @@ import type { AppContext } from '@yeidle/core/app/context';
 import type { Host } from '@yeidle/core/app/host';
 import { createAppServer } from '@yeidle/core/app/server';
 import { Workspaces } from '@yeidle/core/app/workspaces';
+import type { AppResponse } from '@yeidle/core/http/http';
 import type { Router } from '@yeidle/core/http/router';
 
 import { sqliteFiles } from './files';
@@ -56,7 +57,7 @@ async function start(): Promise<{ router: Router; context: AppContext }> {
     const context = createContext(host, workspaces, fileSettings(host));
     const router = createAppServer(context, {
         version: 'mobile',
-        // The mobile UI only uses the JSON API
+        // Pages load as Inertia JSON; the WebView's index.html is the shell
         renderHtml: () => '',
     });
 
@@ -87,32 +88,28 @@ self.onmessage = async (event: MessageEvent<CoreRequest>) => {
     let response: CoreResponse;
 
     try {
-        const { router } = await ready;
+        const { router, context } = await ready;
         const result = await router.handle({
             method: request.method,
-            url: new URL(request.path, 'yeidle://app'),
-            headers: { accept: 'application/json' },
-            body: request.body ?? {},
-            files: {},
+            url: new URL(request.url),
+            headers: request.headers,
+            body: request.body,
+            files: request.files,
         });
-        const body =
-            typeof result.body === 'string'
-                ? result.body
-                : result.body instanceof Uint8Array
-                  ? new TextDecoder().decode(result.body)
-                  : '';
 
         response = {
             type: 'response',
             id: request.id,
             status: result.status,
-            body,
+            headers: result.headers,
+            body: await responseBody(result.body, context),
         };
     } catch (error) {
         response = {
             type: 'response',
             id: request.id,
             status: 500,
+            headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 message: error instanceof Error ? error.message : String(error),
             }),
@@ -121,3 +118,29 @@ self.onmessage = async (event: MessageEvent<CoreRequest>) => {
 
     post(response);
 };
+
+/** The core's response body as bytes or text (files are read, streams joined). */
+async function responseBody(
+    body: AppResponse['body'],
+    context: AppContext,
+): Promise<Uint8Array | string | null> {
+    if (
+        body === null ||
+        typeof body === 'string' ||
+        body instanceof Uint8Array
+    ) {
+        return body;
+    }
+
+    if ('file' in body) {
+        return context.host.files.readFile(body.file);
+    }
+
+    let text = '';
+
+    for await (const chunk of body.stream) {
+        text += chunk;
+    }
+
+    return text;
+}

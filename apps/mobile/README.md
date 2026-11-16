@@ -1,17 +1,23 @@
-# Yeidle for Android (prototype)
+# Yeidle for Android
 
-A Capacitor app that runs the same TypeScript core as the desktop app,
-[`packages/core`](../../packages/core), inside the phone's WebView.
-
-What it does so far: sign in to Yeidle Cloud, download a workspace, list and
-search its pages, and read a page. No editing yet.
+The desktop app's interface, [`apps/electron/src/renderer`](../electron/src/renderer),
+running in the phone's WebView against the same TypeScript core,
+[`packages/core`](../../packages/core). Same editor, pages, search, themes
+and fonts; on phone widths the sidebar is a drawer and an editing toolbar
+(indent, outdent, move, checkbox, undo, redo) sits above the keyboard.
 
 ## How it fits together
 
+- **The renderer is built from the desktop sources** (`vite.config.ts`
+  aliases `@` to them and uses the same Vue and Tailwind setup), started by
+  `src/main.ts`, which loads the first page from the core as Inertia JSON.
 - **The core runs in a Web Worker** (`src/core/worker.ts`), the counterpart
-  of Electron's main process. It owns the workspace databases and cloud
-  sync, and answers the UI through the same app server and JSON API the
-  desktop windows use (`src/core/client.ts`, `api('GET', '/api/pages')`).
+  of Electron's main process: it owns the workspace databases and cloud
+  sync, and answers the renderer through the same app server.
+- **`src/core/bridge.ts` stands in for Electron:** it routes the renderer's
+  fetches for app URLs (`/api/*`, Inertia pages) to the worker, provides
+  `window.Native` (document change events; no window controls), and loads
+  `/api/media/*` images and videos through the core as blob URLs.
 - **SQLite** is the official WebAssembly build with the `opfs-sahpool`
   storage pool (`src/core/sqlite.ts`). It keeps files in the WebView's
   origin-private file system and gives the core the synchronous database it
@@ -20,8 +26,8 @@ search its pages, and read a page. No editing yet.
   table (`src/core/files.ts`), since a worker has no synchronous file system.
 - **`node:crypto`**, the core's only Node built-in on this path, is replaced
   with a small SHA-256 shim (`src/shims/nodeCrypto.ts`).
-- Sign-in opens the approval page with Capacitor's Browser plugin and checks
-  for approval every 3 seconds.
+- Sign-in opens the approval page with Capacitor's Browser plugin and closes
+  it once the device is approved.
 
 The app signs in to `https://app.yeidle.com`; the browser build can use a
 local cloud with `VITE_YEIDLE_CLOUD_URL=http://localhost:8200`.
@@ -63,8 +69,10 @@ work.
 
 ## Not done yet
 
-- Editing, daily notes and quick capture
-- Media (files are stored, but not shown)
-- Realtime updates (the core still syncs every 15 seconds while the app is open)
+- Android's back gesture going back a page
+- Hiding keyboard-shortcut hints on phones
+- Opening a file in another app, or its folder
+- Not tried on a phone yet: live updates and cursors over Reverb, images,
+  Roam import
 - Moving a workspace database aside on a schema change (needs a rename the
   storage pool doesn't have)

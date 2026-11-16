@@ -17,6 +17,7 @@ import {
     watch,
 } from 'vue';
 import { toast } from 'vue-sonner';
+import MobileEditorToolbar from '@/components/MobileEditorToolbar.vue';
 import PageEditor from '@/components/PageEditor.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -943,6 +944,7 @@ onBeforeUnmount(() => {
                 </div>
             </div>
         </div>
+        <MobileEditorToolbar />
     </AppLayout>
 
     <Dialog v-model:open="showDeleteConfirm">

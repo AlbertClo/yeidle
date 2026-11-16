@@ -235,15 +235,16 @@ onBeforeUnmount(() => {
 
 <template>
     <button
-        class="ml-auto flex h-8 w-64 items-center gap-2 rounded-md bg-sidebar-accent/50 px-3 text-sm text-muted-foreground"
+        class="ml-auto flex h-8 w-9 items-center justify-center gap-2 rounded-md bg-sidebar-accent/50 px-3 text-sm text-muted-foreground md:w-64 md:justify-start"
         @click="openSearch"
     >
         <Search class="h-4 w-4 shrink-0" />
-        <span class="min-w-0 flex-1 truncate text-left whitespace-nowrap"
+        <span
+            class="hidden min-w-0 flex-1 truncate text-left whitespace-nowrap md:block"
             >Find or Create Page</span
         >
         <kbd
-            class="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs whitespace-nowrap text-muted-foreground"
+            class="ml-auto hidden shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs whitespace-nowrap text-muted-foreground md:inline"
             >{{ bindingLabel('find-page') }}</kbd
         >
     </button>

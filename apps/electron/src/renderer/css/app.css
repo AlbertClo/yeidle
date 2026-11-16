@@ -2,8 +2,8 @@
 
 @import 'tw-animate-css';
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
+/* The renderer's sources, wherever it's built from (desktop or Android) */
+@source '../src';
 
 @custom-variant dark (&:is(.dark *));
 

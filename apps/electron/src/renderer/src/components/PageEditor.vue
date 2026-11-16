@@ -3378,9 +3378,36 @@ function handleNodeCommand(event: Event): void {
     }
 
     const command = (event as CustomEvent<NodeCommand>).detail;
+    const current = editor.value;
 
     if (command === 'move-node-up' || command === 'move-node-down') {
         moveCurrentNode(command === 'move-node-up' ? -1 : 1);
+
+        return;
+    }
+
+    if (!current || isInCodeBlock(current)) {
+        return;
+    }
+
+    // As Tab, Shift+Tab, Ctrl+Enter and undo/redo do from the keyboard
+    switch (command) {
+        case 'indent':
+            current.chain().focus().sinkListItem('listItem').run();
+            break;
+        case 'outdent':
+            current.chain().focus().liftListItem('listItem').run();
+            break;
+        case 'toggle-checkbox':
+            cycleChecklistState(current.view);
+            current.commands.focus();
+            break;
+        case 'undo':
+            current.chain().focus().undo().run();
+            break;
+        case 'redo':
+            current.chain().focus().redo().run();
+            break;
     }
 }
 

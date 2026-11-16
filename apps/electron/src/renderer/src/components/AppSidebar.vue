@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue';
 import { router } from '@inertiajs/vue3';
 import { CalendarDays, List, SquareTerminal } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
@@ -20,6 +21,8 @@ import {
     Sidebar,
     SidebarContent,
     SidebarFooter,
+    SidebarHeader,
+    SidebarMenu,
     SidebarMenuBadge,
     SidebarMenuButton,
     SidebarMenuItem,
@@ -38,7 +41,7 @@ import { PINNED_ITEM_COMMANDS } from '@/types/keyBindings';
 import { openCommandPalette } from '@/ui/commandPalette';
 
 const aboutOpen = ref(false);
-const { toggleSidebar } = useSidebar();
+const { toggleSidebar, isMobile } = useSidebar();
 
 const props = defineProps<{
     currentPageId?: string;
@@ -125,6 +128,11 @@ onBeforeUnmount(() => {
         variant="inset"
         class="!top-12 !bottom-0 !h-auto"
     >
+        <SidebarHeader v-if="isMobile">
+            <SidebarMenu>
+                <WorkspaceSwitcher placement="sidebar" />
+            </SidebarMenu>
+        </SidebarHeader>
         <SidebarContent>
             <NavMain :items="mainNavItems">
                 <SidebarMenuItem>

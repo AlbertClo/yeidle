@@ -3,6 +3,8 @@ import { Copy, Minus, Square, X } from 'lucide-vue-next';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 const isMaximized = ref(false);
+// Only a desktop window has these (not a phone, nor a browser)
+const hasControls = Boolean(window.Native?.windowControls);
 let maximizedSubscriptionId: number | null = null;
 
 function controls() {
@@ -52,6 +54,7 @@ onBeforeUnmount(() => {
 
 <template>
     <div
+        v-if="hasControls"
         class="window-no-drag flex shrink-0 self-stretch"
         role="group"
         aria-label="Window controls"

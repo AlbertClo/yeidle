@@ -1,7 +1,16 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
+
+/**
+ * Yeidle on Android builds the desktop renderer (apps/electron/src/renderer)
+ * with the same Vue and Tailwind setup, plus a bootstrap (src/main.ts) that
+ * connects it to the core worker instead of Electron.
+ */
+
+const renderer = resolve(import.meta.dirname, '../electron/src/renderer');
 
 // Loro's self-loading browser build (its bundler build needs a WebAssembly plugin)
 const loroBrowserBuild = resolve(
@@ -10,6 +19,7 @@ const loroBrowserBuild = resolve(
 );
 
 const aliases = [
+    { find: '@', replacement: resolve(renderer, 'src') },
     { find: /^loro-crdt$/, replacement: loroBrowserBuild },
     // The core's only Node built-in on its request path
     {
@@ -19,15 +29,24 @@ const aliases = [
 ];
 
 export default defineConfig({
-    plugins: [vue()],
+    plugins: [
+        tailwindcss(),
+        vue({
+            template: {
+                transformAssetUrls: { base: null, includeAbsolute: false },
+            },
+        }),
+    ],
     resolve: { alias: aliases },
+    // The renderer's favicon and other static files
+    publicDir: resolve(renderer, 'public'),
     // The core runs in a module worker, which needs the same aliases
     worker: { format: 'es' },
     optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm', 'loro-crdt'] },
     build: { target: 'es2022' },
     server: {
-        // SQLite's OPFS storage pool needs no cross-origin isolation, so no
-        // COOP/COEP headers here
         port: 5180,
+        // The renderer lives outside this app's folder
+        fs: { allow: [resolve(import.meta.dirname, '../..')] },
     },
 });
