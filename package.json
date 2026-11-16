@@ -3,7 +3,8 @@
     "private": true,
     "workspaces": [
         "packages/*",
-        "apps/electron"
+        "apps/electron",
+        "apps/mobile"
     ],
     "scripts": {
         "dev": "npm run dev -w @yeidle/electron",

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { Laptop, ShieldCheck } from '@lucide/vue';
+import { MonitorSmartphone, ShieldCheck } from '@lucide/vue';
 import { ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,7 +38,7 @@ function approve(): void {
 </script>
 
 <template>
-    <Head title="Connect desktop app" />
+    <Head title="Connect a device" />
 
     <div class="flex min-h-[70vh] items-center justify-center p-6">
         <Card class="w-full max-w-lg">
@@ -50,13 +50,13 @@ function approve(): void {
                         v-if="authorization.approved"
                         class="size-6 text-green-600"
                     />
-                    <Laptop v-else class="size-6" />
+                    <MonitorSmartphone v-else class="size-6" />
                 </div>
                 <CardTitle>
                     {{
                         authorization.approved
-                            ? 'Desktop connected'
-                            : 'Connect Yeidle Desktop'
+                            ? 'Device connected'
+                            : 'Connect a device'
                     }}
                 </CardTitle>
                 <CardDescription v-if="authorization.expired">
@@ -64,8 +64,8 @@ function approve(): void {
                     try again.
                 </CardDescription>
                 <CardDescription v-else-if="authorization.approved">
-                    You can return to Yeidle. This browser window may now be
-                    closed.
+                    <strong>{{ authorization.device_name }}</strong> is signed
+                    in. Return to Yeidle; you can close this page.
                 </CardDescription>
                 <CardDescription v-else>
                     Allow <strong>{{ authorization.device_name }}</strong> to
@@ -85,7 +85,7 @@ function approve(): void {
                     :disabled="approving"
                     @click="approve"
                 >
-                    {{ approving ? 'Connecting…' : 'Connect desktop app' }}
+                    {{ approving ? 'Connecting…' : 'Connect device' }}
                 </Button>
             </CardFooter>
         </Card>

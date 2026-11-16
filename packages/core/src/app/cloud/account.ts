@@ -140,7 +140,7 @@ export class CloudAccount {
         const { pending } = this.read();
 
         if (pending === null) {
-            throw new CloudError('No desktop sign-in request is pending.');
+            throw new CloudError('No sign-in request is pending.');
         }
 
         const response = await cloudRequest(
@@ -204,7 +204,7 @@ export class CloudAccount {
         const { pending } = this.read();
 
         if (pending === null) {
-            throw new CloudError('No desktop sign-in request is pending.');
+            throw new CloudError('No sign-in request is pending.');
         }
 
         if (channelName !== `private-device-authorizations.${pending.id}`) {

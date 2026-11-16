@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+        "strict": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "isolatedModules": true,
+        "verbatimModuleSyntax": false,
+        "types": [],
+        "paths": { "node:crypto": ["./src/shims/nodeCrypto.ts"] }
+    },
+    "include": ["src/**/*.ts", "src/**/*.vue"]
+}

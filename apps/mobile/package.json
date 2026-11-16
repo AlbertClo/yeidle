@@ -1,0 +1,30 @@
+{
+    "name": "@yeidle/mobile",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Yeidle for Android (Capacitor)",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vue-tsc --noEmit && vite build",
+        "preview": "vite preview",
+        "android:sync": "npm run build && cap sync android",
+        "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
+    },
+    "devDependencies": {
+        "@capacitor/cli": "^8.6.2",
+        "@vitejs/plugin-vue": "^6.0.11",
+        "typescript": "^5.9.0",
+        "vite": "^7.0.4",
+        "vue-tsc": "^2.2.4"
+    },
+    "dependencies": {
+        "@capacitor/android": "^8.6.2",
+        "@capacitor/browser": "^8.0.5",
+        "@capacitor/core": "^8.6.2",
+        "@noble/hashes": "^2.4.0",
+        "@sqlite.org/sqlite-wasm": "^3.54.1-build1",
+        "loro-crdt": "^1.17.1",
+        "vue": "^3.5.45"
+    }
+}

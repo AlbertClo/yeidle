@@ -127,7 +127,7 @@ function formatDate(value: string | null): string {
                     v-if="devices.length === 0"
                     class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
                 >
-                    No desktop devices are connected yet.
+                    No devices are connected yet.
                 </div>
                 <div
                     v-for="device in devices"
