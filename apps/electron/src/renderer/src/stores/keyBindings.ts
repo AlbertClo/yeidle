@@ -139,8 +139,29 @@ export function bindingFor(command: KeyBindingCommand): string | null {
     return keyBindings.value[command];
 }
 
+/**
+ * Whether this device has keyboard shortcuts: not on touch-only devices
+ * (phones), where shortcut hints and settings are hidden.
+ */
+export const keyboardShortcutsAvailable = !globalThis.matchMedia?.(
+    '(hover: none) and (pointer: coarse)',
+).matches;
+
+/** The command's shortcut for display; empty where there are no shortcuts. */
 export function bindingLabel(command: KeyBindingCommand): string {
-    return formatKeyBinding(bindingFor(command));
+    return keyboardShortcutsAvailable
+        ? formatKeyBinding(bindingFor(command))
+        : '';
+}
+
+/** A tooltip with the command's shortcut when there is one: `Back (Alt+←)`. */
+export function withShortcut(
+    label: string,
+    command: KeyBindingCommand,
+): string {
+    const shortcut = bindingLabel(command);
+
+    return shortcut ? `${label} (${shortcut})` : label;
 }
 
 export function eventMatchesCommand(

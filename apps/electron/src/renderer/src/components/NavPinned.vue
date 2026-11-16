@@ -12,7 +12,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
-import { bindingLabel } from '@/stores/keyBindings';
+import { bindingLabel, keyboardShortcutsAvailable } from '@/stores/keyBindings';
 import {
     loadPins,
     pinsChanged,
@@ -124,8 +124,11 @@ onBeforeUnmount(() => {
                 v-if="pinnedItems.length === 0"
                 class="px-2 py-1 text-xs leading-relaxed text-muted-foreground group-data-[collapsible=icon]:hidden"
             >
-                Press <kbd>{{ bindingLabel('toggle-pin') }}</kbd> on a page to
-                pin it.
+                <template v-if="keyboardShortcutsAvailable">
+                    Press <kbd>{{ bindingLabel('toggle-pin') }}</kbd> on a page
+                    to pin it.
+                </template>
+                <template v-else>Pin a page from its ⋮ menu.</template>
             </SidebarMenuItem>
             <SidebarMenuItem
                 v-for="(item, index) in pinnedItems"

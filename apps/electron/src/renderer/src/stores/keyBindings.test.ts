@@ -61,3 +61,25 @@ describe('key binding store', () => {
         });
     });
 });
+
+describe('shortcut hints', () => {
+    it('shows shortcuts where there is a keyboard and none on touch-only devices', async () => {
+        const store = await import('./keyBindings');
+        expect(store.withShortcut('Back', 'back')).toMatch(/^Back \(.+\)$/);
+
+        vi.resetModules();
+        vi.stubGlobal('matchMedia', (query: string) => ({
+            matches: query === '(hover: none) and (pointer: coarse)',
+        }));
+
+        try {
+            const touch = await import('./keyBindings');
+            expect(touch.keyboardShortcutsAvailable).toBe(false);
+            expect(touch.bindingLabel('back')).toBe('');
+            expect(touch.withShortcut('Back', 'back')).toBe('Back');
+        } finally {
+            vi.unstubAllGlobals();
+            vi.resetModules();
+        }
+    });
+});

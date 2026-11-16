@@ -84,7 +84,11 @@ import {
     expandNodes,
     isNodeCollapsed,
 } from '@/stores/collapsedNodes';
-import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
+import {
+    bindingLabel,
+    eventMatchesCommand,
+    keyboardShortcutsAvailable,
+} from '@/stores/keyBindings';
 import type { Node, Page, SearchResult } from '@/types/node';
 import { hasOpenModal } from '@/ui/modal';
 import { NODE_COMMAND_EVENT } from '@/ui/nodeCommands';
@@ -4833,7 +4837,10 @@ onBeforeUnmount(() => {
             >
                 <ExternalLink class="h-4 w-4" />
                 <span class="flex-1">Follow link</span>
-                <kbd class="ml-4 text-xs text-muted-foreground">
+                <kbd
+                    v-if="keyboardShortcutsAvailable"
+                    class="ml-4 text-xs text-muted-foreground"
+                >
                     {{ bindingLabel('follow-link') }}
                 </kbd>
             </button>

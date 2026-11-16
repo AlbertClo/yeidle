@@ -57,7 +57,12 @@ import {
     loadCollapsedNodes,
     collapsedNodesChanged,
 } from '@/stores/collapsedNodes';
-import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
+import {
+    bindingLabel,
+    eventMatchesCommand,
+    keyboardShortcutsAvailable,
+    withShortcut,
+} from '@/stores/keyBindings';
 import {
     invalidateCachedPage,
     markCachedPageActive,
@@ -816,7 +821,9 @@ onBeforeUnmount(() => {
                                 :class="{ 'fill-current': pagePinned }"
                             />
                             {{ pagePinned ? 'Unpin page' : 'Pin page' }}
-                            <DropdownMenuShortcut>
+                            <DropdownMenuShortcut
+                                v-if="keyboardShortcutsAvailable"
+                            >
                                 {{ bindingLabel('toggle-pin') }}
                             </DropdownMenuShortcut>
                         </DropdownMenuItem>
@@ -840,7 +847,12 @@ onBeforeUnmount(() => {
                         <Button
                             variant="ghost"
                             size="icon"
-                            :title="`Previous daily note (${bindingLabel('previous-daily-note')})`"
+                            :title="
+                                withShortcut(
+                                    'Previous daily note',
+                                    'previous-daily-note',
+                                )
+                            "
                             aria-label="Previous daily note"
                             @click="openAdjacentDailyNote(-1)"
                         >
@@ -849,7 +861,12 @@ onBeforeUnmount(() => {
                         <Button
                             variant="ghost"
                             size="icon"
-                            :title="`Next daily note (${bindingLabel('next-daily-note')})`"
+                            :title="
+                                withShortcut(
+                                    'Next daily note',
+                                    'next-daily-note',
+                                )
+                            "
                             aria-label="Next daily note"
                             @click="openAdjacentDailyNote(1)"
                         >

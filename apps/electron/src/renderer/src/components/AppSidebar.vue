@@ -33,6 +33,7 @@ import { openDailyNote } from '@/dailyNotes';
 import {
     bindingLabel,
     eventMatchesCommand,
+    keyboardShortcutsAvailable,
     loadKeyBindings,
 } from '@/stores/keyBindings';
 import { loadPins, pinnedItems } from '@/stores/pins';
@@ -144,7 +145,10 @@ onBeforeUnmount(() => {
                         <SquareTerminal />
                         <span>Command Palette</span>
                     </SidebarMenuButton>
-                    <SidebarMenuBadge class="font-normal text-muted-foreground">
+                    <SidebarMenuBadge
+                        v-if="keyboardShortcutsAvailable"
+                        class="font-normal text-muted-foreground"
+                    >
                         <kbd>{{ bindingLabel('command-palette') }}</kbd>
                     </SidebarMenuBadge>
                 </SidebarMenuItem>

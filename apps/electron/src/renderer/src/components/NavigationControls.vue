@@ -2,7 +2,7 @@
 import { ArrowLeft, ArrowRight } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { navigateBack, navigateForward } from '@/navigation/historyNavigation';
-import { bindingLabel } from '@/stores/keyBindings';
+import { withShortcut } from '@/stores/keyBindings';
 </script>
 
 <template>
@@ -11,7 +11,7 @@ import { bindingLabel } from '@/stores/keyBindings';
             variant="ghost"
             size="icon"
             class="h-7 w-7"
-            :title="`Back (${bindingLabel('back')})`"
+            :title="withShortcut('Back', 'back')"
             aria-label="Navigate back"
             @click="navigateBack"
         >
@@ -21,7 +21,7 @@ import { bindingLabel } from '@/stores/keyBindings';
             variant="ghost"
             size="icon"
             class="h-7 w-7"
-            :title="`Forward (${bindingLabel('forward')})`"
+            :title="withShortcut('Forward', 'forward')"
             aria-label="Navigate forward"
             @click="navigateForward"
         >

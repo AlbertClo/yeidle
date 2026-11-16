@@ -66,12 +66,11 @@ in
 
     ${device}/bin/run-test-emulator
     adb=${sdk}/platform-tools/adb
-    # Typing happens on the computer's keyboard: no on-screen keyboard (or
-    # Gboard's floating toolbar for physical keyboards)
-    for ime in \
-      com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME \
-      com.google.android.tts/com.google.android.apps.speech.tts.googletts.settings.asr.voiceime.VoiceInputMethodService; do
-      $adb -e shell ime disable "$ime" >/dev/null 2>&1 || true
+    # Typing happens on the computer's keyboard: switch off the on-screen
+    # keyboard apps (and Gboard's floating toolbar for physical keyboards).
+    # Disabling only their input methods doesn't last
+    for app in com.google.android.inputmethod.latin com.google.android.tts; do
+      $adb -e shell pm disable-user --user 0 "$app" >/dev/null 2>&1 || true
     done
     $adb -e install -r "$apk"
     $adb -e shell am start -n com.yeidle.app/.MainActivity

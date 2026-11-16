@@ -32,7 +32,11 @@ import {
 import { useSidebar } from '@/components/ui/sidebar';
 import { openDailyNote } from '@/dailyNotes';
 import { cloudAccount } from '@/stores/cloudAccount';
-import { bindingLabel, eventMatchesCommand } from '@/stores/keyBindings';
+import {
+    bindingLabel,
+    eventMatchesCommand,
+    keyboardShortcutsAvailable,
+} from '@/stores/keyBindings';
 import { isNodePinned, toggleNodePin } from '@/stores/pins';
 import { workspaceState } from '@/stores/workspaces';
 import { openCloudAccount } from '@/ui/cloudAccount';
@@ -126,12 +130,17 @@ const commands = computed<PaletteCommand[]>(() => [
               },
           ]
         : []),
-    {
-        id: 'key-bindings',
-        label: 'Change Keyboard Shortcuts',
-        icon: Keyboard,
-        run: openKeyBindings,
-    },
+    // Phones have no keyboard shortcuts
+    ...(keyboardShortcutsAvailable
+        ? [
+              {
+                  id: 'key-bindings',
+                  label: 'Change Keyboard Shortcuts',
+                  icon: Keyboard,
+                  run: openKeyBindings,
+              },
+          ]
+        : []),
     {
         id: 'theme',
         label: 'Change Theme',

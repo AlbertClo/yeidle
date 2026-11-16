@@ -26,7 +26,7 @@ import {
     restoreNavigationScrollPosition,
 } from '@/navigation/historyNavigation';
 import { hasSavedMainScrollPosition } from '@/navigation/scrollRestoration';
-import { bindingLabel } from '@/stores/keyBindings';
+import { bindingLabel, keyboardShortcutsAvailable } from '@/stores/keyBindings';
 import { saveWorkspaceStoragePreference } from '@/stores/preferences';
 import { workspaceState } from '@/stores/workspaces';
 import {
@@ -566,9 +566,12 @@ function createdDate(page: Page): string {
                 >
                     <FileText class="mx-auto mb-3 h-12 w-12 opacity-50" />
                     <p>
-                        No pages yet. Use the search bar ({{
-                            bindingLabel('find-page')
-                        }}) to create one.
+                        No pages yet. Use the search bar{{
+                            keyboardShortcutsAvailable
+                                ? ` (${bindingLabel('find-page')})`
+                                : ''
+                        }}
+                        to create one.
                     </p>
                 </div>
 
