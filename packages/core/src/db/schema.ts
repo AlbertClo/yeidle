@@ -107,6 +107,13 @@ CREATE TABLE navigation_current (
  */
 export const SCHEMA_VERSION = 4;
 
+/**
+ * Bumped when what the projector writes changes (e.g. how block text is
+ * derived). A workspace whose read model was built by another version
+ * rebuilds it from the documents when it opens.
+ */
+export const READ_MODEL_VERSION = 3;
+
 /** The tables rebuilt from the documents. */
 export const READ_MODEL_TABLES = ['links', 'blocks', 'pages', 'media'];
 

@@ -19,6 +19,8 @@ export type PageRow = {
     /** Unix ms, when the document records one. */
     created_at: number | null;
     deleted: boolean;
+    /** Unix ms of the document's latest change, when it records one. */
+    updated_at: number | null;
     /** False when only blocks have arrived so far (no page fields yet). */
     has_meta: boolean;
 };
@@ -75,6 +77,7 @@ export function projectPage(doc: LoroDoc, pageId: string): DocumentRows {
                 ? Date.parse(`${meta.daily_note_date}T00:00:00Z`)
                 : parseTime(meta.created_at),
             deleted: meta.deleted,
+            updated_at: lastChangeTime(doc),
             has_meta: hasPageMeta(doc),
         },
         blocks: flattenBlocks(readBlocks(doc, pageId)).map((block) => ({
@@ -90,6 +93,21 @@ export function projectPage(doc: LoroDoc, pageId: string): DocumentRows {
         })),
         media: [],
     };
+}
+
+/**
+ * When the document last changed: the newest timestamp among the latest
+ * changes from each editor (documents record change times, in seconds).
+ * Derived from the document, so a rebuilt read model keeps it.
+ */
+export function lastChangeTime(doc: LoroDoc): number | null {
+    let latest = 0;
+
+    for (const id of doc.oplogFrontiers()) {
+        latest = Math.max(latest, doc.getChangeAt(id).timestamp);
+    }
+
+    return latest > 0 ? latest * 1000 : null;
 }
 
 export function projectMedia(doc: LoroDoc): DocumentRows {

@@ -12,7 +12,13 @@ import { loadBacklinks } from '../services/backlinks';
 import { NavigationHistoryStore } from '../services/navigationHistory';
 import { search } from '../services/search';
 
-type BlockTree = { id: string; text: string; children: BlockTree[] };
+type BlockTree = {
+    id: string;
+    text: string;
+    /** Rich text (TipTap JSON), for clients that render it. */
+    content: unknown;
+    children: BlockTree[];
+};
 
 /** Pages, blocks, search and recent pages. */
 export function registerPageRoutes(router: Router, ctx: AppContext): void {
@@ -142,6 +148,7 @@ function toTree(block: Block): BlockTree {
     return {
         id: block.id,
         text: block.content,
+        content: block.tiptap_content,
         children: (block.children ?? []).map(toTree),
     };
 }

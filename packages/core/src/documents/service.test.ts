@@ -50,7 +50,7 @@ const searchFor = (text: string) =>
 function readModel() {
     return {
         pages: db.all(
-            'SELECT id, title, kind, daily_date, created_at FROM pages ORDER BY id',
+            'SELECT id, title, kind, daily_date, created_at, updated_at FROM pages ORDER BY id',
         ),
         blocks: db.all('SELECT id, page_id, text FROM blocks ORDER BY id'),
         links: links(),
@@ -186,6 +186,28 @@ describe('document service', () => {
         expect(block(blockId)).toBeUndefined();
         expect(links()).toEqual([]);
         expect(searchFor('Target')).toEqual([]);
+    });
+
+    it('gives a web link its label, or its address, as text', () => {
+        const pageId = createPage(documents, 'Lighting');
+        const [labelled, bare] = setBlocks(documents, pageId, [
+            {
+                content: inline({
+                    type: 'webLink',
+                    attrs: { href: 'https://lamps.test/a', label: 'Lamp shop' },
+                }),
+            },
+            {
+                content: inline({
+                    type: 'webLink',
+                    attrs: { href: 'https://lamps.test/b', label: null },
+                }),
+            },
+        ]);
+
+        expect(block(labelled)).toMatchObject({ text: 'Lamp shop' });
+        expect(block(bare)).toMatchObject({ text: 'https://lamps.test/b' });
+        expect(searchFor('lamps.test/b')).toEqual([bare]);
     });
 
     it('links a block to a later block on the same page', () => {

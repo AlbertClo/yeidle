@@ -23,6 +23,10 @@ export function extractText(node: JsonRecord): string {
         return `{{embed: ((${a?.fallback ?? a?.targetUid ?? ''}))}}`;
     }
 
+    if (node.type === 'webLink') {
+        return String(a?.label || a?.href || '');
+    }
+
     if (node.type === 'fileNode') {
         return `[${a?.originalName ?? 'File'}]`;
     }

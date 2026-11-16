@@ -1,7 +1,14 @@
 <script setup lang="ts">
 /** One block and its children, as nested list items. */
+import RichContent from './RichContent';
 
-export type BlockTree = { id: string; text: string; children: BlockTree[] };
+export type BlockTree = {
+    id: string;
+    text: string;
+    /** Rich text (TipTap JSON). */
+    content: object | unknown[] | null;
+    children: BlockTree[];
+};
 
 defineOptions({ name: 'BlockItem' });
 defineProps<{ block: BlockTree }>();
@@ -9,7 +16,7 @@ defineProps<{ block: BlockTree }>();
 
 <template>
     <li>
-        <span>{{ block.text }}</span>
+        <RichContent :content="block.content" :fallback="block.text" />
         <ul v-if="block.children.length > 0">
             <BlockItem
                 v-for="child in block.children"

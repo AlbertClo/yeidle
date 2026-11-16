@@ -1,5 +1,6 @@
 import type { Database } from '../db/database';
-import { openWorkspaceDatabase } from '../db/schema';
+import { Meta } from '../db/meta';
+import { openWorkspaceDatabase, READ_MODEL_VERSION } from '../db/schema';
 import { DocumentService } from '../documents/service';
 import { isUuid, uuidv7 } from '../support/ids';
 
@@ -358,6 +359,12 @@ export class Workspaces {
             databasePath,
         );
         const documents = new DocumentService(db);
+        const meta = new Meta(db);
+
+        if (meta.number('read_model_version') !== READ_MODEL_VERSION) {
+            documents.rebuildReadModel();
+            meta.set('read_model_version', READ_MODEL_VERSION);
+        }
 
         return {
             id: record.id,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { Browser } from '@capacitor/browser';
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 
 import BlockItem from './BlockItem.vue';
 import type { BlockTree } from './BlockItem.vue';
@@ -9,6 +10,7 @@ import {
     coreReady,
     onDocumentsChanged,
 } from './core/client';
+import { LINK_HANDLERS } from './RichContent';
 
 /**
  * The prototype's screens: sign in, pick a workspace, list and search its
@@ -177,6 +179,12 @@ async function showPage(id: string): Promise<void> {
         };
     });
 }
+
+// Links inside pages: web links in the browser, page links in the app
+provide(LINK_HANDLERS, {
+    openPage: (id) => void showPage(id),
+    openUrl: (url) => void Browser.open({ url }),
+});
 
 let searchRequest = 0;
 
@@ -454,6 +462,31 @@ input[type='search'] {
 
 .muted {
     color: var(--muted);
+}
+
+.web-link,
+.page-link {
+    color: var(--accent);
+}
+
+.web-link {
+    text-decoration: underline;
+}
+
+.page-link {
+    text-decoration: none;
+}
+
+.rich .paragraph,
+.rich .heading,
+.rich pre {
+    display: block;
+}
+
+.rich pre {
+    margin: 4px 0;
+    overflow-x: auto;
+    white-space: pre-wrap;
 }
 
 .center {

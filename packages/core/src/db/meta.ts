@@ -6,6 +6,7 @@ import type { Database } from './database';
  * This device's state for a workspace (the `meta` table): never synced.
  *
  *   device_id               this device, as the cloud relay knows it
+ *   read_model_version      READ_MODEL_VERSION the read model was built with
  *   cloud_workspace_id      set once the workspace is paired with the cloud
  *   cloud_user_id           the cloud user it was paired as
  *   cloud_cursor            last cloud server_seq pulled
@@ -15,6 +16,7 @@ import type { Database } from './database';
  */
 export type MetaKey =
     | 'device_id'
+    | 'read_model_version'
     | 'cloud_workspace_id'
     | 'cloud_user_id'
     | 'cloud_cursor'

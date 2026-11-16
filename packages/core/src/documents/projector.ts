@@ -68,7 +68,7 @@ export class Projector {
                     page.kind,
                     page.daily_date,
                     createdAt,
-                    now,
+                    page.updated_at ?? now,
                 ],
             );
             pageChanged = true;
@@ -84,7 +84,7 @@ export class Projector {
 
         if (pageChanged || blocksChanged) {
             this.db.run('UPDATE pages SET updated_at = ? WHERE id = ?', [
-                now,
+                page.updated_at ?? now,
                 documentId,
             ]);
         }

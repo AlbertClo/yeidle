@@ -5,6 +5,7 @@ import {
     deletePage,
     inline,
     mention,
+    paragraph,
     setBlocks,
 } from '../../documents/testing';
 import { uuidv7 } from '../../support/ids';
@@ -292,8 +293,14 @@ describe('blocks route', () => {
                 {
                     id: child,
                     text: 'Nested block',
+                    content: paragraph('Nested block'),
                     children: [
-                        { id: grandchild, text: 'Deeper', children: [] },
+                        {
+                            id: grandchild,
+                            text: 'Deeper',
+                            content: paragraph('Deeper'),
+                            children: [],
+                        },
                     ],
                 },
             ],
@@ -318,9 +325,22 @@ describe('blocks route', () => {
                 {
                     id: first,
                     text: 'First',
-                    children: [{ id: nested, text: 'Nested', children: [] }],
+                    content: paragraph('First'),
+                    children: [
+                        {
+                            id: nested,
+                            text: 'Nested',
+                            content: paragraph('Nested'),
+                            children: [],
+                        },
+                    ],
                 },
-                { id: second, text: 'Second', children: [] },
+                {
+                    id: second,
+                    text: 'Second',
+                    content: paragraph('Second'),
+                    children: [],
+                },
             ],
         });
     });
